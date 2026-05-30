@@ -15,6 +15,7 @@ import {
   Modal,
   Image,
   AccessibilityInfo,
+  PanResponder,
   type ViewStyle,
   type ImageSourcePropType,
 } from 'react-native';
@@ -22,6 +23,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as NativeSplash from 'expo-splash-screen';
 import * as Speech from 'expo-speech';
+import {
+  Bird,
+  CloudMoon,
+  CloudRain,
+  CloudSun,
+  Heart,
+  Sparkles,
+  Sprout,
+  User,
+  WavesHorizontal,
+  type LucideIcon,
+} from 'lucide-react-native';
 
 // Keep the native launch screen up until our animated splash is mounted (no white flash).
 NativeSplash.preventAutoHideAsync().catch(() => {});
@@ -105,6 +118,27 @@ interface Mood {
   label: string;
   desc: string;
   color?: string;
+  iconBg?: string;
+  iconColor?: string;
+  iconFill?: string;
+  accentColor?: string;
+  accentBg?: string;
+  Icon?: LucideIcon;
+}
+
+function ObMoodIcon({ mood, size = 20 }: { mood: Mood; size?: number }) {
+  const Icon = mood.Icon;
+  if (!Icon) {
+    return <Text style={styles.obMoodIconEmoji}>{mood.emoji}</Text>;
+  }
+  return (
+    <Icon
+      size={size}
+      color={mood.iconColor ?? '#F5F3FF'}
+      strokeWidth={2.5}
+      fill={mood.iconFill ?? 'transparent'}
+    />
+  );
 }
 
 interface ChatMessage {
@@ -126,10 +160,94 @@ interface JournalEntry {
 }
 
 const OB_MOODS: Mood[] = [
-  { emoji: '😔', label: 'Heavy', desc: 'Weighed down or low' },
-  { emoji: '😐', label: 'Neutral', desc: 'Just getting through' },
-  { emoji: '🙂', label: 'Light', desc: 'Fairly okay today' },
-  { emoji: '😊', label: 'Peaceful', desc: 'Calm and settled' },
+  {
+    emoji: '🌧️',
+    label: 'Heavy',
+    desc: 'Feeling burdened, exhausted, or low.',
+    iconBg: 'rgba(139,92,246,0.38)',
+    iconColor: '#EDE9FE',
+    iconFill: 'rgba(196,181,253,0.55)',
+    accentColor: '#8B5CF6',
+    accentBg: 'rgba(139,92,246,0.18)',
+    Icon: CloudRain,
+  },
+  {
+    emoji: '🌊',
+    label: 'Overwhelmed',
+    desc: 'Too much happening at once.',
+    iconBg: 'rgba(59,130,246,0.36)',
+    iconColor: '#DBEAFE',
+    iconFill: 'rgba(147,197,253,0.5)',
+    accentColor: '#3B82F6',
+    accentBg: 'rgba(59,130,246,0.18)',
+    Icon: WavesHorizontal,
+  },
+  {
+    emoji: '☁️',
+    label: 'Neutral',
+    desc: 'Just getting through the day.',
+    iconBg: 'rgba(167,139,250,0.32)',
+    iconColor: '#F5F3FF',
+    iconFill: 'rgba(221,214,254,0.45)',
+    accentColor: '#A78BFA',
+    accentBg: 'rgba(167,139,250,0.18)',
+    Icon: CloudMoon,
+  },
+  {
+    emoji: '🌱',
+    label: 'Hopeful',
+    desc: 'A gentle optimism ahead.',
+    iconBg: 'rgba(52,211,153,0.36)',
+    iconColor: '#D1FAE5',
+    iconFill: 'rgba(110,231,183,0.5)',
+    accentColor: '#34D399',
+    accentBg: 'rgba(52,211,153,0.18)',
+    Icon: Sprout,
+  },
+  {
+    emoji: '🌤️',
+    label: 'Light',
+    desc: 'Uplifted, brighter, or a little lighter.',
+    iconBg: 'rgba(251,191,36,0.38)',
+    iconColor: '#FEF9C3',
+    iconFill: 'rgba(253,224,71,0.55)',
+    accentColor: '#FBBF24',
+    accentBg: 'rgba(251,191,36,0.2)',
+    Icon: CloudSun,
+  },
+  {
+    emoji: '🕊️',
+    label: 'Peaceful',
+    desc: 'Calm, grounded, at ease.',
+    iconBg: 'rgba(56,189,248,0.36)',
+    iconColor: '#E0F2FE',
+    iconFill: 'rgba(125,211,252,0.5)',
+    accentColor: '#38BDF8',
+    accentBg: 'rgba(56,189,248,0.18)',
+    Icon: Bird,
+  },
+  {
+    emoji: '💜',
+    label: 'Grateful',
+    desc: 'Noticing something good today.',
+    iconBg: 'rgba(192,132,252,0.36)',
+    iconColor: '#FAE8FF',
+    iconFill: 'rgba(233,213,255,0.5)',
+    accentColor: '#C084FC',
+    accentBg: 'rgba(192,132,252,0.18)',
+    Icon: Heart,
+  },
+  {
+    emoji: '✨',
+    label: 'Joyful',
+    desc: 'Light-hearted, bright, or energized.',
+    iconBg: 'rgba(251,146,60,0.38)',
+    iconColor: '#FFEDD5',
+    iconFill: 'rgba(253,186,116,0.55)',
+    accentColor: '#FB923C',
+    accentBg: 'rgba(251,146,60,0.2)',
+    Icon: Sparkles,
+  },
 ];
 
 const CHECK_IN_MOODS: Mood[] = [
@@ -201,6 +319,7 @@ interface ScreenProps {
   scrollRef?: React.RefObject<ScrollView | null>;
   onContentSizeChange?: () => void;
   contentStyle?: ViewStyle;
+  theme?: CircadianTheme;
   backgroundColors?: [string, string];
 }
 
@@ -307,19 +426,59 @@ function getCircadianTheme(date: Date = new Date()): CircadianTheme {
   };
 }
 
+// Circadian Emo faces — lavender for daylight, glowing dark for evening/night.
+const EMO_FACE_DAY: ImageSourcePropType = require('./assets/emo-face-day.png');
+const EMO_FACE_NIGHT: ImageSourcePropType = require('./assets/emo-face-night.png');
+
+/** Shared 3-stop circadian backdrop — single source of truth for all themed screens. */
+function CircadianBackground({ theme, orbs = false }: { theme: CircadianTheme; orbs?: boolean }) {
+  const auroraA = theme.isDark ? 1 : 0.45;
+  return (
+    <>
+      <LinearGradient
+        colors={theme.splashGradient as string[]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+      {!theme.isDark ? (
+        <View pointerEvents="none" style={styles.auroraClip}>
+          <View
+            style={[styles.auroraWide, { backgroundColor: `rgba(170,132,255,${0.4 * auroraA})` }]}
+          />
+          <View
+            style={[styles.auroraCore, { backgroundColor: `rgba(226,198,255,${0.5 * auroraA})` }]}
+          />
+          <BlurView intensity={45} tint="light" style={StyleSheet.absoluteFill} />
+        </View>
+      ) : null}
+      {orbs ? (
+        <>
+          <GlowOrb color={theme.glow} size={320} top={-80} right={-60} />
+          <GlowOrb color={theme.glow} size={200} top={height * 0.4} right={width * 0.6} opacity={0.28} />
+        </>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Standard screen frame:
  *  1. Absolute-fill gradient background
  *  2. SafeAreaView (top edge) from react-native-safe-area-context
  *  3. ScrollView whose contentContainer reserves room for the floating nav bar
  */
-function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle, backgroundColors }: ScreenProps) {
+function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle, theme, backgroundColors }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const bottomClearance = NAV_CONTENT_HEIGHT + insets.bottom + 24;
 
   return (
     <View style={styles.flex}>
-      <ScreenBackground colors={backgroundColors} />
+      {theme ? (
+        <CircadianBackground theme={theme} />
+      ) : (
+        <ScreenBackground colors={backgroundColors} />
+      )}
       <SafeAreaView style={styles.flex} edges={['top']}>
         {scroll ? (
           <ScrollView
@@ -346,19 +505,22 @@ function GlassCard({
   children,
   style,
   onPress,
+  theme,
 }: {
   children: React.ReactNode;
   style?: ViewStyle;
   onPress?: () => void;
+  theme?: CircadianTheme;
 }) {
+  const themed = theme ? { backgroundColor: theme.card, borderColor: theme.border } : {};
   if (onPress) {
     return (
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={[styles.glass, style]}>
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={[styles.glass, themed, style]}>
         {children}
       </TouchableOpacity>
     );
   }
-  return <View style={[styles.glass, style]}>{children}</View>;
+  return <View style={[styles.glass, themed, style]}>{children}</View>;
 }
 
 /**
@@ -366,9 +528,9 @@ function GlassCard({
  * gracefully to an emoji glyph if the image is missing or fails to decode —
  * so it never collapses into a broken white circle.
  */
-const EMO_FACE: ImageSourcePropType = require('./assets/emo-face-transparent.png');
-
-function EmoAvatar({ size = 44 }: { size?: number }) {
+function EmoAvatar({ size = 44, theme: themeProp }: { size?: number; theme?: CircadianTheme }) {
+  const theme = themeProp ?? getCircadianTheme();
+  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
   const [failed, setFailed] = useState(false);
   const ringSize = size + 8;
 
@@ -376,23 +538,29 @@ function EmoAvatar({ size = 44 }: { size?: number }) {
     <View
       style={[
         styles.avatarRing,
-        { width: ringSize, height: ringSize, borderRadius: ringSize / 2 },
+        {
+          width: ringSize,
+          height: ringSize,
+          borderRadius: ringSize / 2,
+          borderColor: theme.accent,
+          backgroundColor: theme.card,
+        },
       ]}
     >
       {failed ? (
         <View
           style={[
             styles.avatarFallback,
-            { width: size, height: size, borderRadius: size / 2 },
+            { width: size, height: size, borderRadius: size / 2, backgroundColor: theme.accent },
           ]}
         >
           <Text style={{ fontSize: size * 0.5 }}>🌿</Text>
         </View>
       ) : (
         <Image
-          source={EMO_FACE}
+          source={faceSource}
           onError={() => setFailed(true)}
-          resizeMode="cover"
+          resizeMode="contain"
           style={{ width: size, height: size, borderRadius: size / 2 }}
         />
       )}
@@ -403,7 +571,9 @@ function EmoAvatar({ size = 44 }: { size?: number }) {
 /**
  * Emo orb — the mascot face on the home screen with a gentle continuous pulse.
  */
-function EmoOrb() {
+function EmoOrb({ theme: themeProp }: { theme?: CircadianTheme }) {
+  const theme = themeProp ?? getCircadianTheme();
+  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
   const pulse = useRef(new Animated.Value(0)).current;
   const [failed, setFailed] = useState(false);
   const reduceMotion = useReduceMotion();
@@ -425,14 +595,19 @@ function EmoOrb() {
 
   return (
     <View style={styles.orbWrap}>
-      <Animated.View style={[styles.orbGlow, { opacity: glowOpacity, transform: [{ scale }] }]} />
+      <Animated.View
+        style={[
+          styles.orbGlow,
+          { opacity: glowOpacity, transform: [{ scale }], backgroundColor: theme.glow },
+        ]}
+      />
       {failed ? (
-        <Animated.View style={[styles.orbFallback, { transform: [{ scale }] }]}>
+        <Animated.View style={[styles.orbFallback, { transform: [{ scale }], backgroundColor: theme.card }]}>
           <Text style={{ fontSize: 52 }}>🌿</Text>
         </Animated.View>
       ) : (
         <Animated.Image
-          source={EMO_FACE}
+          source={faceSource}
           resizeMode="contain"
           onError={() => setFailed(true)}
           style={[styles.orbImage, { transform: [{ scale }] }]}
@@ -445,10 +620,6 @@ function EmoOrb() {
 /* ------------------------------------------------------------------ *
  * Page 1 — Splash / Launch Screen
  * ------------------------------------------------------------------ */
-
-// Circadian Emo faces — lavender for daylight, glowing dark for evening/night.
-const EMO_FACE_DAY: ImageSourcePropType = require('./assets/emo-face-day.png');
-const EMO_FACE_NIGHT: ImageSourcePropType = require('./assets/emo-face-night.png');
 
 // Faint floating particles (deterministic positions) for the night sky feel.
 const SPLASH_PARTICLES = [
@@ -471,7 +642,6 @@ const SPLASH_PARTICLES = [
 function SplashScreen({ onDone }: { onDone?: () => void }) {
   const theme = getCircadianTheme();
   const reduceMotion = useReduceMotion();
-  const auroraA = theme.isDark ? 1 : 0.45; // softer aurora in daylight themes
   const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
   const pulse = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
@@ -529,25 +699,7 @@ function SplashScreen({ onDone }: { onDone?: () => void }) {
 
   return (
     <View style={styles.flex}>
-      <LinearGradient
-        colors={theme.splashGradient as string[]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-
-      {/* Soft aurora glow — only on the light daytime themes */}
-      {!theme.isDark ? (
-        <View pointerEvents="none" style={styles.auroraClip}>
-          <View
-            style={[styles.auroraWide, { backgroundColor: `rgba(170,132,255,${0.4 * auroraA})` }]}
-          />
-          <View
-            style={[styles.auroraCore, { backgroundColor: `rgba(226,198,255,${0.5 * auroraA})` }]}
-          />
-          <BlurView intensity={45} tint="light" style={StyleSheet.absoluteFill} />
-        </View>
-      ) : null}
+      <CircadianBackground theme={theme} />
 
       {/* Floating particles */}
       {SPLASH_PARTICLES.map((p, i) => (
@@ -783,6 +935,8 @@ function CheckInModal({ visible, onClose }: { visible: boolean; onClose: () => v
  * ------------------------------------------------------------------ */
 
 function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string }) => void }) {
+  const theme = getCircadianTheme();
+  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
   const [slide, setSlide] = useState(1);
   const [name, setName] = useState('');
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
@@ -827,130 +981,276 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
     setTimeout(() => setSlide(next), 180);
   };
 
+  // Swipe between onboarding slides (simulator + device). Ref keeps handler in sync with slide.
+  const slideRef = useRef(slide);
+  slideRef.current = slide;
+  const goToRef = useRef(goTo);
+  goToRef.current = goTo;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
+      onPanResponderRelease: (_, g) => {
+        const s = slideRef.current;
+        if (g.dx < -55 && s < 3) goToRef.current(s + 1);
+        else if (g.dx > 55 && s > 1) goToRef.current(s - 1);
+      },
+    }),
+  ).current;
+
   const enter = async () => {
     await AsyncStorage.setItem('onboarded', 'true');
     await AsyncStorage.setItem('userName', name.trim());
     onComplete({ name: name.trim() });
   };
 
-  // Shared Emo face nestled in a breathing halo + sanctuary rings (Welcome & Privacy)
-  const faceOrb = (
-    <View style={styles.welcomeOrbWrap}>
+  const renderSanctuaryButton = () => (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      style={[styles.obSanctuaryBtnWrap, styles.obSanctuaryBtnPinned, !selectedMood && styles.btnDisabled]}
+      onPress={enter}
+      disabled={!selectedMood}
+    >
+      <LinearGradient
+        colors={
+          theme.isDark
+            ? (['#9473FF', '#6366F1'] as [string, string])
+            : ([theme.accent, '#7F77DD'] as [string, string])
+        }
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={styles.obSanctuaryBtn}
+      >
+        <Text style={styles.primaryBtnText}>Enter Your Sanctuary →</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+
+  // Shared Emo face nestled in a breathing halo (Welcome & Privacy)
+  const renderFaceOrb = (variant: 'welcome' | 'privacy' = 'privacy') => {
+    const isWelcome = variant === 'welcome';
+    return (
+    <View
+      style={[
+        styles.welcomeOrbWrap,
+        styles.welcomeOrbWrapRaised,
+      ]}
+    >
       <Animated.View
         pointerEvents="none"
-        style={[styles.welcomeGlow, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+        style={[
+          styles.welcomeGlow,
+          isWelcome && styles.welcomeGlowCompact,
+          {
+            opacity: haloOpacity,
+            transform: [{ scale: haloScale }],
+            backgroundColor: theme.glow,
+            shadowColor: theme.accent,
+          },
+        ]}
       />
-      <View pointerEvents="none" style={styles.welcomeRingOuter} />
-      <View pointerEvents="none" style={styles.welcomeRingInner} />
+      {/* Inner ring only on dark themes — day face already has its own lavender disc */}
+      {theme.isDark ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.welcomeRingInner,
+            isWelcome && styles.welcomeRingInnerCompact,
+            { borderColor: 'rgba(183,157,255,0.30)' },
+          ]}
+        />
+      ) : null}
       {faceFailed ? (
-        <View style={styles.welcomeFaceFallback}>
+        <View style={[styles.welcomeFaceFallback, { backgroundColor: theme.card }]}>
           <Text style={{ fontSize: 64 }}>🌿</Text>
         </View>
       ) : (
         <Animated.Image
-          source={EMO_FACE_NIGHT}
+          source={faceSource}
           resizeMode="contain"
           onError={() => setFaceFailed(true)}
-          style={[styles.welcomeFace, { transform: [{ scale: faceScale }] }]}
+          style={[
+            styles.welcomeFace,
+            isWelcome && styles.welcomeFaceCompact,
+            { transform: [{ scale: faceScale }] },
+          ]}
         />
       )}
     </View>
-  );
+    );
+  };
 
   const slides: Record<number, React.ReactNode> = {
     1: (
-      <View style={styles.obSlide}>
-        {faceOrb}
-        <Text style={styles.obEyebrow}>Welcome to Emocare</Text>
-        <Text style={styles.obTitle}>A quiet space to{'\n'}return to yourself.</Text>
-        <Text style={styles.obBody}>
+      <View style={[styles.obSlide, styles.obWelcomeSlide]}>
+        {renderFaceOrb('welcome')}
+        <Text style={[styles.obEyebrow, styles.obWelcomeEyebrow, { color: theme.secondaryText }]}>
+          Welcome to Emocare
+        </Text>
+        <Text style={[styles.obTitle, styles.obWelcomeTitle, { color: theme.text }]}>
+          A quiet space to{'\n'}return to yourself.
+        </Text>
+        <Text style={[styles.obBody, styles.obWelcomeBody, { color: theme.mutedText }]}>
           A quiet, private space to gently check in with yourself — whenever you need it.
         </Text>
-        <Text style={styles.obSoftLine}>"You don't need to have the right words. Just begin."</Text>
-        <GlassCard style={{ paddingVertical: 14, paddingHorizontal: 16, marginTop: 20, width: '100%' }}>
-          <Text style={styles.obNoteText}>
+        <Text style={[styles.obSoftLine, styles.obWelcomeQuote, { color: theme.secondaryText }]}>
+          "You don't need to have the right words. Just begin."
+        </Text>
+        <GlassCard
+          theme={theme}
+          style={styles.obWelcomeNoteCard}
+        >
+          <Text style={[styles.obNoteText, { color: theme.mutedText, lineHeight: 20 }]}>
             Emocare offers gentle emotional support and reflection. It is not a substitute for professional care.
           </Text>
         </GlassCard>
-        <TouchableOpacity style={styles.obBtn} onPress={() => goTo(2)}>
+        <TouchableOpacity
+          style={[styles.obBtn, styles.obWelcomeBtn, { backgroundColor: theme.accent }]}
+          onPress={() => goTo(2)}
+        >
           <Text style={styles.primaryBtnText}>Let's begin gently →</Text>
         </TouchableOpacity>
       </View>
     ),
     2: (
-      <View style={styles.obSlide}>
-        {faceOrb}
-        <Text style={styles.obEyebrow}>Your privacy</Text>
-        <Text style={styles.obTitle}>Your thoughts{'\n'}stay with you.</Text>
-        <Text style={styles.obBody}>
+      <View style={[styles.obSlide, styles.obPrivacySlide]}>
+        {renderFaceOrb('privacy')}
+        <Text style={[styles.obEyebrow, styles.obPrivacyEyebrow, { color: theme.secondaryText }]}>
+          Your privacy
+        </Text>
+        <Text style={[styles.obTitle, styles.obPrivacyTitle, { color: theme.text }]}>
+          Your thoughts{'\n'}stay with you.
+        </Text>
+        <Text style={[styles.obBody, styles.obPrivacyBody, { color: theme.mutedText }]}>
           Everything is stored privately on your device.{'\n'}Nothing shared. Nothing sold.
         </Text>
-        <GlassCard style={{ paddingVertical: 16, paddingHorizontal: 18, marginTop: 22, width: '100%' }}>
+        <GlassCard theme={theme} style={styles.obPrivacyCard}>
           <View style={styles.obBulletRow}>
-            <View style={styles.obBulletDot} />
-            <Text style={styles.obBulletText}>Zero‑knowledge storage. Sovereign data.</Text>
+            <View style={[styles.obBulletDot, { backgroundColor: theme.accent }]} />
+            <Text style={[styles.obBulletText, { color: theme.secondaryText, lineHeight: 21 }]}>
+              Zero‑knowledge storage. Sovereign data.
+            </Text>
           </View>
-          <View style={[styles.obBulletRow, { marginTop: 12 }]}>
-            <View style={styles.obBulletDot} />
-            <Text style={styles.obBulletText}>
+          <View style={[styles.obBulletRow, { marginTop: 14 }]}>
+            <View style={[styles.obBulletDot, { backgroundColor: theme.accent }]} />
+            <Text style={[styles.obBulletText, { color: theme.secondaryText, lineHeight: 21 }]}>
               Memory Ledger — see &amp; delete what Emo holds, with a single tap.
             </Text>
           </View>
         </GlassCard>
-        <TouchableOpacity style={[styles.obBtn, { marginTop: 'auto' }]} onPress={() => goTo(3)}>
+        <TouchableOpacity
+          style={[styles.obBtn, styles.obPrivacyBtn, { backgroundColor: theme.accent }]}
+          onPress={() => goTo(3)}
+        >
           <Text style={styles.primaryBtnText}>That feels good →</Text>
         </TouchableOpacity>
       </View>
     ),
     3: (
-      <View style={styles.obSlide}>
-        <Text style={styles.obEyebrow}>One last thing</Text>
-        <Text style={styles.obTitle}>What shall we{'\n'}call you?</Text>
-        <TextInput
-          style={styles.obInput}
-          placeholder="Your name (optional)"
-          placeholderTextColor={C.white30}
-          value={name}
-          onChangeText={setName}
-          maxLength={30}
-        />
-        <Text style={[styles.obEyebrow, { marginTop: 28, color: C.white80 }]}>How are you feeling right now?</Text>
-        <Text style={[styles.obBody, { marginTop: 4, marginBottom: 14, fontStyle: 'italic' }]}>
-          There's no wrong answer.
-        </Text>
-        <View style={styles.obMoodGrid}>
-          {OB_MOODS.map((m) => (
-            <TouchableOpacity
-              key={m.label}
-              activeOpacity={0.85}
-              style={[styles.obMoodCard, selectedMood?.label === m.label && styles.obMoodCardSelected]}
-              onPress={() => setSelectedMood(m)}
-            >
-              <Text style={{ fontSize: 26 }}>{m.emoji}</Text>
-              <Text style={styles.obMoodLabel}>{m.label}</Text>
-              <Text style={styles.obMoodDesc}>{m.desc}</Text>
-            </TouchableOpacity>
-          ))}
+      <View style={[styles.obSlide, styles.obNameSlide]}>
+        <View style={styles.obNameHeaderBlock}>
+          <Text style={[styles.obEyebrow, styles.obNameEyebrow, { color: theme.secondaryText }]}>
+            One last thing
+          </Text>
+          <Text style={[styles.obNameTitle, { color: theme.text }]}>Welcome to Emo</Text>
+          <Text style={[styles.obNameSub, { color: theme.secondaryText }]}>
+            Let's personalize your experience.
+          </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.obBtn, { marginTop: 22 }, !selectedMood && styles.btnDisabled]}
-          onPress={enter}
-          disabled={!selectedMood}
+
+        <View
+          style={[
+            styles.obNameInputRow,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}
         >
-          <Text style={styles.primaryBtnText}>Enter Emocare →</Text>
-        </TouchableOpacity>
+          <User size={17} color={theme.mutedText} strokeWidth={2} style={styles.obNameInputIcon} />
+          <TextInput
+            style={[styles.obNameInput, { color: theme.text }]}
+            placeholder="What should I call you? (optional)"
+            placeholderTextColor={theme.mutedText}
+            value={name}
+            onChangeText={setName}
+            maxLength={30}
+          />
+        </View>
+
+        <View style={styles.obMoodHeaderBlock}>
+          <Text style={[styles.obMoodSectionTitle, { color: theme.text }]}>
+            How are you feeling right now?
+          </Text>
+          <Text style={[styles.obMoodSectionSub, { color: theme.mutedText }]}>
+            Choose the feeling that feels closest.
+          </Text>
+        </View>
+
+        <View style={styles.obMoodGridPro}>
+          {OB_MOODS.map((m) => {
+            const selected = selectedMood?.label === m.label;
+            return (
+              <TouchableOpacity
+                key={m.label}
+                activeOpacity={0.85}
+                style={[
+                  styles.obMoodCardPro,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  selected && {
+                    borderColor: m.accentColor ?? theme.accent,
+                    backgroundColor: m.accentBg ?? 'rgba(155,123,255,0.16)',
+                    shadowColor: m.accentColor ?? theme.accent,
+                    shadowOpacity: 0.4,
+                    shadowRadius: 10,
+                    shadowOffset: { width: 0, height: 0 },
+                  },
+                ]}
+                onPress={() => setSelectedMood(m)}
+              >
+                <View
+                  style={[
+                    styles.obMoodIconCircle,
+                    {
+                      backgroundColor: m.iconBg ?? theme.card,
+                      borderColor: m.iconColor ? `${m.iconColor}55` : theme.border,
+                      shadowColor: m.accentColor ?? m.iconColor ?? theme.accent,
+                      shadowOpacity: selected ? 0.65 : 0.45,
+                      shadowRadius: selected ? 10 : 7,
+                      shadowOffset: { width: 0, height: 2 },
+                    },
+                  ]}
+                >
+                  <ObMoodIcon mood={m} />
+                </View>
+                <View style={styles.obMoodCardText}>
+                  <Text style={[styles.obMoodCardTitle, { color: theme.text }]}>{m.label}</Text>
+                  <Text style={[styles.obMoodCardDesc, { color: theme.mutedText }]} numberOfLines={2}>
+                    {m.desc}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     ),
   };
 
   return (
     <View style={styles.flex}>
-      <ScreenBackground />
-      <StatusBar style="light" />
+      <CircadianBackground theme={theme} />
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
         <View style={styles.obProgressRow}>
           {[1, 2, 3].map((i) => (
-            <View key={i} style={[styles.obDot, slide === i && styles.obDotActive, slide > i && styles.obDotDone]} />
+            <View
+              key={i}
+              style={[
+                styles.obDot,
+                { backgroundColor: theme.isDark ? C.white10 : 'rgba(126,110,180,0.20)' },
+                slide === i && [styles.obDotActive, { backgroundColor: theme.accent }],
+                slide > i && { backgroundColor: theme.secondaryText },
+              ]}
+            />
           ))}
         </View>
         {slide > 1 ? (
@@ -960,17 +1260,31 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
             hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             accessibilityLabel="Go back"
           >
-            <Text style={styles.obBackText}>←</Text>
+            <Text style={[styles.obBackText, { color: theme.text }]}>←</Text>
           </TouchableOpacity>
         ) : null}
-        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {slides[slide]}
-          </ScrollView>
+        <Animated.View style={{ flex: 1, opacity: fadeAnim }} {...panResponder.panHandlers}>
+          {slide === 3 ? (
+            <View style={styles.flex}>
+              <ScrollView
+                style={styles.flex}
+                contentContainerStyle={styles.obNameScrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {slides[slide]}
+              </ScrollView>
+              {renderSanctuaryButton()}
+            </View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {slides[slide]}
+            </ScrollView>
+          )}
         </Animated.View>
       </SafeAreaView>
     </View>
@@ -984,6 +1298,7 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
 function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: ScreenKey) => void }) {
   const [showCheckIn, setShowCheckIn] = useState(false);
   const [affIdx, setAffIdx] = useState(0);
+  const theme = getCircadianTheme();
   const hour = new Date().getHours();
   const timeLabel =
     hour >= 5 && hour < 12
@@ -991,30 +1306,29 @@ function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
       : hour >= 12 && hour < 17
       ? 'Good afternoon'
       : 'Good evening';
-  const circadianColors = getCircadianGradient(hour);
 
   return (
-    <Screen backgroundColors={circadianColors}>
-      <EmoOrb />
+    <Screen theme={theme}>
+      <EmoOrb theme={theme} />
       <View style={{ marginTop: 10, marginBottom: 26 }}>
-        <Text style={styles.sanctuaryLabel}>Intelligence with Soul</Text>
-        <Text style={styles.heroGreeting}>
+        <Text style={[styles.sanctuaryLabel, { color: theme.secondaryText }]}>Intelligence with Soul</Text>
+        <Text style={[styles.heroGreeting, { color: theme.text }]}>
           {timeLabel},{'\n'}
           {userName || 'friend'} 💜
         </Text>
-        <Text style={styles.heroSub}>This is your sanctuary. ♡</Text>
+        <Text style={[styles.heroSub, { color: theme.mutedText }]}>This is your sanctuary. ♡</Text>
       </View>
 
-      <GlassCard style={styles.cardPadLg}>
-        <Text style={[styles.cardTitle, { marginBottom: 4 }]}>How are you feeling today?</Text>
-        <Text style={[styles.cardSub, { fontStyle: 'italic', marginBottom: 18 }]}>
+      <GlassCard theme={theme} style={styles.cardPadLg}>
+        <Text style={[styles.cardTitle, { marginBottom: 4, color: theme.text }]}>How are you feeling today?</Text>
+        <Text style={[styles.cardSub, { fontStyle: 'italic', marginBottom: 18, color: theme.mutedText }]}>
           Has your heart been feeling steadier lately?
         </Text>
         <MoodWave />
         <View style={styles.weekFootRow}>
-          <Text style={styles.chartLabel}>Over</Text>
-          <Text style={styles.chartLabel}>Week</Text>
-          <Text style={styles.chartLabel}>01</Text>
+          <Text style={[styles.chartLabel, { color: theme.mutedText }]}>Over</Text>
+          <Text style={[styles.chartLabel, { color: theme.mutedText }]}>Week</Text>
+          <Text style={[styles.chartLabel, { color: theme.mutedText }]}>01</Text>
         </View>
       </GlassCard>
 
@@ -1023,32 +1337,42 @@ function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
           <Text style={{ fontSize: 16 }}>🤍</Text>
           <Text style={styles.checkInBtnText}>Check In</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionSmallBtn} activeOpacity={0.85} onPress={() => onNav('journal')}>
+        <TouchableOpacity
+          style={[styles.actionSmallBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+          activeOpacity={0.85}
+          onPress={() => onNav('journal')}
+        >
           <Text style={{ fontSize: 16 }}>📖</Text>
-          <Text style={styles.actionSmallText}>Journal</Text>
+          <Text style={[styles.actionSmallText, { color: theme.text }]}>Journal</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionSmallBtn} activeOpacity={0.85} onPress={() => onNav('breathe')}>
+        <TouchableOpacity
+          style={[styles.actionSmallBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+          activeOpacity={0.85}
+          onPress={() => onNav('breathe')}
+        >
           <Text style={{ fontSize: 16 }}>🌬️</Text>
-          <Text style={styles.actionSmallText}>Breathe</Text>
+          <Text style={[styles.actionSmallText, { color: theme.text }]}>Breathe</Text>
         </TouchableOpacity>
       </View>
 
-      <GlassCard style={{ marginBottom: 16 }} onPress={() => onNav('chat')}>
+      <GlassCard theme={theme} style={{ marginBottom: 16 }} onPress={() => onNav('chat')}>
         <View style={styles.emoCard}>
-          <EmoAvatar size={44} />
+          <EmoAvatar size={44} theme={theme} />
           <View style={styles.flex}>
-            <Text style={[styles.cardTitle, { fontSize: 17 }]}>Talk to EmoAI</Text>
-            <Text style={[styles.cardSub, { marginTop: 4 }]}>I'm here to listen, support and guide you.</Text>
+            <Text style={[styles.cardTitle, { fontSize: 17, color: theme.text }]}>Talk to EmoAI</Text>
+            <Text style={[styles.cardSub, { marginTop: 4, color: theme.mutedText }]}>
+              I'm here to listen, support and guide you.
+            </Text>
           </View>
-          <Text style={styles.chevron}>›</Text>
+          <Text style={[styles.chevron, { color: theme.secondaryText }]}>›</Text>
         </View>
       </GlassCard>
 
-      <GlassCard style={styles.cardPadLg}>
-        <Text style={styles.reminderEyebrow}>A gentle reminder</Text>
-        <Text style={styles.affirmationText}>{AFFIRMATIONS[affIdx]}</Text>
+      <GlassCard theme={theme} style={styles.cardPadLg}>
+        <Text style={[styles.reminderEyebrow, { color: theme.secondaryText }]}>A gentle reminder</Text>
+        <Text style={[styles.affirmationText, { color: theme.text }]}>{AFFIRMATIONS[affIdx]}</Text>
         <TouchableOpacity onPress={() => setAffIdx((affIdx + 1) % AFFIRMATIONS.length)} style={{ marginTop: 12 }}>
-          <Text style={styles.reminderRefresh}>Another reminder ↻</Text>
+          <Text style={[styles.reminderRefresh, { color: theme.accent }]}>Another reminder ↻</Text>
         </TouchableOpacity>
       </GlassCard>
 
@@ -1511,9 +1835,11 @@ function Root() {
     journal: <JournalScreen />,
   };
 
+  const theme = getCircadianTheme();
+
   return (
     <View style={styles.flex}>
-      <StatusBar style="light" />
+      <StatusBar style={screen === 'home' ? (theme.isDark ? 'light' : 'dark') : 'light'} />
       <View style={styles.flex}>{screens[screen]}</View>
       <NavBar active={screen} onNav={setScreen} />
     </View>
@@ -1563,7 +1889,7 @@ const styles = StyleSheet.create({
   // Emo orb (home screen pulse)
   orbWrap: { alignItems: 'center', justifyContent: 'center', height: 130, marginTop: 8, marginBottom: 6 },
   orbGlow: { position: 'absolute', width: 130, height: 130, borderRadius: 65, backgroundColor: C.purpleGlow },
-  orbImage: { width: 116, height: 116 },
+  orbImage: { width: 116, height: 116, borderRadius: 58 },
   orbFallback: {
     width: 116,
     height: 116,
@@ -1656,6 +1982,146 @@ const styles = StyleSheet.create({
 
   // Onboarding
   obSlide: { flex: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 20, paddingBottom: 20 },
+  // Welcome (slide 1) — airy layout, button pinned to bottom
+  obWelcomeSlide: { paddingTop: 0, paddingBottom: 12 },
+  obWelcomeEyebrow: { marginBottom: 14, marginTop: 0 },
+  obWelcomeTitle: { marginBottom: 22, fontSize: 25, lineHeight: 34 },
+  obWelcomeBody: { marginTop: 2, lineHeight: 24, paddingHorizontal: 6 },
+  obWelcomeQuote: { marginTop: 26, lineHeight: 24, paddingHorizontal: 8 },
+  obWelcomeNoteCard: {
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginTop: 28,
+    width: '100%',
+  },
+  obWelcomeBtn: { marginTop: 'auto', marginBottom: 4 },
+  // Welcome + Privacy — face sits higher so text below has room to breathe
+  welcomeOrbWrapRaised: { marginTop: 0, marginBottom: 22 },
+  // Privacy (slide 2) — airy text + button at bottom
+  obPrivacySlide: { paddingTop: 0, paddingBottom: 12 },
+  obPrivacyEyebrow: { marginBottom: 14, marginTop: 0 },
+  obPrivacyTitle: { marginBottom: 20, fontSize: 25, lineHeight: 34 },
+  obPrivacyBody: { marginTop: 2, lineHeight: 24, paddingHorizontal: 8, marginBottom: 2 },
+  obPrivacyCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginTop: 28,
+    width: '100%',
+  },
+  obPrivacyBtn: { marginTop: 'auto', marginBottom: 4 },
+
+  // Page 4 — Name + First Mood (airy spacing, CTA pinned below)
+  obNameSlide: { alignItems: 'stretch', paddingTop: 4, paddingBottom: 12 },
+  obNameScrollContent: { paddingBottom: 16 },
+  obNameHeaderBlock: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 26,
+  },
+  obNameEyebrow: { textAlign: 'center', alignSelf: 'center', marginBottom: 14, marginTop: 0 },
+  obNameTitle: {
+    fontSize: 26,
+    lineHeight: 34,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    textAlign: 'center',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  obNameSub: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    alignSelf: 'center',
+    marginBottom: 0,
+  },
+  obNameInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    borderWidth: 0.5,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 32,
+    gap: 12,
+  },
+  obNameInputIcon: { marginTop: 1 },
+  obNameInput: {
+    flex: 1,
+    fontSize: 15,
+    padding: 0,
+  },
+  obMoodHeaderBlock: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  obMoodSectionTitle: {
+    fontSize: 19,
+    lineHeight: 27,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    textAlign: 'center',
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  obMoodSectionSub: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    alignSelf: 'center',
+    marginBottom: 0,
+  },
+  obMoodGridPro: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    width: '100%',
+    marginBottom: 12,
+  },
+  obMoodCardPro: {
+    width: (width - 70) / 2,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 12,
+    paddingHorizontal: 11,
+    borderRadius: 15,
+    borderWidth: 1,
+    gap: 10,
+    minHeight: 74,
+  },
+  obMoodIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  obMoodIconEmoji: { fontSize: 17 },
+  obMoodCardText: { flex: 1, paddingTop: 3 },
+  obMoodCardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 5, lineHeight: 16 },
+  obMoodCardDesc: { fontSize: 10, lineHeight: 15 },
+  obSanctuaryBtnWrap: {
+    width: '100%',
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginTop: 'auto',
+    marginBottom: 6,
+  },
+  obSanctuaryBtnPinned: {
+    marginTop: 8,
+    marginBottom: 8,
+    paddingHorizontal: 28,
+  },
+  obSanctuaryBtn: {
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    borderRadius: 18,
+  },
   obProgressRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingTop: 14, paddingBottom: 6 },
   obBackBtn: {
     position: 'absolute',
@@ -1694,6 +2160,8 @@ const styles = StyleSheet.create({
   },
   welcomeGlow: {
     position: 'absolute',
+    top: 34,
+    left: 34,
     width: 168,
     height: 168,
     borderRadius: 84,
@@ -1705,6 +2173,8 @@ const styles = StyleSheet.create({
   },
   welcomeRingOuter: {
     position: 'absolute',
+    top: 3,
+    left: 3,
     width: 230,
     height: 230,
     borderRadius: 115,
@@ -1713,12 +2183,19 @@ const styles = StyleSheet.create({
   },
   welcomeRingInner: {
     position: 'absolute',
+    top: 25,
+    left: 25,
     width: 186,
     height: 186,
     borderRadius: 93,
     borderWidth: 1,
     borderColor: 'rgba(183,157,255,0.30)',
   },
+  // Welcome slide — rings + glow nudged down to sit on the face disc (leaf shifts visual center)
+  welcomeGlowCompact: { top: 42, left: 34 },
+  welcomeRingOuterCompact: { top: 10, left: 3 },
+  welcomeRingInnerCompact: { top: 44, left: 25 },
+  welcomeFaceCompact: { marginTop: 4 },
   welcomeFace: { width: 152, height: 152, borderRadius: 76 },
   welcomeFaceFallback: {
     width: 152,
