@@ -17,6 +17,7 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Speech from 'expo-speech';
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -745,6 +746,7 @@ function ChatScreen({ userName }: { userName: string }) {
       const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setHistory([...newHistory, { role: 'assistant', content: replyText }]);
       setMessages([...newMessages, { role: 'bot', text: replyText, time: replyTime }]);
+      Speech.speak(replyText, { pitch: 0.9, rate: 0.85 });
     } catch {
       setMessages([
         ...newMessages,
