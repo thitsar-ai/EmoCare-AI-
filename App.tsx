@@ -833,29 +833,34 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
     onComplete({ name: name.trim() });
   };
 
+  // Shared Emo face nestled in a breathing halo + sanctuary rings (Welcome & Privacy)
+  const faceOrb = (
+    <View style={styles.welcomeOrbWrap}>
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.welcomeGlow, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+      />
+      <View pointerEvents="none" style={styles.welcomeRingOuter} />
+      <View pointerEvents="none" style={styles.welcomeRingInner} />
+      {faceFailed ? (
+        <View style={styles.welcomeFaceFallback}>
+          <Text style={{ fontSize: 64 }}>🌿</Text>
+        </View>
+      ) : (
+        <Animated.Image
+          source={EMO_FACE_NIGHT}
+          resizeMode="contain"
+          onError={() => setFaceFailed(true)}
+          style={[styles.welcomeFace, { transform: [{ scale: faceScale }] }]}
+        />
+      )}
+    </View>
+  );
+
   const slides: Record<number, React.ReactNode> = {
     1: (
       <View style={styles.obSlide}>
-        <View style={styles.welcomeOrbWrap}>
-          <Animated.View
-            pointerEvents="none"
-            style={[styles.welcomeGlow, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
-          />
-          <View pointerEvents="none" style={styles.welcomeRingOuter} />
-          <View pointerEvents="none" style={styles.welcomeRingInner} />
-          {faceFailed ? (
-            <View style={styles.welcomeFaceFallback}>
-              <Text style={{ fontSize: 64 }}>🌿</Text>
-            </View>
-          ) : (
-            <Animated.Image
-              source={EMO_FACE_NIGHT}
-              resizeMode="contain"
-              onError={() => setFaceFailed(true)}
-              style={[styles.welcomeFace, { transform: [{ scale: faceScale }] }]}
-            />
-          )}
-        </View>
+        {faceOrb}
         <Text style={styles.obEyebrow}>Welcome to Emocare</Text>
         <Text style={styles.obTitle}>A quiet space to{'\n'}return to yourself.</Text>
         <Text style={styles.obBody}>
@@ -890,14 +895,24 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
     ),
     3: (
       <View style={styles.obSlide}>
-        <View style={styles.obOrb}>
-          <Text style={{ fontSize: 52 }}>🔒</Text>
-        </View>
-        <Text style={styles.obTitle}>Your thoughts{'\n'}stay with you</Text>
+        {faceOrb}
+        <Text style={styles.obEyebrow}>Your privacy</Text>
+        <Text style={styles.obTitle}>Your thoughts{'\n'}stay with you.</Text>
         <Text style={styles.obBody}>
-          Everything you write in your journal and every conversation with Emo is stored privately on your device
-          only.{'\n\n'}Nothing is shared. Nothing is sold. This space is entirely yours.
+          Everything is stored privately on your device.{'\n'}Nothing shared. Nothing sold.
         </Text>
+        <GlassCard style={{ paddingVertical: 16, paddingHorizontal: 18, marginTop: 22, width: '100%' }}>
+          <View style={styles.obBulletRow}>
+            <View style={styles.obBulletDot} />
+            <Text style={styles.obBulletText}>Zero‑knowledge storage. Sovereign data.</Text>
+          </View>
+          <View style={[styles.obBulletRow, { marginTop: 12 }]}>
+            <View style={styles.obBulletDot} />
+            <Text style={styles.obBulletText}>
+              Memory Ledger — see &amp; delete what Emo holds, with a single tap.
+            </Text>
+          </View>
+        </GlassCard>
         <TouchableOpacity style={[styles.obBtn, { marginTop: 'auto' }]} onPress={() => goNext(4)}>
           <Text style={styles.primaryBtnText}>That feels good →</Text>
         </TouchableOpacity>
@@ -1708,6 +1723,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  obBulletRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  obBulletDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: C.purple,
+    marginTop: 6,
+    marginRight: 11,
+  },
+  obBulletText: { flex: 1, fontSize: 13, color: C.white80, lineHeight: 20 },
   obEyebrow: {
     fontSize: 10,
     fontWeight: '600',
