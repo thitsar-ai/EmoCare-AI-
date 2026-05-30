@@ -149,11 +149,11 @@ function GlowOrb({ color, size, top, right, opacity = 0.55 }: GlowOrbProps) {
  * Full-bleed gradient backdrop. Sits behind every screen as an absolute fill
  * so the purple never reads flat, and ambient orbs add depth.
  */
-function ScreenBackground({ orbs = true }: { orbs?: boolean }) {
+function ScreenBackground({ orbs = true, colors }: { orbs?: boolean; colors?: [string, string] }) {
   return (
     <>
       <LinearGradient
-        colors={[C.gradientTop, C.gradientBottom]}
+        colors={colors ?? [C.gradientTop, C.gradientBottom]}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={StyleSheet.absoluteFillObject}
@@ -175,6 +175,17 @@ interface ScreenProps {
   scrollRef?: React.RefObject<ScrollView | null>;
   onContentSizeChange?: () => void;
   contentStyle?: ViewStyle;
+  backgroundColors?: [string, string];
+}
+
+/**
+ * Circadian home gradient — shifts the background by the device's local hour.
+ */
+function getCircadianGradient(hour: number): [string, string] {
+  if (hour >= 6 && hour <= 11) return ['#E8E4F5', '#F0ECF8']; // 6am–11am lavender
+  if (hour >= 12 && hour <= 17) return ['#DDD6F3', '#EDE8F5']; // 12pm–5pm soft purple
+  if (hour >= 18 && hour <= 21) return ['#2D1B4A', '#1A0F2E']; // 6pm–9pm warm rose-purple
+  return ['#0D0720', '#1A0F2E']; // 10pm–5am deep dark
 }
 
 /**
@@ -183,13 +194,13 @@ interface ScreenProps {
  *  2. SafeAreaView (top edge) from react-native-safe-area-context
  *  3. ScrollView whose contentContainer reserves room for the floating nav bar
  */
-function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle }: ScreenProps) {
+function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle, backgroundColors }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const bottomClearance = NAV_CONTENT_HEIGHT + insets.bottom + 24;
 
   return (
     <View style={styles.flex}>
-      <ScreenBackground />
+      <ScreenBackground colors={backgroundColors} />
       <SafeAreaView style={styles.flex} edges={['top']}>
         {scroll ? (
           <ScrollView
@@ -573,9 +584,10 @@ function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
   const [affIdx, setAffIdx] = useState(0);
   const hour = new Date().getHours();
   const timeLabel = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const circadianColors = getCircadianGradient(hour);
 
   return (
-    <Screen>
+    <Screen backgroundColors={circadianColors}>
       <View style={{ marginTop: 10, marginBottom: 26 }}>
         <Text style={styles.sanctuaryLabel}>Sanctuary</Text>
         <Text style={styles.heroGreeting}>
