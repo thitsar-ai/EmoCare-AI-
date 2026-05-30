@@ -819,7 +819,7 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
   const haloScale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] });
   const haloOpacity = reduceMotion ? 0.5 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.62] });
 
-  const goNext = (next: number) => {
+  const goTo = (next: number) => {
     Animated.sequence([
       Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
       Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
@@ -872,28 +872,12 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
             Emocare offers gentle emotional support and reflection. It is not a substitute for professional care.
           </Text>
         </GlassCard>
-        <TouchableOpacity style={styles.obBtn} onPress={() => goNext(2)}>
+        <TouchableOpacity style={styles.obBtn} onPress={() => goTo(2)}>
           <Text style={styles.primaryBtnText}>Let's begin gently →</Text>
         </TouchableOpacity>
       </View>
     ),
     2: (
-      <View style={styles.obSlide}>
-        <View style={styles.obOrb}>
-          <Text style={{ fontSize: 52 }}>💜</Text>
-        </View>
-        <Text style={styles.obTitle}>A companion,{'\n'}not a clinician</Text>
-        <Text style={styles.obBody}>
-          Emo listens without judgment. She reflects, asks gentle questions, and helps you feel heard — but she
-          doesn't diagnose, prescribe, or replace a real therapist.{'\n\n'}Think of her as a calm presence, always
-          available.
-        </Text>
-        <TouchableOpacity style={[styles.obBtn, { marginTop: 'auto' }]} onPress={() => goNext(3)}>
-          <Text style={styles.primaryBtnText}>I understand →</Text>
-        </TouchableOpacity>
-      </View>
-    ),
-    3: (
       <View style={styles.obSlide}>
         {faceOrb}
         <Text style={styles.obEyebrow}>Your privacy</Text>
@@ -913,12 +897,12 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
             </Text>
           </View>
         </GlassCard>
-        <TouchableOpacity style={[styles.obBtn, { marginTop: 'auto' }]} onPress={() => goNext(4)}>
+        <TouchableOpacity style={[styles.obBtn, { marginTop: 'auto' }]} onPress={() => goTo(3)}>
           <Text style={styles.primaryBtnText}>That feels good →</Text>
         </TouchableOpacity>
       </View>
     ),
-    4: (
+    3: (
       <View style={styles.obSlide}>
         <Text style={styles.obEyebrow}>One last thing</Text>
         <Text style={styles.obTitle}>What shall we{'\n'}call you?</Text>
@@ -965,10 +949,20 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
       <StatusBar style="light" />
       <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
         <View style={styles.obProgressRow}>
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3].map((i) => (
             <View key={i} style={[styles.obDot, slide === i && styles.obDotActive, slide > i && styles.obDotDone]} />
           ))}
         </View>
+        {slide > 1 ? (
+          <TouchableOpacity
+            style={styles.obBackBtn}
+            onPress={() => goTo(slide - 1)}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+            accessibilityLabel="Go back"
+          >
+            <Text style={styles.obBackText}>←</Text>
+          </TouchableOpacity>
+        ) : null}
         <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
           <ScrollView
             contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
@@ -1663,6 +1657,17 @@ const styles = StyleSheet.create({
   // Onboarding
   obSlide: { flex: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 20, paddingBottom: 20 },
   obProgressRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingTop: 14, paddingBottom: 6 },
+  obBackBtn: {
+    position: 'absolute',
+    left: 16,
+    top: 8,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  obBackText: { color: C.white80, fontSize: 28, fontWeight: '300', lineHeight: 30 },
   obDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.white10 },
   obDotActive: { width: 20, borderRadius: 4, backgroundColor: C.purple },
   obDotDone: { backgroundColor: C.white30 },
