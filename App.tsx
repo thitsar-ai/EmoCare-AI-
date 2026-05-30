@@ -281,6 +281,46 @@ function EmoAvatar({ size = 44 }: { size?: number }) {
   );
 }
 
+/**
+ * Emo orb — the mascot face on the home screen with a gentle continuous pulse.
+ */
+function EmoOrb() {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 2600, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.55] });
+
+  return (
+    <View style={styles.orbWrap}>
+      <Animated.View style={[styles.orbGlow, { opacity: glowOpacity, transform: [{ scale }] }]} />
+      {failed ? (
+        <Animated.View style={[styles.orbFallback, { transform: [{ scale }] }]}>
+          <Text style={{ fontSize: 52 }}>🌿</Text>
+        </Animated.View>
+      ) : (
+        <Animated.Image
+          source={EMO_FACE}
+          resizeMode="contain"
+          onError={() => setFailed(true)}
+          style={[styles.orbImage, { transform: [{ scale }] }]}
+        />
+      )}
+    </View>
+  );
+}
+
 function MoodWave() {
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   const today = new Date().getDay();
@@ -588,6 +628,7 @@ function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
 
   return (
     <Screen backgroundColors={circadianColors}>
+      <EmoOrb />
       <View style={{ marginTop: 10, marginBottom: 26 }}>
         <Text style={styles.sanctuaryLabel}>Sanctuary</Text>
         <Text style={styles.heroGreeting}>
@@ -1147,6 +1188,19 @@ const styles = StyleSheet.create({
     backgroundColor: C.purple,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Emo orb (home screen pulse)
+  orbWrap: { alignItems: 'center', justifyContent: 'center', height: 130, marginTop: 8, marginBottom: 6 },
+  orbGlow: { position: 'absolute', width: 130, height: 130, borderRadius: 65, backgroundColor: C.purpleGlow },
+  orbImage: { width: 116, height: 116 },
+  orbFallback: {
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.purpleLight,
   },
 
   // Onboarding
