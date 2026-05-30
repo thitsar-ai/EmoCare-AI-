@@ -10,20 +10,45 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  Easing,
   Dimensions,
   Modal,
   Image,
+  AccessibilityInfo,
   type ViewStyle,
   type ImageSourcePropType,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import * as NativeSplash from 'expo-splash-screen';
 import * as Speech from 'expo-speech';
+
+// Keep the native launch screen up until our animated splash is mounted (no white flash).
+NativeSplash.preventAutoHideAsync().catch(() => {});
+
+// Custom hook: true when the user has "Reduce Motion" enabled.
+function useReduceMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => {
+      if (mounted) setReduced(v);
+    });
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, []);
+  return reduced;
+}
 import {
   SafeAreaProvider,
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { callAnthropicMessages, describeAnthropicError } from './utils/anthropic';
 
 const { width, height } = Dimensions.get('window');
 
@@ -190,6 +215,99 @@ function getCircadianGradient(hour: number): [string, string] {
 }
 
 /**
+ * Full circadian theme — gradient + readable colors for both light & dark periods.
+ * Used by the splash screen (and available for future pages).
+ */
+type CircadianTheme = {
+  gradient: readonly [string, string];
+  splashGradient: readonly string[]; // seamless 3-stop blend for the splash
+  isDark: boolean;
+  text: string; // primary text
+  secondaryText: string; // tagline
+  mutedText: string; // subtitle
+  card: string;
+  border: string;
+  accent: string;
+  glow: string; // face halo
+  barTrack: string;
+  barFill: string;
+};
+
+function getCircadianTheme(date: Date = new Date()): CircadianTheme {
+  const hour = date.getHours();
+
+  // Morning — 6am–11am
+  if (hour >= 6 && hour <= 11) {
+    return {
+      gradient: ['#E8E4F5', '#F0ECF8'],
+      splashGradient: ['#F0ECF8', '#E9E4F6', '#E0D8F2'],
+      isDark: false,
+      text: '#4E3A85',
+      secondaryText: '#7F77DD',
+      mutedText: '#615A82', // darkened for readable contrast on pale lavender
+      card: 'rgba(255,255,255,0.55)',
+      border: 'rgba(126,110,180,0.15)',
+      accent: '#9B7BFF',
+      glow: 'rgba(155,123,255,0.30)',
+      barTrack: '#DCCFF9',
+      barFill: '#9B7BFF',
+    };
+  }
+
+  // Afternoon — 12pm–5pm
+  if (hour >= 12 && hour <= 17) {
+    return {
+      gradient: ['#DDD6F3', '#EDE8F5'],
+      splashGradient: ['#EDE8F5', '#E4DDF4', '#D8CFF1'],
+      isDark: false,
+      text: '#4A377E',
+      secondaryText: '#7767D4',
+      mutedText: '#5E5680', // darkened for readable contrast on pale lavender
+      card: 'rgba(255,255,255,0.50)',
+      border: 'rgba(126,110,180,0.15)',
+      accent: '#9473FF',
+      glow: 'rgba(148,115,255,0.30)',
+      barTrack: '#DCCFF9',
+      barFill: '#9473FF',
+    };
+  }
+
+  // Evening — 6pm–9pm
+  if (hour >= 18 && hour <= 21) {
+    return {
+      gradient: ['#2D1B4A', '#1A0F2E'],
+      splashGradient: ['#34184F', '#23123C', '#160B26'],
+      isDark: true,
+      text: '#FFFFFF',
+      secondaryText: '#B9A6F8',
+      mutedText: '#9D92C5',
+      card: 'rgba(255,255,255,0.08)',
+      border: 'rgba(255,255,255,0.10)',
+      accent: '#B79DFF',
+      glow: 'rgba(183,157,255,0.35)',
+      barTrack: 'rgba(255,255,255,0.15)',
+      barFill: '#B79DFF',
+    };
+  }
+
+  // Night — 10pm–5am
+  return {
+    gradient: ['#0D0720', '#1A0F2E'],
+    splashGradient: ['#2A1350', '#1C0F38', '#130429'],
+    isDark: true,
+    text: '#FFFFFF',
+    secondaryText: '#C4B7FF',
+    mutedText: '#A99CCF',
+    card: 'rgba(255,255,255,0.06)',
+    border: 'rgba(255,255,255,0.08)',
+    accent: '#C6B0FF',
+    glow: 'rgba(198,176,255,0.35)',
+    barTrack: 'rgba(255,255,255,0.15)',
+    barFill: '#B79DFF',
+  };
+}
+
+/**
  * Standard screen frame:
  *  1. Absolute-fill gradient background
  *  2. SafeAreaView (top edge) from react-native-safe-area-context
@@ -288,8 +406,10 @@ function EmoAvatar({ size = 44 }: { size?: number }) {
 function EmoOrb() {
   const pulse = useRef(new Animated.Value(0)).current;
   const [failed, setFailed] = useState(false);
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
+    if (reduceMotion) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
@@ -298,10 +418,10 @@ function EmoOrb() {
     );
     loop.start();
     return () => loop.stop();
-  }, [pulse]);
+  }, [pulse, reduceMotion]);
 
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.55] });
+  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const glowOpacity = reduceMotion ? 0.4 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.55] });
 
   return (
     <View style={styles.orbWrap}>
@@ -318,6 +438,190 @@ function EmoOrb() {
           style={[styles.orbImage, { transform: [{ scale }] }]}
         />
       )}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Page 1 — Splash / Launch Screen
+ * ------------------------------------------------------------------ */
+
+// Circadian Emo faces — lavender for daylight, glowing dark for evening/night.
+const EMO_FACE_DAY: ImageSourcePropType = require('./assets/emo-face-day.png');
+const EMO_FACE_NIGHT: ImageSourcePropType = require('./assets/emo-face-night.png');
+
+// Faint floating particles (deterministic positions) for the night sky feel.
+const SPLASH_PARTICLES = [
+  { left: 0.12, top: 0.16, size: 3, opacity: 0.45 },
+  { left: 0.82, top: 0.13, size: 2, opacity: 0.4 },
+  { left: 0.68, top: 0.27, size: 3, opacity: 0.5 },
+  { left: 0.22, top: 0.34, size: 2, opacity: 0.35 },
+  { left: 0.9, top: 0.4, size: 2, opacity: 0.45 },
+  { left: 0.08, top: 0.52, size: 3, opacity: 0.4 },
+  { left: 0.78, top: 0.6, size: 2, opacity: 0.5 },
+  { left: 0.3, top: 0.64, size: 2, opacity: 0.35 },
+  { left: 0.55, top: 0.72, size: 3, opacity: 0.55 },
+  { left: 0.16, top: 0.78, size: 2, opacity: 0.45 },
+  { left: 0.86, top: 0.8, size: 3, opacity: 0.5 },
+  { left: 0.42, top: 0.86, size: 2, opacity: 0.4 },
+  { left: 0.64, top: 0.9, size: 2, opacity: 0.45 },
+  { left: 0.26, top: 0.92, size: 3, opacity: 0.5 },
+] as const;
+
+function SplashScreen({ onDone }: { onDone?: () => void }) {
+  const theme = getCircadianTheme();
+  const reduceMotion = useReduceMotion();
+  const auroraA = theme.isDark ? 1 : 0.45; // softer aurora in daylight themes
+  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
+  const pulse = useRef(new Animated.Value(0)).current;
+  const progress = useRef(new Animated.Value(0)).current;
+  const fadeIn = useRef(new Animated.Value(0)).current;
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    // Hand off from the native launch screen now that our splash is on screen.
+    NativeSplash.hideAsync().catch(() => {});
+
+    // Gentle entrance
+    Animated.timing(fadeIn, {
+      toValue: 1,
+      duration: reduceMotion ? 1 : 900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+
+    // Slow, calming breathing pulse — skipped when Reduce Motion is on
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 2800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 2800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    if (!reduceMotion) loop.start();
+
+    // Soft loading bar fills once, then hands off
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 3000,
+      easing: Easing.inOut(Easing.quad),
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished && onDone) onDone();
+    });
+
+    return () => loop.stop();
+  }, [pulse, progress, fadeIn, onDone, reduceMotion]);
+
+  // When Reduce Motion is on, the face rests still and fully visible.
+  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
+  const faceOpacity = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
+  const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['8%', '100%'] });
+
+  return (
+    <View style={styles.flex}>
+      <LinearGradient
+        colors={theme.splashGradient as string[]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      {/* Soft aurora glow — only on the light daytime themes */}
+      {!theme.isDark ? (
+        <View pointerEvents="none" style={styles.auroraClip}>
+          <View
+            style={[styles.auroraWide, { backgroundColor: `rgba(170,132,255,${0.4 * auroraA})` }]}
+          />
+          <View
+            style={[styles.auroraCore, { backgroundColor: `rgba(226,198,255,${0.5 * auroraA})` }]}
+          />
+          <BlurView intensity={45} tint="light" style={StyleSheet.absoluteFill} />
+        </View>
+      ) : null}
+
+      {/* Floating particles */}
+      {SPLASH_PARTICLES.map((p, i) => (
+        <View
+          key={i}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: width * p.left,
+            top: height * p.top,
+            width: p.size,
+            height: p.size,
+            borderRadius: p.size / 2,
+            backgroundColor: theme.isDark ? '#FFFFFF' : theme.accent,
+            opacity: p.opacity * (theme.isDark ? 1 : 0.4),
+          }}
+        />
+      ))}
+
+      <Animated.View style={[styles.splashContent, { opacity: fadeIn }]}>
+        <View style={styles.splashFaceWrap}>
+          {failed ? (
+            <Animated.View style={[styles.splashFaceFallback, { transform: [{ scale }], opacity: faceOpacity }]}>
+              <Text style={{ fontSize: 84 }}>🌿</Text>
+            </Animated.View>
+          ) : (
+            <Animated.Image
+              source={faceSource}
+              resizeMode="contain"
+              onError={() => setFailed(true)}
+              style={[styles.splashFace, { transform: [{ scale }], opacity: faceOpacity }]}
+            />
+          )}
+        </View>
+
+        <Text
+          style={[styles.splashTitle, { color: theme.text }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          EmoCare AI
+        </Text>
+        <Text
+          style={[styles.splashTagline, { color: theme.secondaryText }]}
+          numberOfLines={1}
+        >
+          Intelligence with Soul.
+        </Text>
+
+        <View style={[styles.splashBarTrack, { backgroundColor: theme.barTrack }]}>
+          <Animated.View
+            style={[
+              styles.splashBarFill,
+              {
+                width: barWidth,
+                backgroundColor: theme.barFill,
+                shadowColor: theme.barFill,
+              },
+            ]}
+          />
+        </View>
+
+        <Text
+          style={[
+            styles.splashSubtitle,
+            { color: theme.mutedText, opacity: theme.isDark ? 0.75 : 0.8 },
+          ]}
+          numberOfLines={1}
+        >
+          The Emotional Operating System
+        </Text>
+      </Animated.View>
+
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
     </View>
   );
 }
@@ -482,7 +786,38 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
   const [slide, setSlide] = useState(1);
   const [name, setName] = useState('');
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
+  const [faceFailed, setFaceFailed] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // Gentle breathing halo for the Welcome Emo face — calmed when Reduce Motion is on.
+  const reduceMotion = useReduceMotion();
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 2800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 2800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse, reduceMotion]);
+
+  const faceScale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
+  const haloScale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] });
+  const haloOpacity = reduceMotion ? 0.5 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.62] });
 
   const goNext = (next: number) => {
     Animated.sequence([
@@ -501,8 +836,25 @@ function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string })
   const slides: Record<number, React.ReactNode> = {
     1: (
       <View style={styles.obSlide}>
-        <View style={styles.obOrb}>
-          <Text style={{ fontSize: 52 }}>🌿</Text>
+        <View style={styles.welcomeOrbWrap}>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.welcomeGlow, { opacity: haloOpacity, transform: [{ scale: haloScale }] }]}
+          />
+          <View pointerEvents="none" style={styles.welcomeRingOuter} />
+          <View pointerEvents="none" style={styles.welcomeRingInner} />
+          {faceFailed ? (
+            <View style={styles.welcomeFaceFallback}>
+              <Text style={{ fontSize: 64 }}>🌿</Text>
+            </View>
+          ) : (
+            <Animated.Image
+              source={EMO_FACE_NIGHT}
+              resizeMode="contain"
+              onError={() => setFaceFailed(true)}
+              style={[styles.welcomeFace, { transform: [{ scale: faceScale }] }]}
+            />
+          )}
         </View>
         <Text style={styles.obEyebrow}>Welcome to Emocare</Text>
         <Text style={styles.obTitle}>A quiet space to{'\n'}return to yourself.</Text>
@@ -624,14 +976,19 @@ function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
   const [showCheckIn, setShowCheckIn] = useState(false);
   const [affIdx, setAffIdx] = useState(0);
   const hour = new Date().getHours();
-  const timeLabel = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const timeLabel =
+    hour >= 5 && hour < 12
+      ? 'Good morning'
+      : hour >= 12 && hour < 17
+      ? 'Good afternoon'
+      : 'Good evening';
   const circadianColors = getCircadianGradient(hour);
 
   return (
     <Screen backgroundColors={circadianColors}>
       <EmoOrb />
       <View style={{ marginTop: 10, marginBottom: 26 }}>
-        <Text style={styles.sanctuaryLabel}>Sanctuary</Text>
+        <Text style={styles.sanctuaryLabel}>Intelligence with Soul</Text>
         <Text style={styles.heroGreeting}>
           {timeLabel},{'\n'}
           {userName || 'friend'} 💜
@@ -725,29 +1082,33 @@ function ChatScreen({ userName }: { userName: string }) {
     setHistory(newHistory);
     setIsWaiting(true);
     try {
-      const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_KEY ?? '';
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
-        }),
+      const result = await callAnthropicMessages({
+        system: SYSTEM_PROMPT,
+        maxTokens: 1000,
+        messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
       });
-      const data = await response.json();
-      const replyText: string =
-        data?.content?.[0]?.text ?? "I'm still here. Take your time. 💜";
+
       const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setHistory([...newHistory, { role: 'assistant', content: replyText }]);
-      setMessages([...newMessages, { role: 'bot', text: replyText, time: replyTime }]);
-      Speech.speak(replyText, { pitch: 0.9, rate: 0.85 });
-    } catch {
+
+      if (result.ok && result.data?.content?.[0]?.text) {
+        const replyText: string = result.data.content[0].text;
+        setHistory([...newHistory, { role: 'assistant', content: replyText }]);
+        setMessages([...newMessages, { role: 'bot', text: replyText, time: replyTime }]);
+        Speech.speak(replyText, { pitch: 0.9, rate: 0.85 });
+      } else {
+        const reason = describeAnthropicError(result.data ?? { error: result.error });
+        console.warn('[EmoCare] Anthropic chat failed:', result.status, reason);
+        setMessages([
+          ...newMessages,
+          {
+            role: 'bot',
+            text: "I'm still here with you. Something interrupted my reply just now — try sending that again? 💜",
+            time: replyTime,
+          },
+        ]);
+      }
+    } catch (err) {
+      console.warn('[EmoCare] Anthropic chat threw:', err);
       setMessages([
         ...newMessages,
         { role: 'bot', text: 'Something went gently wrong. Please try again. 🌿', time: '' },
@@ -769,7 +1130,7 @@ function ChatScreen({ userName }: { userName: string }) {
             <EmoAvatar size={38} />
             <View>
               <Text style={[styles.cardTitle, { fontSize: 15 }]}>Emo</Text>
-              <Text style={styles.cardSub}>{isWaiting ? 'Emo is here with you...' : 'Talk & be heard'}</Text>
+              <Text style={styles.cardSub}>{isWaiting ? 'Emo is here with you...' : 'Always here with you ✨'}</Text>
             </View>
           </View>
 
@@ -1100,6 +1461,7 @@ function NavBar({ active, onNav }: { active: ScreenKey; onNav: (key: ScreenKey) 
 function Root() {
   const [onboarded, setOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [splashDone, setSplashDone] = useState(false);
   const [userName, setUserName] = useState('');
   const [screen, setScreen] = useState<ScreenKey>('home');
 
@@ -1117,12 +1479,9 @@ function Root() {
     });
   }, []);
 
-  if (loading) {
-    return (
-      <View style={styles.flex}>
-        <ScreenBackground orbs={false} />
-      </View>
-    );
+  // Page 1 — show the splash until data has loaded AND the splash animation finishes.
+  if (loading || !splashDone) {
+    return <SplashScreen onDone={() => setSplashDone(true)} />;
   }
 
   if (!onboarded) {
@@ -1205,6 +1564,87 @@ const styles = StyleSheet.create({
     backgroundColor: C.purpleLight,
   },
 
+  // Splash / Launch (Page 1)
+  splashContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  splashFaceWrap: {
+    width: 300,
+    height: 300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  splashFace: { width: 296, height: 296, borderRadius: 148 },
+  splashFaceFallback: {
+    width: 264,
+    height: 264,
+    borderRadius: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashTitle: {
+    fontSize: 44,
+    lineHeight: 50,
+    fontWeight: '400',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  splashTagline: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: '500',
+    letterSpacing: 2, // luxury spacing
+    textAlign: 'center',
+    marginTop: 26, // ~2 spaces below the title
+  },
+  splashBarTrack: {
+    width: '35%',
+    height: 6,
+    borderRadius: 999,
+    marginTop: 72, // pushed down, sitting just above the subtitle
+    overflow: 'hidden',
+  },
+  splashBarFill: {
+    height: 6,
+    borderRadius: 999,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 10,
+    shadowOpacity: 0.35,
+    elevation: 4,
+  },
+  splashSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    marginTop: 22, // sits just below the bar, near the lower particles
+  },
+  auroraClip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: height * 0.6,
+    overflow: 'hidden',
+  },
+  auroraWide: {
+    position: 'absolute',
+    bottom: -height * 0.22,
+    alignSelf: 'center',
+    width: width * 1.8,
+    height: height * 0.62,
+    borderRadius: width * 0.9,
+  },
+  auroraCore: {
+    position: 'absolute',
+    bottom: -height * 0.1,
+    alignSelf: 'center',
+    width: width * 0.95,
+    height: height * 0.36,
+    borderRadius: width * 0.5,
+  },
+
   // Onboarding
   obSlide: { flex: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 20, paddingBottom: 20 },
   obProgressRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingTop: 14, paddingBottom: 6 },
@@ -1222,6 +1662,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 24,
     marginTop: 20,
+  },
+  // Welcome (slide 1) — Emo face nestled in a soft breathing halo + sanctuary rings
+  welcomeOrbWrap: {
+    width: 236,
+    height: 236,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  welcomeGlow: {
+    position: 'absolute',
+    width: 168,
+    height: 168,
+    borderRadius: 84,
+    backgroundColor: 'rgba(155,123,255,0.22)',
+    shadowColor: '#9B7BFF',
+    shadowOpacity: 0.75,
+    shadowRadius: 42,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  welcomeRingOuter: {
+    position: 'absolute',
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    borderWidth: 1,
+    borderColor: 'rgba(183,157,255,0.16)',
+  },
+  welcomeRingInner: {
+    position: 'absolute',
+    width: 186,
+    height: 186,
+    borderRadius: 93,
+    borderWidth: 1,
+    borderColor: 'rgba(183,157,255,0.30)',
+  },
+  welcomeFace: { width: 152, height: 152, borderRadius: 76 },
+  welcomeFaceFallback: {
+    width: 152,
+    height: 152,
+    borderRadius: 76,
+    backgroundColor: C.purpleLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   obEyebrow: {
     fontSize: 10,
