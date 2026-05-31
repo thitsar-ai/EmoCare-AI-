@@ -1,7 +1,11 @@
 import React from 'react';
 import {
-  Image,
+  Animated,
+  Easing,
+  Keyboard,
   KeyboardAvoidingView,
+  Modal,
+  PixelRatio,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,48 +13,155 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Reanimated, {
   useAnimatedStyle,
   type SharedValue,
 } from 'react-native-reanimated';
-import LivingCanvas from '../LivingCanvas';
-import { SanctuaryRippleRings } from '../SanctuaryRippleRings';
-import { useSanctuaryAmbient } from '../SanctuaryAmbientContext';
+import {
+  CircadianBackground,
+  useCircadianTheme,
+  type CircadianTheme,
+} from '../../theme/circadianTheme';
+import { getSanctuaryEmoFace, getSanctuaryEmoOrbSize } from '../../theme/sanctuaryEmoFace';
 import { useVoiceStream } from './VoiceStreamContext';
-import { isElevenLabsConfigured } from '../../utils/elevenLabs';
 
-const EMO_FACE = require('../../assets/emo-face-transparent.png');
+const VOICE_MENU_SOLID = '#2A1848';
 
 interface VoiceTalkScreenProps {
   userName?: string;
   onClose: () => void;
 }
 
-function VoiceFloatingMascot({
+function VoiceEmoOrb({
+  theme,
   audioVolume,
 }: {
+  theme: CircadianTheme;
   audioVolume: SharedValue<number>;
 }) {
-  const faceStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + audioVolume.value * 0.14 }],
-    opacity: 0.96 + audioVolume.value * 0.04,
+  const faceSource = getSanctuaryEmoFace(theme.phase);
+  const orbSize = getSanctuaryEmoOrbSize();
+  const glowSize = PixelRatio.roundToNearestPixel(orbSize + 14);
+  const pulse = React.useRef(new Animated.Value(0)).current;
+  const audioStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + audioVolume.value * 0.05 }],
   }));
 
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 2600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 2600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const breatheScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] });
+  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.48] });
+
   return (
-    <View style={styles.heroZone} pointerEvents="none">
-      <SanctuaryRippleRings size={320} />
-      <Animated.View style={[styles.heroFace, faceStyle]}>
-        <Image source={EMO_FACE} style={styles.heroImage} resizeMode="contain" />
-      </Animated.View>
+    <View style={[styles.orbWrap, { width: glowSize + 24, height: glowSize + 24 }]}>
+      <View pointerEvents="none" style={[styles.orbRingOuter, { width: glowSize + 18, height: glowSize + 18, borderRadius: (glowSize + 18) / 2 }]} />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.orbGlow,
+          {
+            width: glowSize,
+            height: glowSize,
+            borderRadius: glowSize / 2,
+            opacity: glowOpacity,
+            backgroundColor: theme.glow,
+            shadowColor: theme.accent,
+          },
+        ]}
+      />
+      <View pointerEvents="none" style={[styles.orbRingInner, { width: glowSize - 8, height: glowSize - 8, borderRadius: (glowSize - 8) / 2 }]} />
+      <Reanimated.View style={audioStyle}>
+        <Animated.Image
+          source={faceSource}
+          resizeMode="contain"
+          style={{
+            width: orbSize,
+            height: orbSize,
+            backgroundColor: 'transparent',
+            transform: [{ scale: breatheScale }],
+          }}
+        />
+      </Reanimated.View>
     </View>
   );
 }
 
+function VoiceMenuDropdown({
+  visible,
+  theme,
+  onClose,
+  onMeditation,
+  onStory,
+}: {
+  visible: boolean;
+  theme: CircadianTheme;
+  onClose: () => void;
+  onMeditation: () => void;
+  onStory: () => void;
+}) {
+  const items = [
+    { label: '🧘  Guided meditation', action: onMeditation },
+    { label: '🌙  Calm story', action: onStory },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.menuOverlay} onPress={onClose}>
+        <View style={styles.menuAnchor}>
+          <View
+            style={[
+              styles.menuSheet,
+              { backgroundColor: VOICE_MENU_SOLID, borderColor: theme.border },
+            ]}
+          >
+            {items.map((item, index) => (
+              <Pressable
+                key={item.label}
+                onPress={() => {
+                  onClose();
+                  item.action();
+                }}
+                style={({ pressed }) => [
+                  styles.menuItem,
+                  index < items.length - 1 && styles.menuItemBorder,
+                  pressed && styles.menuItemPressed,
+                ]}
+              >
+                <Text style={[styles.menuItemText, { color: theme.text }]}>{item.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
 export function VoiceTalkScreen({ userName, onClose }: VoiceTalkScreenProps) {
+  const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
-  const { ambientProgress } = useSanctuaryAmbient();
+  const inputRef = React.useRef<TextInput>(null);
   const {
     audioVolume,
     statusLabel,
@@ -59,9 +170,12 @@ export function VoiceTalkScreen({ userName, onClose }: VoiceTalkScreenProps) {
     exitVoiceMode,
     submitVoiceMessage,
     submitVoiceSession,
+    bargeIn,
+    isListening,
   } = useVoiceStream();
 
   const [draft, setDraft] = React.useState('');
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const sessionStarted = React.useRef(false);
 
   React.useEffect(() => {
@@ -74,6 +188,10 @@ export function VoiceTalkScreen({ userName, onClose }: VoiceTalkScreenProps) {
     };
   }, [enterVoiceMode, exitVoiceMode]);
 
+  React.useEffect(() => {
+    Keyboard.dismiss();
+  }, []);
+
   const displayName = userName?.trim() || 'friend';
 
   const handleSend = () => {
@@ -81,313 +199,291 @@ export function VoiceTalkScreen({ userName, onClose }: VoiceTalkScreenProps) {
     if (!text) return;
     submitVoiceMessage(text);
     setDraft('');
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+  };
+
+  const chromeBtnStyle = {
+    backgroundColor: theme.card,
+    borderColor: theme.border,
   };
 
   return (
-    <LivingCanvas ambientProgress={ambientProgress} style={StyleSheet.absoluteFillObject}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={insets.top}
-      >
-        <View style={[styles.root, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}>
-          <View style={styles.header}>
-            <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-              <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFillObject} />
-              <Text style={styles.closeText}>×</Text>
-            </Pressable>
-            <View style={styles.headerCopy}>
-              <Text style={styles.eyebrow}>Acoustic Sanctuary</Text>
-              <Text style={styles.title}>Voice Talk</Text>
-            </View>
-            <View style={{ width: 44 }} />
-          </View>
-
-          <Text style={styles.greeting}>{displayName}</Text>
-          <Text style={styles.sub}>{statusLabel}</Text>
-
-          {!isElevenLabsConfigured() ? (
-            <View style={styles.voiceKeyNote}>
-              <Text style={styles.voiceKeyNoteTitle}>Emo needs her real voice</Text>
-              <Text style={styles.voiceKeyNoteText}>
-                Add your ElevenLabs API key to .env as EXPO_PUBLIC_ELEVENLABS_API_KEY, then restart the app. Without it, the robotic system voice is used.
-              </Text>
-            </View>
-          ) : null}
-
-          {requiresTextInput ? (
-            <View style={styles.expoGoNote}>
-              <Text style={styles.expoGoNoteText}>
-                Expo Go can&apos;t transcribe speech. Type what you want to say — Emo will speak back.
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.sessionRow}>
+    <View style={styles.flex}>
+      <CircadianBackground theme={theme} />
+      <StatusBar style="light" />
+      <SafeAreaView style={styles.flex} edges={['top', 'left', 'right']}>
+        <View style={styles.root}>
+          <View style={styles.headerRow}>
             <Pressable
-              style={styles.sessionChip}
-              onPress={() => submitVoiceSession('meditation')}
+              onPress={onClose}
+              style={[styles.iconBtn, chromeBtnStyle]}
+              hitSlop={12}
             >
-              <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFillObject} />
-              <Text style={styles.sessionChipEmoji}>🧘</Text>
-              <Text style={styles.sessionChipLabel}>Guided meditation</Text>
-              <Text style={styles.sessionChipSub}>~3–4 min · calm breath</Text>
+              <Text style={[styles.closeText, { color: theme.text }]}>×</Text>
             </Pressable>
+            <View style={styles.headerSpacer} />
             <Pressable
-              style={styles.sessionChip}
-              onPress={() => submitVoiceSession('story')}
+              onPress={() => setMenuOpen(true)}
+              style={[styles.iconBtn, chromeBtnStyle]}
+              hitSlop={10}
             >
-              <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFillObject} />
-              <Text style={styles.sessionChipEmoji}>🌙</Text>
-              <Text style={styles.sessionChipLabel}>Calm story</Text>
-              <Text style={styles.sessionChipSub}>~2–3 min · soft tale</Text>
+              <Text style={[styles.menuText, { color: theme.text }]}>⋯</Text>
             </Pressable>
           </View>
 
-          <View style={styles.heroSlot}>
-            <VoiceFloatingMascot audioVolume={audioVolume} />
+          <View style={styles.heroSection}>
+            <VoiceEmoOrb theme={theme} audioVolume={audioVolume} />
+
+            <View style={styles.copyBlock}>
+              <Text style={[styles.brandTitle, { color: theme.text }]}>Emo</Text>
+              <Text style={[styles.brandSub, { color: theme.secondaryText }]}>
+                Always here for you
+              </Text>
+              <Text style={[styles.greeting, { color: theme.text }]}>
+                Good to hear you, {displayName}
+              </Text>
+              <Text style={[styles.statusLine, { color: theme.mutedText }]}>{statusLabel}</Text>
+            </View>
           </View>
 
-          <View style={styles.controls}>
-            {requiresTextInput ? (
-              <>
-                <View style={styles.inputShell}>
-                  <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFillObject} />
-                  <TextInput
-                    value={draft}
-                    onChangeText={setDraft}
-                    placeholder="What's on your heart?"
-                    placeholderTextColor="rgba(107, 79, 168, 0.45)"
-                    style={styles.input}
-                    multiline
-                    maxLength={500}
-                    returnKeyType="send"
-                    blurOnSubmit
-                    onSubmitEditing={handleSend}
-                  />
-                </View>
-                <Pressable
-                  onPress={handleSend}
-                  style={[styles.controlChip, !draft.trim() && styles.controlChipDisabled]}
-                  disabled={!draft.trim()}
-                >
-                  <BlurView intensity={20} tint="light" style={StyleSheet.absoluteFillObject} />
-                  <Text style={styles.controlChipText}>Send · Emo responds aloud</Text>
+          <View style={styles.spacer} />
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
+          >
+            <View
+              style={[
+                styles.footer,
+                { paddingBottom: Math.max(insets.bottom, 12) + 4 },
+              ]}
+            >
+              {requiresTextInput ? (
+                <>
+                  <Text style={[styles.expoHint, { color: theme.mutedText }]}>
+                    Type what you want to say — Emo will speak back aloud.
+                  </Text>
+                  <Pressable
+                    onPress={() => inputRef.current?.focus()}
+                    style={[styles.inputShell, chromeBtnStyle]}
+                  >
+                    <TextInput
+                      ref={inputRef}
+                      value={draft}
+                      onChangeText={setDraft}
+                      placeholder="What's on your heart?"
+                      placeholderTextColor={theme.mutedText}
+                      style={[styles.input, { color: theme.text }]}
+                      returnKeyType="send"
+                      submitBehavior="submit"
+                      blurOnSubmit={false}
+                      onSubmitEditing={handleSend}
+                      multiline={false}
+                      autoFocus={false}
+                      showSoftInputOnFocus
+                      autoCorrect
+                      autoCapitalize="sentences"
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={handleSend}
+                    style={[
+                      styles.actionPill,
+                      chromeBtnStyle,
+                      !draft.trim() && styles.actionPillDisabled,
+                    ]}
+                    disabled={!draft.trim()}
+                  >
+                    <Text style={[styles.actionPillText, { color: theme.accent }]}>
+                      Send · Emo responds aloud
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Pressable onPress={bargeIn} style={[styles.actionPill, chromeBtnStyle]}>
+                  <Text style={[styles.actionPillText, { color: theme.accent }]}>
+                    {isListening ? 'Barge-in · speak anytime' : 'Tap to speak with Emo'}
+                  </Text>
                 </Pressable>
-              </>
-            ) : (
-              <Text style={styles.listeningHint}>Listening… speak naturally</Text>
-            )}
-          </View>
+              )}
+            </View>
+          </KeyboardAvoidingView>
         </View>
-      </KeyboardAvoidingView>
-    </LivingCanvas>
+      </SafeAreaView>
+
+      <VoiceMenuDropdown
+        visible={menuOpen}
+        theme={theme}
+        onClose={() => setMenuOpen(false)}
+        onMeditation={() => submitVoiceSession('meditation')}
+        onStory={() => submitVoiceSession('story')}
+      />
+    </View>
   );
 }
 
-const SERIF = 'Georgia';
+const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
+  flex: { flex: 1 },
   root: {
     flex: 1,
     paddingHorizontal: 22,
   },
-  header: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 18,
+    justifyContent: 'space-between',
+    paddingTop: 4,
+    paddingBottom: 8,
   },
-  closeBtn: {
+  headerSpacer: { flex: 1 },
+  iconBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(251, 214, 168, 0.2)',
+    flexShrink: 0,
   },
   closeText: {
     fontSize: 26,
-    color: '#6B4FA8',
     fontWeight: '300',
     marginTop: -2,
   },
-  headerCopy: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  eyebrow: {
-    fontSize: 10,
+  menuText: {
+    fontSize: 22,
     fontWeight: '600',
-    color: 'rgba(61,40,88,0.48)',
-    letterSpacing: 2.2,
-    textTransform: 'uppercase',
-    marginBottom: 4,
+    marginTop: -4,
   },
-  title: {
+  heroSection: {
+    alignItems: 'center',
+    paddingTop: 12,
+  },
+  copyBlock: {
+    alignItems: 'center',
+    marginTop: 28,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  brandTitle: {
     fontFamily: SERIF,
-    fontSize: 20,
+    fontSize: 26,
     fontWeight: '400',
-    color: '#2A1840',
-    letterSpacing: 0.3,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  brandSub: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0.15,
+    marginTop: 2,
   },
   greeting: {
     fontFamily: SERIF,
-    fontSize: 28,
-    color: '#2A1840',
+    fontSize: 20,
+    fontWeight: '400',
     textAlign: 'center',
-    marginBottom: 6,
-    letterSpacing: 0.35,
+    marginTop: 18,
+    lineHeight: 28,
   },
-  sub: {
-    fontSize: 14,
-    color: '#2A1840',
-    opacity: 0.68,
+  statusLine: {
+    fontSize: 13,
     textAlign: 'center',
     fontStyle: 'italic',
-    marginBottom: 8,
-    letterSpacing: 0.2,
-    paddingHorizontal: 8,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    lineHeight: 19,
   },
-  expoGoNote: {
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: 'rgba(251, 214, 168, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(251, 214, 168, 0.35)',
-  },
-  expoGoNoteText: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: '#4A3568',
-    textAlign: 'center',
-  },
-  voiceKeyNote: {
-    marginBottom: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(196, 168, 248, 0.22)',
-    borderWidth: 1,
-    borderColor: 'rgba(157, 92, 255, 0.28)',
-  },
-  voiceKeyNoteTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#3D2858',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  voiceKeyNoteText: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: '#5A4578',
-    textAlign: 'center',
-  },
-  sessionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-  sessionChip: {
+  spacer: {
     flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(196, 168, 248, 0.35)',
-    alignItems: 'center',
+    minHeight: 16,
   },
-  sessionChipEmoji: {
-    fontSize: 20,
-    marginBottom: 4,
-  },
-  sessionChipLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#3D2858',
-    textAlign: 'center',
-  },
-  sessionChipSub: {
-    fontSize: 10,
-    color: 'rgba(61,40,88,0.52)',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  heroSlot: {
-    flex: 1,
+  orbWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'visible',
-  },
-  heroZone: {
-    width: 340,
-    minHeight: 280,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
-  },
-  heroFace: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroImage: {
-    width: 124,
-    height: 124,
     backgroundColor: 'transparent',
   },
-  controls: {
-    marginTop: 'auto',
-    gap: 12,
-    alignItems: 'stretch',
-    paddingBottom: 4,
+  orbRingOuter: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderColor: 'rgba(183,157,255,0.14)',
+  },
+  orbGlow: {
+    position: 'absolute',
+    shadowOpacity: 0.55,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  orbRingInner: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderColor: 'rgba(183,157,255,0.22)',
+  },
+  footer: {
+    gap: 10,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  expoHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
   },
   inputShell: {
     borderRadius: 18,
-    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(251, 214, 168, 0.2)',
-    minHeight: 88,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   input: {
     fontSize: 15,
-    lineHeight: 21,
-    color: '#2A1840',
-    minHeight: 68,
-    textAlignVertical: 'top',
   },
-  controlChip: {
-    borderRadius: 99,
-    overflow: 'hidden',
+  actionPill: {
+    borderRadius: 999,
+    paddingVertical: 14,
     paddingHorizontal: 18,
-    paddingVertical: 11,
     borderWidth: 1,
-    borderColor: 'rgba(251, 214, 168, 0.2)',
     alignItems: 'center',
   },
-  controlChipDisabled: {
-    opacity: 0.45,
+  actionPillDisabled: { opacity: 0.45 },
+  actionPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.15,
   },
-  controlChipText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#6B4FA8',
-    letterSpacing: 0.2,
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  listeningHint: {
-    fontSize: 12,
-    color: '#6B4FA8',
-    textAlign: 'center',
-    opacity: 0.72,
+  menuAnchor: {
+    alignItems: 'flex-end',
+    paddingTop: 56,
+    paddingRight: 14,
   },
+  menuSheet: {
+    minWidth: 220,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  menuItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  menuItemBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+  },
+  menuItemPressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  menuItemText: { fontSize: 15, fontWeight: '500' },
 });

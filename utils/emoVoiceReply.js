@@ -4,15 +4,9 @@ import {
   describeAnthropicError,
   getAnthropicApiKey,
 } from './anthropic';
+import { classifyEmoIntent } from './emoIntent';
+import { getVoiceSystemPrompt } from './emoEos';
 import { generateEmoOpening, getSyncFallbackOpening, stripGenericGreetingPrefix } from './emoOpening';
-
-const VOICE_SYSTEM_PROMPT = `You are Emo in Voice Talk — Intelligence with Soul.
-
-Respond in 1–3 short sentences meant to be spoken aloud (max 280 characters total).
-Warm, present, conversational. No markdown, bullet points, emoji, or stage directions.
-Never open with Hey, Hi, Hello, or "Good to see you". Sound like a calm companion, not a chatbot.
-If the user shares feelings, validate first. If they ask for help, be gently practical.
-Sound like a calm companion sitting beside them.`;
 
 function buildFallbackVoiceReply(userText, userName) {
   const name = userName?.trim() || 'friend';
@@ -49,6 +43,8 @@ export async function generateVoiceReply({ userText, userName } = {}) {
   const moodLabel = await readTodayMoodLabel();
   const name = userName?.trim() || 'friend';
   const apiKey = getAnthropicApiKey();
+  const { mode } = classifyEmoIntent(text);
+  const voiceSystem = getVoiceSystemPrompt(mode, name);
 
   const context = moodLabel
     ? `User name: ${name}\nToday's check-in mood: ${moodLabel}\nUser said aloud: "${text}"`
@@ -61,7 +57,7 @@ export async function generateVoiceReply({ userText, userName } = {}) {
   try {
     const result = await callAnthropicMessages({
       maxTokens: 120,
-      system: VOICE_SYSTEM_PROMPT,
+      system: voiceSystem,
       messages: [{ role: 'user', content: `${context}\n\nReply for voice (spoken aloud only):` }],
     });
 

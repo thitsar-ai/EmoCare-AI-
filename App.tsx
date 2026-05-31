@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,29 +12,38 @@ import {
   Animated,
   Easing,
   Dimensions,
-  Modal,
   Image,
+  Pressable,
   AccessibilityInfo,
-  PanResponder,
+  Alert,
+  Modal,
   type ViewStyle,
   type ImageSourcePropType,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as NativeSplash from 'expo-splash-screen';
-import * as Speech from 'expo-speech';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { speakAloud, stopSpeaking, describeElevenLabsError } from './components/voice/voiceTts';
 import {
-  Bird,
-  CloudMoon,
-  CloudRain,
-  CloudSun,
+  ChevronLeft,
   Heart,
+  Lock,
+  Menu,
+  MessageCircle,
+  Mic,
+  Plus,
   Sparkles,
-  Sprout,
-  User,
-  WavesHorizontal,
-  type LucideIcon,
+  Volume2,
+  VolumeX,
+  Wind,
+  X,
 } from 'lucide-react-native';
+import { OB_MOODS, type Mood } from './constants/obMoods';
+import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 
 // Keep the native launch screen up until our animated splash is mounted (no white flash).
 NativeSplash.preventAutoHideAsync().catch(() => {});
@@ -58,10 +67,28 @@ function useReduceMotion(): boolean {
 import {
   SafeAreaProvider,
   SafeAreaView,
+  initialWindowMetrics,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { callAnthropicMessages, describeAnthropicError } from './utils/anthropic';
+import { buildAnthropicMessagesFromChat } from './utils/chatMedia';
+import { getChatSystemPrompt, getIntentModeAppendix } from './utils/emoEos';
+import { classifyEmoIntent } from './utils/emoIntent';
+import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
+import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracleSearch';
+import { logOracleInquiry } from './utils/oracleTopicLog';
+import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
+import { VoiceStreamProvider } from './components/voice/VoiceStreamContext';
+import { VoiceTalkScreen } from './components/voice/VoiceTalkScreen';
+import {
+  CircadianBackground,
+  getCircadianPhase,
+  getCircadianTheme,
+  useCircadianTheme,
+  type CircadianPhase,
+  type CircadianTheme,
+} from './theme/circadianTheme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -94,37 +121,60 @@ const C = {
 /** Height of the floating tab bar content (excludes the bottom safe-area inset). */
 const NAV_CONTENT_HEIGHT = 60;
 
-const SYSTEM_PROMPT =
-  'You are Emo, a warm and emotionally intelligent companion inside Emocare. Your role is to listen deeply, reflect back with care, and gently guide the person toward their own insight. You are not a therapist or doctor. You never diagnose, prescribe, or give clinical advice. Your tone is calm, soft, unhurried, non-judgmental, and validating. Ask one gentle follow-up question at a time. Keep responses to 2-4 sentences. Never use bullet points. You may use one emoji per message (💜 🌿 🌸) but sparingly.';
+/** Minimum top inset for iPhone notch / Dynamic Island when hooks report 0. */
+const IOS_TOP_MIN = 59;
+
+function useTopInset(extra = 0): number {
+  const insets = useSafeAreaInsets();
+  const top = insets.top ?? 0;
+  const metricsTop = initialWindowMetrics?.insets.top ?? 0;
+  const rawTop =
+    Platform.OS === 'ios'
+      ? Math.max(top, metricsTop, IOS_TOP_MIN)
+      : Math.max(top, metricsTop, 28);
+  return rawTop + extra;
+}
+
+/** Pushes screen content below the notch using native safe-area layout (reliable on Simulator). */
+function TopChrome({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+}) {
+  return (
+    <SafeAreaView style={[styles.flex, style]} edges={['top', 'left', 'right']}>
+      {children}
+    </SafeAreaView>
+  );
+}
 
 const AFFIRMATIONS = [
-  '"You don\'t have to carry everything at once. You are allowed to move gently."',
-  '"Your feelings are not too much. They are yours, and they matter."',
-  '"Rest is not a reward — it is something you already deserve."',
-  '"You are allowed to take up space, to be heard, and to ask for help."',
-  '"Even on the hard days, you are doing more than enough."',
-  '"There is no perfect way to heal. Any step forward is enough."',
-  '"Be as patient with yourself as you would with someone you love."',
+  "You don't have to carry everything at once. You are allowed to move gently.",
+  'Your feelings are not too much. They are yours, and they matter.',
+  'Rest is not a reward — it is something you already deserve.',
+  'You are allowed to take up space, to be heard, and to ask for help.',
+  'Even on the hard days, you are doing more than enough.',
+  'There is no perfect way to heal. Any step forward is enough.',
+  'Be as patient with yourself as you would with someone you love.',
+  'Softness is strength. You can pause without falling behind.',
+  'You do not need to have it all figured out to be worthy of care.',
+  'Your pace is valid. Slow is still forward.',
+  'It is okay to need quiet. It is okay to need company.',
+  'You have survived every hard day so far — that counts for something.',
+  'Let today be lighter than yesterday, even by one small breath.',
+  'You are not a burden for feeling deeply.',
+  'Gentleness toward yourself is never wasted.',
 ];
+
+const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
 /* ------------------------------------------------------------------ *
  * Types
  * ------------------------------------------------------------------ */
 
-type ScreenKey = 'home' | 'chat' | 'breathe' | 'journal';
-
-interface Mood {
-  emoji: string;
-  label: string;
-  desc: string;
-  color?: string;
-  iconBg?: string;
-  iconColor?: string;
-  iconFill?: string;
-  accentColor?: string;
-  accentBg?: string;
-  Icon?: LucideIcon;
-}
+type ScreenKey = 'home' | 'talk' | 'voice' | 'chat' | 'breathe' | 'journal' | 'checkin';
 
 function ObMoodIcon({ mood, size = 20 }: { mood: Mood; size?: number }) {
   const Icon = mood.Icon;
@@ -142,9 +192,13 @@ function ObMoodIcon({ mood, size = 20 }: { mood: Mood; size?: number }) {
 }
 
 interface ChatMessage {
+  id: string;
   role: 'user' | 'bot';
   text: string;
   time: string;
+  attachmentUri?: string;
+  attachmentKind?: 'photo' | 'file';
+  attachmentName?: string;
 }
 
 interface ApiMessage {
@@ -158,106 +212,6 @@ interface JournalEntry {
   text: string;
   mood: { emoji: string; label: string };
 }
-
-const OB_MOODS: Mood[] = [
-  {
-    emoji: '🌧️',
-    label: 'Heavy',
-    desc: 'Feeling burdened, exhausted, or low.',
-    iconBg: 'rgba(139,92,246,0.38)',
-    iconColor: '#EDE9FE',
-    iconFill: 'rgba(196,181,253,0.55)',
-    accentColor: '#8B5CF6',
-    accentBg: 'rgba(139,92,246,0.18)',
-    Icon: CloudRain,
-  },
-  {
-    emoji: '🌊',
-    label: 'Overwhelmed',
-    desc: 'Too much happening at once.',
-    iconBg: 'rgba(59,130,246,0.36)',
-    iconColor: '#DBEAFE',
-    iconFill: 'rgba(147,197,253,0.5)',
-    accentColor: '#3B82F6',
-    accentBg: 'rgba(59,130,246,0.18)',
-    Icon: WavesHorizontal,
-  },
-  {
-    emoji: '☁️',
-    label: 'Neutral',
-    desc: 'Just getting through the day.',
-    iconBg: 'rgba(167,139,250,0.32)',
-    iconColor: '#F5F3FF',
-    iconFill: 'rgba(221,214,254,0.45)',
-    accentColor: '#A78BFA',
-    accentBg: 'rgba(167,139,250,0.18)',
-    Icon: CloudMoon,
-  },
-  {
-    emoji: '🌱',
-    label: 'Hopeful',
-    desc: 'A gentle optimism ahead.',
-    iconBg: 'rgba(52,211,153,0.36)',
-    iconColor: '#D1FAE5',
-    iconFill: 'rgba(110,231,183,0.5)',
-    accentColor: '#34D399',
-    accentBg: 'rgba(52,211,153,0.18)',
-    Icon: Sprout,
-  },
-  {
-    emoji: '🌤️',
-    label: 'Light',
-    desc: 'Uplifted, brighter, or a little lighter.',
-    iconBg: 'rgba(251,191,36,0.38)',
-    iconColor: '#FEF9C3',
-    iconFill: 'rgba(253,224,71,0.55)',
-    accentColor: '#FBBF24',
-    accentBg: 'rgba(251,191,36,0.2)',
-    Icon: CloudSun,
-  },
-  {
-    emoji: '🕊️',
-    label: 'Peaceful',
-    desc: 'Calm, grounded, at ease.',
-    iconBg: 'rgba(56,189,248,0.36)',
-    iconColor: '#E0F2FE',
-    iconFill: 'rgba(125,211,252,0.5)',
-    accentColor: '#38BDF8',
-    accentBg: 'rgba(56,189,248,0.18)',
-    Icon: Bird,
-  },
-  {
-    emoji: '💜',
-    label: 'Grateful',
-    desc: 'Noticing something good today.',
-    iconBg: 'rgba(192,132,252,0.36)',
-    iconColor: '#FAE8FF',
-    iconFill: 'rgba(233,213,255,0.5)',
-    accentColor: '#C084FC',
-    accentBg: 'rgba(192,132,252,0.18)',
-    Icon: Heart,
-  },
-  {
-    emoji: '✨',
-    label: 'Joyful',
-    desc: 'Light-hearted, bright, or energized.',
-    iconBg: 'rgba(251,146,60,0.38)',
-    iconColor: '#FFEDD5',
-    iconFill: 'rgba(253,186,116,0.55)',
-    accentColor: '#FB923C',
-    accentBg: 'rgba(251,146,60,0.2)',
-    Icon: Sparkles,
-  },
-];
-
-const CHECK_IN_MOODS: Mood[] = [
-  { emoji: '😊', label: 'Peaceful', desc: 'I feel calm and grounded.', color: '#A78BFA' },
-  { emoji: '🙂', label: 'Light', desc: 'I feel okay, steady or hopeful.', color: '#F4A261' },
-  { emoji: '😔', label: 'Heavy', desc: 'I feel sad, tired or emotionally low.', color: '#818CF8' },
-  { emoji: '😟', label: 'Anxious', desc: 'My mind feels busy or unsettled.', color: '#F472B6' },
-  { emoji: '😩', label: 'Overwhelmed', desc: 'Everything feels like too much.', color: '#C084FC' },
-  { emoji: '🙏', label: 'Grateful', desc: 'I notice something good today.', color: '#34D399' },
-];
 
 /* ------------------------------------------------------------------ *
  * Structural building blocks (the blueprint)
@@ -290,27 +244,53 @@ function GlowOrb({ color, size, top, right, opacity = 0.55 }: GlowOrbProps) {
 }
 
 /**
- * Full-bleed gradient backdrop. Sits behind every screen as an absolute fill
- * so the purple never reads flat, and ambient orbs add depth.
+ * Circadian home gradient — legacy helper (prefer theme/circadianTheme).
  */
-function ScreenBackground({ orbs = true, colors }: { orbs?: boolean; colors?: [string, string] }) {
-  return (
-    <>
-      <LinearGradient
-        colors={colors ?? [C.gradientTop, C.gradientBottom]}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      {orbs ? (
-        <>
-          <GlowOrb color={C.purpleGlow} size={320} top={-80} right={-60} />
-          <GlowOrb color={C.orangeGlow} size={200} top={height * 0.4} right={width * 0.6} opacity={0.28} />
-          <GlowOrb color={C.tealGlow} size={220} top={height * 0.72} right={-50} opacity={0.25} />
-        </>
-      ) : null}
-    </>
-  );
+function getCircadianGradient(hour: number): [string, string] {
+  if (hour >= 6 && hour <= 11) return ['#E8E4F5', '#F0ECF8']; // 6am–11am lavender
+  if (hour >= 12 && hour <= 17) return ['#DDD6F3', '#EDE8F5']; // 12pm–5pm soft purple
+  if (hour >= 18 && hour <= 21) return ['#2D1B4A', '#1A0F2E']; // 6pm–9pm warm rose-purple
+  return ['#0D0720', '#1A0F2E']; // 10pm–5am deep dark
+}
+
+interface HomeSanctuaryCopy {
+  timeLabel: string;
+  subline: string;
+  reflectionBody: string;
+  reminderEyebrow: string;
+}
+
+function getHomeSanctuaryCopy(phase: CircadianPhase): HomeSanctuaryCopy {
+  switch (phase) {
+    case 'morning':
+      return {
+        timeLabel: 'Good morning',
+        subline: 'Start softly — today is yours. ♡',
+        reflectionBody: 'A new day does not need to be perfect — just present. Take this moment slowly.',
+        reminderEyebrow: 'Daily reminder',
+      };
+    case 'afternoon':
+      return {
+        timeLabel: 'Good afternoon',
+        subline: 'Hope your day is treating you gently. ♡',
+        reflectionBody: 'You have been moving through a lot. Pause and breathe with intention.',
+        reminderEyebrow: 'Daily reminder',
+      };
+    case 'evening':
+      return {
+        timeLabel: 'Good evening',
+        subline: 'This space is yours tonight. ♡',
+        reflectionBody: 'You have been carrying a lot quietly. Take this moment slowly.',
+        reminderEyebrow: 'Evening reminder',
+      };
+    default:
+      return {
+        timeLabel: 'Good night',
+        subline: "You're not alone — rest is enough. ♡",
+        reflectionBody: 'The day is done. Whatever remains can wait until morning.',
+        reminderEyebrow: 'Night reminder',
+      };
+  }
 }
 
 interface ScreenProps {
@@ -320,146 +300,6 @@ interface ScreenProps {
   onContentSizeChange?: () => void;
   contentStyle?: ViewStyle;
   theme?: CircadianTheme;
-  backgroundColors?: [string, string];
-}
-
-/**
- * Circadian home gradient — shifts the background by the device's local hour.
- */
-function getCircadianGradient(hour: number): [string, string] {
-  if (hour >= 6 && hour <= 11) return ['#E8E4F5', '#F0ECF8']; // 6am–11am lavender
-  if (hour >= 12 && hour <= 17) return ['#DDD6F3', '#EDE8F5']; // 12pm–5pm soft purple
-  if (hour >= 18 && hour <= 21) return ['#2D1B4A', '#1A0F2E']; // 6pm–9pm warm rose-purple
-  return ['#0D0720', '#1A0F2E']; // 10pm–5am deep dark
-}
-
-/**
- * Full circadian theme — gradient + readable colors for both light & dark periods.
- * Used by the splash screen (and available for future pages).
- */
-type CircadianTheme = {
-  gradient: readonly [string, string];
-  splashGradient: readonly string[]; // seamless 3-stop blend for the splash
-  isDark: boolean;
-  text: string; // primary text
-  secondaryText: string; // tagline
-  mutedText: string; // subtitle
-  card: string;
-  border: string;
-  accent: string;
-  glow: string; // face halo
-  barTrack: string;
-  barFill: string;
-};
-
-function getCircadianTheme(date: Date = new Date()): CircadianTheme {
-  const hour = date.getHours();
-
-  // Morning — 6am–11am
-  if (hour >= 6 && hour <= 11) {
-    return {
-      gradient: ['#E8E4F5', '#F0ECF8'],
-      splashGradient: ['#F0ECF8', '#E9E4F6', '#E0D8F2'],
-      isDark: false,
-      text: '#4E3A85',
-      secondaryText: '#7F77DD',
-      mutedText: '#615A82', // darkened for readable contrast on pale lavender
-      card: 'rgba(255,255,255,0.55)',
-      border: 'rgba(126,110,180,0.15)',
-      accent: '#9B7BFF',
-      glow: 'rgba(155,123,255,0.30)',
-      barTrack: '#DCCFF9',
-      barFill: '#9B7BFF',
-    };
-  }
-
-  // Afternoon — 12pm–5pm
-  if (hour >= 12 && hour <= 17) {
-    return {
-      gradient: ['#DDD6F3', '#EDE8F5'],
-      splashGradient: ['#EDE8F5', '#E4DDF4', '#D8CFF1'],
-      isDark: false,
-      text: '#4A377E',
-      secondaryText: '#7767D4',
-      mutedText: '#5E5680', // darkened for readable contrast on pale lavender
-      card: 'rgba(255,255,255,0.50)',
-      border: 'rgba(126,110,180,0.15)',
-      accent: '#9473FF',
-      glow: 'rgba(148,115,255,0.30)',
-      barTrack: '#DCCFF9',
-      barFill: '#9473FF',
-    };
-  }
-
-  // Evening — 6pm–9pm
-  if (hour >= 18 && hour <= 21) {
-    return {
-      gradient: ['#2D1B4A', '#1A0F2E'],
-      splashGradient: ['#34184F', '#23123C', '#160B26'],
-      isDark: true,
-      text: '#FFFFFF',
-      secondaryText: '#B9A6F8',
-      mutedText: '#9D92C5',
-      card: 'rgba(255,255,255,0.08)',
-      border: 'rgba(255,255,255,0.10)',
-      accent: '#B79DFF',
-      glow: 'rgba(183,157,255,0.35)',
-      barTrack: 'rgba(255,255,255,0.15)',
-      barFill: '#B79DFF',
-    };
-  }
-
-  // Night — 10pm–5am
-  return {
-    gradient: ['#0D0720', '#1A0F2E'],
-    splashGradient: ['#2A1350', '#1C0F38', '#130429'],
-    isDark: true,
-    text: '#FFFFFF',
-    secondaryText: '#C4B7FF',
-    mutedText: '#A99CCF',
-    card: 'rgba(255,255,255,0.06)',
-    border: 'rgba(255,255,255,0.08)',
-    accent: '#C6B0FF',
-    glow: 'rgba(198,176,255,0.35)',
-    barTrack: 'rgba(255,255,255,0.15)',
-    barFill: '#B79DFF',
-  };
-}
-
-// Circadian Emo faces — lavender for daylight, glowing dark for evening/night.
-const EMO_FACE_DAY: ImageSourcePropType = require('./assets/emo-face-day.png');
-const EMO_FACE_NIGHT: ImageSourcePropType = require('./assets/emo-face-night.png');
-
-/** Shared 3-stop circadian backdrop — single source of truth for all themed screens. */
-function CircadianBackground({ theme, orbs = false }: { theme: CircadianTheme; orbs?: boolean }) {
-  const auroraA = theme.isDark ? 1 : 0.45;
-  return (
-    <>
-      <LinearGradient
-        colors={theme.splashGradient as string[]}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-      />
-      {!theme.isDark ? (
-        <View pointerEvents="none" style={styles.auroraClip}>
-          <View
-            style={[styles.auroraWide, { backgroundColor: `rgba(170,132,255,${0.4 * auroraA})` }]}
-          />
-          <View
-            style={[styles.auroraCore, { backgroundColor: `rgba(226,198,255,${0.5 * auroraA})` }]}
-          />
-          <BlurView intensity={45} tint="light" style={StyleSheet.absoluteFill} />
-        </View>
-      ) : null}
-      {orbs ? (
-        <>
-          <GlowOrb color={theme.glow} size={320} top={-80} right={-60} />
-          <GlowOrb color={theme.glow} size={200} top={height * 0.4} right={width * 0.6} opacity={0.28} />
-        </>
-      ) : null}
-    </>
-  );
 }
 
 /**
@@ -468,35 +308,53 @@ function CircadianBackground({ theme, orbs = false }: { theme: CircadianTheme; o
  *  2. SafeAreaView (top edge) from react-native-safe-area-context
  *  3. ScrollView whose contentContainer reserves room for the floating nav bar
  */
-function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle, theme, backgroundColors }: ScreenProps) {
+function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle, theme: themeProp }: ScreenProps) {
   const insets = useSafeAreaInsets();
-  const bottomClearance = NAV_CONTENT_HEIGHT + insets.bottom + 24;
+  const liveTheme = useCircadianTheme();
+  const theme = themeProp ?? liveTheme;
+  const navOffset = NAV_CONTENT_HEIGHT + (insets.bottom ?? 0);
+  const topPad = useTopInset(4);
+
+  const background = <CircadianBackground theme={theme} />;
+
+  if (!scroll) {
+    return (
+      <View style={styles.flex}>
+        {background}
+        <View
+          style={[
+            styles.flex,
+            styles.screenForeground,
+            { paddingTop: topPad, paddingBottom: navOffset, paddingHorizontal: 22 },
+            contentStyle,
+          ]}
+        >
+          {children}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.flex}>
-      {theme ? (
-        <CircadianBackground theme={theme} />
-      ) : (
-        <ScreenBackground colors={backgroundColors} />
-      )}
-      <SafeAreaView style={styles.flex} edges={['top']}>
-        {scroll ? (
-          <ScrollView
-            ref={scrollRef}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            onContentSizeChange={onContentSizeChange}
-            contentContainerStyle={[
-              { padding: 22, paddingBottom: bottomClearance },
-              contentStyle,
-            ]}
-          >
-            {children}
-          </ScrollView>
-        ) : (
-          <View style={[styles.flex, contentStyle]}>{children}</View>
-        )}
-      </SafeAreaView>
+      {background}
+      <ScrollView
+        ref={scrollRef}
+        style={[styles.flex, { marginBottom: navOffset }]}
+        alwaysBounceVertical
+        bounces
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onContentSizeChange={onContentSizeChange}
+        contentContainerStyle={[
+          styles.screenScrollContent,
+          { paddingHorizontal: 22, paddingTop: topPad + 8, paddingBottom: 28 },
+          contentStyle,
+        ]}
+      >
+        {children}
+      </ScrollView>
     </View>
   );
 }
@@ -515,9 +373,12 @@ function GlassCard({
   const themed = theme ? { backgroundColor: theme.card, borderColor: theme.border } : {};
   if (onPress) {
     return (
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={[styles.glass, themed, style]}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.glass, themed, style, pressed && styles.glassPressed]}
+      >
         {children}
-      </TouchableOpacity>
+      </Pressable>
     );
   }
   return <View style={[styles.glass, themed, style]}>{children}</View>;
@@ -528,42 +389,189 @@ function GlassCard({
  * gracefully to an emoji glyph if the image is missing or fails to decode —
  * so it never collapses into a broken white circle.
  */
-function EmoAvatar({ size = 44, theme: themeProp }: { size?: number; theme?: CircadianTheme }) {
+function EmoAvatar({
+  size = 44,
+  theme: themeProp,
+  plain = false,
+}: {
+  size?: number;
+  theme?: CircadianTheme;
+  plain?: boolean;
+}) {
   const theme = themeProp ?? getCircadianTheme();
-  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
+  const faceSource = theme.emoFace;
   const [failed, setFailed] = useState(false);
   const ringSize = size + 8;
 
+  if (plain) {
+    return (
+      <View style={[styles.avatarPlainWrap, { width: size, height: size }]}>
+        {failed ? (
+          <View
+            style={[
+              styles.avatarFallback,
+              { width: size, height: size, borderRadius: size / 2, backgroundColor: theme.accent },
+            ]}
+          >
+            <Text style={{ fontSize: size * 0.5 }}>🌿</Text>
+          </View>
+        ) : (
+          <Image
+            source={faceSource}
+            onError={() => setFailed(true)}
+            resizeMode="contain"
+            style={{ width: size, height: size, borderRadius: size / 2 }}
+          />
+        )}
+      </View>
+    );
+  }
+
   return (
-    <View
-      style={[
-        styles.avatarRing,
-        {
-          width: ringSize,
-          height: ringSize,
-          borderRadius: ringSize / 2,
-          borderColor: theme.accent,
-          backgroundColor: theme.card,
-        },
-      ]}
-    >
-      {failed ? (
-        <View
-          style={[
-            styles.avatarFallback,
-            { width: size, height: size, borderRadius: size / 2, backgroundColor: theme.accent },
-          ]}
+    <View style={[styles.avatarRingWrap, { width: ringSize, height: ringSize }]}>
+      <LinearGradient
+        colors={theme.ringGradient as string[]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.avatarRingGradient, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}
+      />
+      <View
+        style={[
+          styles.avatarRing,
+          {
+            width: ringSize - 3,
+            height: ringSize - 3,
+            borderRadius: (ringSize - 3) / 2,
+            borderColor: theme.border,
+            backgroundColor: theme.card,
+          },
+        ]}
+      >
+        {failed ? (
+          <View
+            style={[
+              styles.avatarFallback,
+              { width: size, height: size, borderRadius: size / 2, backgroundColor: theme.accent },
+            ]}
+          >
+            <Text style={{ fontSize: size * 0.5 }}>🌿</Text>
+          </View>
+        ) : (
+          <Image
+            source={faceSource}
+            onError={() => setFailed(true)}
+            resizeMode="contain"
+            style={{ width: size, height: size, borderRadius: size / 2 }}
+          />
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Sanctuary presence orb — chat hero avatar with circadian glow and gentle breath.
+ */
+function EmoPresenceOrb({
+  theme,
+  onVoicePress,
+}: {
+  theme: CircadianTheme;
+  onVoicePress?: () => void;
+}) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  const [failed, setFailed] = useState(false);
+  const reduceMotion = useReduceMotion();
+  const orbSize = 88;
+  const glowSize = 128;
+  const ringSize = orbSize + 14;
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 3200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 3200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse, reduceMotion]);
+
+  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+  const glowOpacity = reduceMotion ? 0.45 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.32, 0.62] });
+  const haloScale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
+
+  return (
+    <View style={styles.presenceOrbWrap}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.presenceOrbHalo,
+          {
+            width: glowSize + 40,
+            height: glowSize + 40,
+            borderRadius: (glowSize + 40) / 2,
+            backgroundColor: theme.glow,
+            opacity: glowOpacity,
+            transform: [{ scale: haloScale }],
+          },
+        ]}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.presenceOrbGlow,
+          {
+            width: glowSize,
+            height: glowSize,
+            borderRadius: glowSize / 2,
+            backgroundColor: theme.glow,
+            opacity: glowOpacity,
+            transform: [{ scale }],
+          },
+        ]}
+      />
+      <LinearGradient
+        colors={theme.ringGradient as string[]}
+        start={{ x: 0.15, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={[styles.presenceOrbRing, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}
+      />
+      <Animated.View
+        style={[
+          styles.presenceOrbFacePlate,
+          {
+            width: orbSize + 6,
+            height: orbSize + 6,
+            borderRadius: (orbSize + 6) / 2,
+            backgroundColor: theme.card,
+            borderColor: theme.border,
+            transform: [{ scale }],
+          },
+        ]}
+      >
+        {failed ? (
+          <Text style={{ fontSize: 40 }}>🌿</Text>
+        ) : (
+          <Image
+            source={theme.emoFace}
+            onError={() => setFailed(true)}
+            resizeMode="contain"
+            style={{ width: orbSize, height: orbSize }}
+          />
+        )}
+      </Animated.View>
+      {onVoicePress ? (
+        <Pressable
+          onPress={onVoicePress}
+          style={[styles.chatMicBadge, styles.presenceMicBadge, { backgroundColor: theme.accent, borderColor: theme.card }]}
+          accessibilityRole="button"
+          accessibilityLabel="Start voice talk"
         >
-          <Text style={{ fontSize: size * 0.5 }}>🌿</Text>
-        </View>
-      ) : (
-        <Image
-          source={faceSource}
-          onError={() => setFailed(true)}
-          resizeMode="contain"
-          style={{ width: size, height: size, borderRadius: size / 2 }}
-        />
-      )}
+          <Mic size={14} color="#FFFFFF" strokeWidth={2.5} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -571,12 +579,14 @@ function EmoAvatar({ size = 44, theme: themeProp }: { size?: number; theme?: Cir
 /**
  * Emo orb — the mascot face on the home screen with a gentle continuous pulse.
  */
-function EmoOrb({ theme: themeProp }: { theme?: CircadianTheme }) {
+function EmoOrb({ theme: themeProp, compact = false }: { theme?: CircadianTheme; compact?: boolean }) {
   const theme = themeProp ?? getCircadianTheme();
-  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
+  const faceSource = theme.emoFace;
   const pulse = useRef(new Animated.Value(0)).current;
   const [failed, setFailed] = useState(false);
   const reduceMotion = useReduceMotion();
+  const orbSize = compact ? 88 : 116;
+  const glowSize = compact ? 98 : 130;
 
   useEffect(() => {
     if (reduceMotion) return;
@@ -590,27 +600,45 @@ function EmoOrb({ theme: themeProp }: { theme?: CircadianTheme }) {
     return () => loop.stop();
   }, [pulse, reduceMotion]);
 
-  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, compact ? 1.05 : 1.08] });
   const glowOpacity = reduceMotion ? 0.4 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.55] });
 
   return (
-    <View style={styles.orbWrap}>
+    <View style={[styles.orbWrap, compact && styles.orbWrapCompact]}>
       <Animated.View
         style={[
           styles.orbGlow,
-          { opacity: glowOpacity, transform: [{ scale }], backgroundColor: theme.glow },
+          compact && styles.orbGlowCompact,
+          {
+            opacity: glowOpacity,
+            transform: [{ scale }],
+            backgroundColor: theme.glow,
+            width: glowSize,
+            height: glowSize,
+            borderRadius: glowSize / 2,
+          },
         ]}
       />
       {failed ? (
-        <Animated.View style={[styles.orbFallback, { transform: [{ scale }], backgroundColor: theme.card }]}>
-          <Text style={{ fontSize: 52 }}>🌿</Text>
+        <Animated.View
+          style={[
+            styles.orbFallback,
+            compact && styles.orbFallbackCompact,
+            { transform: [{ scale }], backgroundColor: theme.card, width: orbSize, height: orbSize, borderRadius: orbSize / 2 },
+          ]}
+        >
+          <Text style={{ fontSize: compact ? 36 : 52 }}>🌿</Text>
         </Animated.View>
       ) : (
         <Animated.Image
           source={faceSource}
           resizeMode="contain"
           onError={() => setFailed(true)}
-          style={[styles.orbImage, { transform: [{ scale }] }]}
+          style={[
+            styles.orbImage,
+            compact && styles.orbImageCompact,
+            { transform: [{ scale }], width: orbSize, height: orbSize, borderRadius: orbSize / 2 },
+          ]}
         />
       )}
     </View>
@@ -642,7 +670,7 @@ const SPLASH_PARTICLES = [
 function SplashScreen({ onDone }: { onDone?: () => void }) {
   const theme = getCircadianTheme();
   const reduceMotion = useReduceMotion();
-  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
+  const faceSource = theme.emoFace;
   const pulse = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
@@ -807,21 +835,19 @@ function MoodWave() {
 }
 
 /* ------------------------------------------------------------------ *
- * Check-in modal
+ * Check-in screen
  * ------------------------------------------------------------------ */
 
-function CheckInModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function CheckInScreen({ onNav }: { onNav: (key: ScreenKey) => void }) {
+  const theme = getCircadianTheme();
+  const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Mood | null>(null);
   const [note, setNote] = useState('');
-  const slideAnim = useRef(new Animated.Value(height)).current;
+  const onClose = () => onNav('home');
 
-  useEffect(() => {
-    if (visible) {
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 65, friction: 11 }).start();
-    } else {
-      Animated.timing(slideAnim, { toValue: height, duration: 250, useNativeDriver: true }).start();
-    }
-  }, [visible, slideAnim]);
+  const saveGradient = theme.isDark
+    ? (['#9473FF', '#6366F1'] as [string, string])
+    : ([theme.accent, '#7F77DD'] as [string, string]);
 
   const save = async () => {
     if (!selected) return;
@@ -839,688 +865,1131 @@ function CheckInModal({ visible, onClose }: { visible: boolean; onClose: () => v
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <Animated.View style={[styles.modalSheet, { transform: [{ translateY: slideAnim }] }]}>
-          <ScreenBackground orbs={false} />
-          <GlowOrb color={C.purpleGlow} size={260} top={-60} right={-40} />
-          <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
-            <View style={styles.ciHeader}>
-              <TouchableOpacity style={styles.ciCircleBtn} onPress={onClose}>
-                <Text style={styles.ciCircleGlyph}>←</Text>
-              </TouchableOpacity>
-              <View style={{ alignItems: 'center' }}>
-                <Text style={styles.ciTitle}>Check In ✦</Text>
-                <Text style={styles.ciSubtitle}>Take a gentle moment to check in.</Text>
-              </View>
-              <TouchableOpacity style={styles.ciCircleBtn} onPress={onClose}>
-                <Text style={styles.ciCircleGlyph}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              contentContainerStyle={{ padding: 20, paddingBottom: 48 }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              <GlassCard style={styles.cardPad}>
-                <Text style={[styles.cardTitle, { marginBottom: 4 }]}>How are you feeling right now?</Text>
-                <Text style={[styles.cardSub, { marginBottom: 14 }]}>Choose what feels closest.</Text>
-                <View style={styles.moodGrid}>
-                  {CHECK_IN_MOODS.map((m) => {
-                    const isSelected = selected?.label === m.label;
-                    return (
-                      <TouchableOpacity
-                        key={m.label}
-                        activeOpacity={0.85}
-                        style={[
-                          styles.moodGridCard,
-                          isSelected && m.color
-                            ? { borderColor: m.color, backgroundColor: m.color + '20' }
-                            : null,
-                        ]}
-                        onPress={() => setSelected(m)}
-                      >
-                        {isSelected && m.color ? (
-                          <View style={[styles.checkMark, { backgroundColor: m.color }]}>
-                            <Text style={styles.checkMarkGlyph}>✓</Text>
-                          </View>
-                        ) : null}
-                        <View style={styles.moodGlowEmoji}>
-                          <Text style={{ fontSize: 30 }}>{m.emoji}</Text>
-                        </View>
-                        <Text style={styles.moodGridLabel}>{m.label}</Text>
-                        <Text style={styles.moodGridDesc}>{m.desc}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </GlassCard>
-
-              <GlassCard style={styles.cardPad}>
-                <Text style={[styles.cardTitle, { marginBottom: 6 }]}>What's on your heart?</Text>
-                <Text style={[styles.cardSub, { marginBottom: 12 }]}>You can write anything. We're here to hold it.</Text>
-                <View style={styles.innerInputCard}>
-                  <TextInput
-                    style={styles.checkInNote}
-                    placeholder="You can begin softly..."
-                    placeholderTextColor={C.white30}
-                    value={note}
-                    onChangeText={setNote}
-                    multiline
-                    textAlignVertical="top"
-                  />
-                </View>
-              </GlassCard>
-
-              <TouchableOpacity
-                style={[styles.primaryBtn, styles.orangeBtn, !selected && styles.btnDisabled]}
-                onPress={save}
-                disabled={!selected}
-              >
-                <Text style={styles.primaryBtnText}>✦  Save Check-In</Text>
-              </TouchableOpacity>
-              <Text style={[styles.cardSub, { textAlign: 'center', marginTop: 12 }]}>
-                🔒 Your check-in is private and secure
-              </Text>
-            </ScrollView>
-          </SafeAreaView>
-        </Animated.View>
+    <View style={styles.flex}>
+      <CircadianBackground theme={theme} />
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+      <TopChrome>
+      <View style={styles.ciHeader}>
+        <View style={styles.ciHeaderSpacer} />
+        <Pressable
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.ciCircleBtn,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            pressed && styles.glassPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Close check in"
+        >
+          <X size={18} color={theme.text} strokeWidth={2.5} />
+        </Pressable>
       </View>
-    </Modal>
+
+      <View style={styles.ciTitleBlock}>
+        <Text style={[styles.ciTitle, { color: theme.text }]}>Check In ✦</Text>
+        <Text style={[styles.ciSubtitle, { color: theme.mutedText }]}>
+          Take a gentle moment to check in.
+        </Text>
+      </View>
+
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={{
+          paddingHorizontal: 22,
+          paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24,
+        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+          <View style={styles.obMoodHeaderBlock}>
+            <Text style={[styles.obMoodSectionTitle, { color: theme.text }]}>
+              How are you feeling right now?
+            </Text>
+            <Text style={[styles.obMoodSectionSub, { color: theme.mutedText }]}>
+              Choose the feeling that feels closest.
+            </Text>
+          </View>
+
+          <View style={styles.obMoodGridPro}>
+            {OB_MOODS.map((m) => {
+              const isSelected = selected?.label === m.label;
+              return (
+                <TouchableOpacity
+                  key={m.label}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.obMoodCardPro,
+                    { backgroundColor: theme.card, borderColor: theme.border },
+                    isSelected && {
+                      borderColor: m.accentColor ?? theme.accent,
+                      backgroundColor: m.accentBg ?? 'rgba(155,123,255,0.16)',
+                      shadowColor: m.accentColor ?? theme.accent,
+                      shadowOpacity: 0.4,
+                      shadowRadius: 10,
+                      shadowOffset: { width: 0, height: 0 },
+                    },
+                  ]}
+                  onPress={() => setSelected(m)}
+                >
+                  <View
+                    style={[
+                      styles.obMoodIconCircle,
+                      {
+                        backgroundColor: m.iconBg ?? theme.card,
+                        borderColor: m.iconColor ? `${m.iconColor}55` : theme.border,
+                        shadowColor: m.accentColor ?? m.iconColor ?? theme.accent,
+                        shadowOpacity: isSelected ? 0.65 : 0.45,
+                        shadowRadius: isSelected ? 10 : 7,
+                        shadowOffset: { width: 0, height: 2 },
+                      },
+                    ]}
+                  >
+                    <ObMoodIcon mood={m} />
+                  </View>
+                  <View style={styles.obMoodCardText}>
+                    <Text style={[styles.obMoodCardTitle, { color: theme.text }]}>{m.label}</Text>
+                    <Text style={[styles.obMoodCardDesc, { color: theme.mutedText }]} numberOfLines={2}>
+                      {m.desc}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <GlassCard theme={theme} style={styles.ciNoteCard}>
+            <Text style={[styles.cardTitle, { marginBottom: 6, color: theme.text }]}>
+              What's on your heart?
+            </Text>
+            <Text style={[styles.cardSub, { marginBottom: 12, color: theme.mutedText }]}>
+              You can write anything. We're here to hold it.
+            </Text>
+            <TextInput
+              style={[
+                styles.ciNoteInput,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.65)',
+                },
+              ]}
+              placeholder="You can begin softly..."
+              placeholderTextColor={theme.mutedText}
+              value={note}
+              onChangeText={setNote}
+              multiline
+              textAlignVertical="top"
+            />
+          </GlassCard>
+
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={[styles.ciSaveWrap, !selected && styles.btnDisabled]}
+            onPress={save}
+            disabled={!selected}
+          >
+            <LinearGradient colors={saveGradient} style={styles.ciSaveBtn}>
+              <Text style={styles.primaryBtnText}>✦  Save Check-In</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <Pressable onPress={onClose} style={styles.ciBackLink}>
+            <Text style={[styles.ciBackLinkText, { color: theme.accent }]}>← Back to Sanctuary</Text>
+          </Pressable>
+
+          <Text style={[styles.ciPrivacyNote, { color: theme.mutedText }]}>
+            🔒 Your check-in is private and secure
+          </Text>
+        </ScrollView>
+      </TopChrome>
+    </View>
   );
 }
 
 /* ------------------------------------------------------------------ *
- * Onboarding
+ * Onboarding — see components/onboarding/OnboardingFlow.tsx
  * ------------------------------------------------------------------ */
 
-function OnboardingScreen({ onComplete }: { onComplete: (args: { name: string }) => void }) {
-  const theme = getCircadianTheme();
-  const faceSource = theme.isDark ? EMO_FACE_NIGHT : EMO_FACE_DAY;
-  const [slide, setSlide] = useState(1);
-  const [name, setName] = useState('');
-  const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
-  const [faceFailed, setFaceFailed] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-
-  // Gentle breathing halo for the Welcome Emo face — calmed when Reduce Motion is on.
-  const reduceMotion = useReduceMotion();
-  const pulse = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 2800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 2800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, reduceMotion]);
-
-  const faceScale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] });
-  const haloScale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.14] });
-  const haloOpacity = reduceMotion ? 0.5 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.62] });
-
-  const goTo = (next: number) => {
-    Animated.sequence([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
-    ]).start();
-    setTimeout(() => setSlide(next), 180);
-  };
-
-  // Swipe between onboarding slides (simulator + device). Ref keeps handler in sync with slide.
-  const slideRef = useRef(slide);
-  slideRef.current = slide;
-  const goToRef = useRef(goTo);
-  goToRef.current = goTo;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
-      onPanResponderRelease: (_, g) => {
-        const s = slideRef.current;
-        if (g.dx < -55 && s < 3) goToRef.current(s + 1);
-        else if (g.dx > 55 && s > 1) goToRef.current(s - 1);
-      },
-    }),
-  ).current;
-
-  const enter = async () => {
-    await AsyncStorage.setItem('onboarded', 'true');
-    await AsyncStorage.setItem('userName', name.trim());
-    onComplete({ name: name.trim() });
-  };
-
-  const renderSanctuaryButton = () => (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      style={[styles.obSanctuaryBtnWrap, styles.obSanctuaryBtnPinned, !selectedMood && styles.btnDisabled]}
-      onPress={enter}
-      disabled={!selectedMood}
-    >
-      <LinearGradient
-        colors={
-          theme.isDark
-            ? (['#9473FF', '#6366F1'] as [string, string])
-            : ([theme.accent, '#7F77DD'] as [string, string])
-        }
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={styles.obSanctuaryBtn}
-      >
-        <Text style={styles.primaryBtnText}>Enter Your Sanctuary →</Text>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-
-  // Shared Emo face nestled in a breathing halo (Welcome & Privacy)
-  const renderFaceOrb = (variant: 'welcome' | 'privacy' = 'privacy') => {
-    const isWelcome = variant === 'welcome';
-    return (
-    <View
-      style={[
-        styles.welcomeOrbWrap,
-        styles.welcomeOrbWrapRaised,
-      ]}
-    >
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.welcomeGlow,
-          isWelcome && styles.welcomeGlowCompact,
-          {
-            opacity: haloOpacity,
-            transform: [{ scale: haloScale }],
-            backgroundColor: theme.glow,
-            shadowColor: theme.accent,
-          },
-        ]}
-      />
-      {/* Inner ring only on dark themes — day face already has its own lavender disc */}
-      {theme.isDark ? (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.welcomeRingInner,
-            isWelcome && styles.welcomeRingInnerCompact,
-            { borderColor: 'rgba(183,157,255,0.30)' },
-          ]}
-        />
-      ) : null}
-      {faceFailed ? (
-        <View style={[styles.welcomeFaceFallback, { backgroundColor: theme.card }]}>
-          <Text style={{ fontSize: 64 }}>🌿</Text>
-        </View>
-      ) : (
-        <Animated.Image
-          source={faceSource}
-          resizeMode="contain"
-          onError={() => setFaceFailed(true)}
-          style={[
-            styles.welcomeFace,
-            isWelcome && styles.welcomeFaceCompact,
-            { transform: [{ scale: faceScale }] },
-          ]}
-        />
-      )}
-    </View>
-    );
-  };
-
-  const slides: Record<number, React.ReactNode> = {
-    1: (
-      <View style={[styles.obSlide, styles.obWelcomeSlide]}>
-        {renderFaceOrb('welcome')}
-        <Text style={[styles.obEyebrow, styles.obWelcomeEyebrow, { color: theme.secondaryText }]}>
-          Welcome to Emocare
-        </Text>
-        <Text style={[styles.obTitle, styles.obWelcomeTitle, { color: theme.text }]}>
-          A quiet space to{'\n'}return to yourself.
-        </Text>
-        <Text style={[styles.obBody, styles.obWelcomeBody, { color: theme.mutedText }]}>
-          A quiet, private space to gently check in with yourself — whenever you need it.
-        </Text>
-        <Text style={[styles.obSoftLine, styles.obWelcomeQuote, { color: theme.secondaryText }]}>
-          "You don't need to have the right words. Just begin."
-        </Text>
-        <GlassCard
-          theme={theme}
-          style={styles.obWelcomeNoteCard}
-        >
-          <Text style={[styles.obNoteText, { color: theme.mutedText, lineHeight: 20 }]}>
-            Emocare offers gentle emotional support and reflection. It is not a substitute for professional care.
-          </Text>
-        </GlassCard>
-        <TouchableOpacity
-          style={[styles.obBtn, styles.obWelcomeBtn, { backgroundColor: theme.accent }]}
-          onPress={() => goTo(2)}
-        >
-          <Text style={styles.primaryBtnText}>Let's begin gently →</Text>
-        </TouchableOpacity>
-      </View>
-    ),
-    2: (
-      <View style={[styles.obSlide, styles.obPrivacySlide]}>
-        {renderFaceOrb('privacy')}
-        <Text style={[styles.obEyebrow, styles.obPrivacyEyebrow, { color: theme.secondaryText }]}>
-          Your privacy
-        </Text>
-        <Text style={[styles.obTitle, styles.obPrivacyTitle, { color: theme.text }]}>
-          Your thoughts{'\n'}stay with you.
-        </Text>
-        <Text style={[styles.obBody, styles.obPrivacyBody, { color: theme.mutedText }]}>
-          Everything is stored privately on your device.{'\n'}Nothing shared. Nothing sold.
-        </Text>
-        <GlassCard theme={theme} style={styles.obPrivacyCard}>
-          <View style={styles.obBulletRow}>
-            <View style={[styles.obBulletDot, { backgroundColor: theme.accent }]} />
-            <Text style={[styles.obBulletText, { color: theme.secondaryText, lineHeight: 21 }]}>
-              Zero‑knowledge storage. Sovereign data.
-            </Text>
-          </View>
-          <View style={[styles.obBulletRow, { marginTop: 14 }]}>
-            <View style={[styles.obBulletDot, { backgroundColor: theme.accent }]} />
-            <Text style={[styles.obBulletText, { color: theme.secondaryText, lineHeight: 21 }]}>
-              Memory Ledger — see &amp; delete what Emo holds, with a single tap.
-            </Text>
-          </View>
-        </GlassCard>
-        <TouchableOpacity
-          style={[styles.obBtn, styles.obPrivacyBtn, { backgroundColor: theme.accent }]}
-          onPress={() => goTo(3)}
-        >
-          <Text style={styles.primaryBtnText}>That feels good →</Text>
-        </TouchableOpacity>
-      </View>
-    ),
-    3: (
-      <View style={[styles.obSlide, styles.obNameSlide]}>
-        <View style={styles.obNameHeaderBlock}>
-          <Text style={[styles.obEyebrow, styles.obNameEyebrow, { color: theme.secondaryText }]}>
-            One last thing
-          </Text>
-          <Text style={[styles.obNameTitle, { color: theme.text }]}>Welcome to Emo</Text>
-          <Text style={[styles.obNameSub, { color: theme.secondaryText }]}>
-            Let's personalize your experience.
-          </Text>
-        </View>
-
-        <View
-          style={[
-            styles.obNameInputRow,
-            { backgroundColor: theme.card, borderColor: theme.border },
-          ]}
-        >
-          <User size={17} color={theme.mutedText} strokeWidth={2} style={styles.obNameInputIcon} />
-          <TextInput
-            style={[styles.obNameInput, { color: theme.text }]}
-            placeholder="What should I call you? (optional)"
-            placeholderTextColor={theme.mutedText}
-            value={name}
-            onChangeText={setName}
-            maxLength={30}
-          />
-        </View>
-
-        <View style={styles.obMoodHeaderBlock}>
-          <Text style={[styles.obMoodSectionTitle, { color: theme.text }]}>
-            How are you feeling right now?
-          </Text>
-          <Text style={[styles.obMoodSectionSub, { color: theme.mutedText }]}>
-            Choose the feeling that feels closest.
-          </Text>
-        </View>
-
-        <View style={styles.obMoodGridPro}>
-          {OB_MOODS.map((m) => {
-            const selected = selectedMood?.label === m.label;
-            return (
-              <TouchableOpacity
-                key={m.label}
-                activeOpacity={0.85}
-                style={[
-                  styles.obMoodCardPro,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  selected && {
-                    borderColor: m.accentColor ?? theme.accent,
-                    backgroundColor: m.accentBg ?? 'rgba(155,123,255,0.16)',
-                    shadowColor: m.accentColor ?? theme.accent,
-                    shadowOpacity: 0.4,
-                    shadowRadius: 10,
-                    shadowOffset: { width: 0, height: 0 },
-                  },
-                ]}
-                onPress={() => setSelectedMood(m)}
-              >
-                <View
-                  style={[
-                    styles.obMoodIconCircle,
-                    {
-                      backgroundColor: m.iconBg ?? theme.card,
-                      borderColor: m.iconColor ? `${m.iconColor}55` : theme.border,
-                      shadowColor: m.accentColor ?? m.iconColor ?? theme.accent,
-                      shadowOpacity: selected ? 0.65 : 0.45,
-                      shadowRadius: selected ? 10 : 7,
-                      shadowOffset: { width: 0, height: 2 },
-                    },
-                  ]}
-                >
-                  <ObMoodIcon mood={m} />
-                </View>
-                <View style={styles.obMoodCardText}>
-                  <Text style={[styles.obMoodCardTitle, { color: theme.text }]}>{m.label}</Text>
-                  <Text style={[styles.obMoodCardDesc, { color: theme.mutedText }]} numberOfLines={2}>
-                    {m.desc}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-    ),
-  };
-
-  return (
-    <View style={styles.flex}>
-      <CircadianBackground theme={theme} />
-      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-      <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
-        <View style={styles.obProgressRow}>
-          {[1, 2, 3].map((i) => (
-            <View
-              key={i}
-              style={[
-                styles.obDot,
-                { backgroundColor: theme.isDark ? C.white10 : 'rgba(126,110,180,0.20)' },
-                slide === i && [styles.obDotActive, { backgroundColor: theme.accent }],
-                slide > i && { backgroundColor: theme.secondaryText },
-              ]}
-            />
-          ))}
-        </View>
-        {slide > 1 ? (
-          <TouchableOpacity
-            style={styles.obBackBtn}
-            onPress={() => goTo(slide - 1)}
-            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-            accessibilityLabel="Go back"
-          >
-            <Text style={[styles.obBackText, { color: theme.text }]}>←</Text>
-          </TouchableOpacity>
-        ) : null}
-        <Animated.View style={{ flex: 1, opacity: fadeAnim }} {...panResponder.panHandlers}>
-          {slide === 3 ? (
-            <View style={styles.flex}>
-              <ScrollView
-                style={styles.flex}
-                contentContainerStyle={styles.obNameScrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {slides[slide]}
-              </ScrollView>
-              {renderSanctuaryButton()}
-            </View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {slides[slide]}
-            </ScrollView>
-          )}
-        </Animated.View>
-      </SafeAreaView>
-    </View>
-  );
-}
 
 /* ------------------------------------------------------------------ *
  * Home
  * ------------------------------------------------------------------ */
 
-function HomeScreen({ userName, onNav }: { userName: string; onNav: (key: ScreenKey) => void }) {
-  const [showCheckIn, setShowCheckIn] = useState(false);
-  const [affIdx, setAffIdx] = useState(0);
-  const theme = getCircadianTheme();
-  const hour = new Date().getHours();
-  const timeLabel =
-    hour >= 5 && hour < 12
-      ? 'Good morning'
-      : hour >= 12 && hour < 17
-      ? 'Good afternoon'
-      : 'Good evening';
+function HomeScreen({
+  userName,
+  onNav,
+}: {
+  userName: string;
+  onNav: (key: ScreenKey) => void;
+}) {
+  const [affIdx, setAffIdx] = useState(() => Math.floor(Math.random() * AFFIRMATIONS.length));
+  const theme = useCircadianTheme();
+  const copy = getHomeSanctuaryCopy(theme.phase);
+  const displayName = userName.trim() || 'friend';
+
+  const checkInGradient = theme.isDark
+    ? (['#9473FF', '#6366F1'] as [string, string])
+    : ([theme.accent, '#7F77DD'] as [string, string]);
+
+  const nextReminder = () => {
+    setAffIdx((current) => {
+      if (AFFIRMATIONS.length <= 1) return current;
+      let next = current;
+      while (next === current) {
+        next = Math.floor(Math.random() * AFFIRMATIONS.length);
+      }
+      return next;
+    });
+  };
 
   return (
-    <Screen theme={theme}>
-      <EmoOrb theme={theme} />
-      <View style={{ marginTop: 10, marginBottom: 26 }}>
-        <Text style={[styles.sanctuaryLabel, { color: theme.secondaryText }]}>Intelligence with Soul</Text>
-        <Text style={[styles.heroGreeting, { color: theme.text }]}>
-          {timeLabel},{'\n'}
-          {userName || 'friend'} 💜
-        </Text>
-        <Text style={[styles.heroSub, { color: theme.mutedText }]}>This is your sanctuary. ♡</Text>
-      </View>
-
-      <GlassCard theme={theme} style={styles.cardPadLg}>
-        <Text style={[styles.cardTitle, { marginBottom: 4, color: theme.text }]}>How are you feeling today?</Text>
-        <Text style={[styles.cardSub, { fontStyle: 'italic', marginBottom: 18, color: theme.mutedText }]}>
-          Has your heart been feeling steadier lately?
-        </Text>
-        <MoodWave />
-        <View style={styles.weekFootRow}>
-          <Text style={[styles.chartLabel, { color: theme.mutedText }]}>Over</Text>
-          <Text style={[styles.chartLabel, { color: theme.mutedText }]}>Week</Text>
-          <Text style={[styles.chartLabel, { color: theme.mutedText }]}>01</Text>
-        </View>
-      </GlassCard>
-
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.checkInBtn} activeOpacity={0.85} onPress={() => setShowCheckIn(true)}>
-          <Text style={{ fontSize: 16 }}>🤍</Text>
-          <Text style={styles.checkInBtnText}>Check In</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionSmallBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-          activeOpacity={0.85}
-          onPress={() => onNav('journal')}
-        >
-          <Text style={{ fontSize: 16 }}>📖</Text>
-          <Text style={[styles.actionSmallText, { color: theme.text }]}>Journal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionSmallBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-          activeOpacity={0.85}
-          onPress={() => onNav('breathe')}
-        >
-          <Text style={{ fontSize: 16 }}>🌬️</Text>
-          <Text style={[styles.actionSmallText, { color: theme.text }]}>Breathe</Text>
-        </TouchableOpacity>
-      </View>
-
-      <GlassCard theme={theme} style={{ marginBottom: 16 }} onPress={() => onNav('chat')}>
-        <View style={styles.emoCard}>
-          <EmoAvatar size={44} theme={theme} />
-          <View style={styles.flex}>
-            <Text style={[styles.cardTitle, { fontSize: 17, color: theme.text }]}>Talk to EmoAI</Text>
-            <Text style={[styles.cardSub, { marginTop: 4, color: theme.mutedText }]}>
-              I'm here to listen, support and guide you.
+    <View style={styles.flex}>
+      <Screen theme={theme}>
+        <View style={styles.homeHeaderRow}>
+          <View style={styles.homeHeaderCopy}>
+            <Text style={[styles.homeGreetingLine, { color: theme.text }]}>
+              {copy.timeLabel},
             </Text>
+            <Text style={[styles.homeNameSerif, { color: theme.text }]}>
+              {displayName} 💜
+            </Text>
+            <Text style={[styles.homeTagline, { color: theme.secondaryText }]}>
+              Intelligence with Soul
+            </Text>
+            <Text style={[styles.homeSubline, { color: theme.mutedText }]}>{copy.subline}</Text>
           </View>
-          <Text style={[styles.chevron, { color: theme.secondaryText }]}>›</Text>
+          <View style={styles.homeHeaderOrb}>
+            <EmoOrb theme={theme} compact />
+          </View>
         </View>
-      </GlassCard>
 
-      <GlassCard theme={theme} style={styles.cardPadLg}>
-        <Text style={[styles.reminderEyebrow, { color: theme.secondaryText }]}>A gentle reminder</Text>
-        <Text style={[styles.affirmationText, { color: theme.text }]}>{AFFIRMATIONS[affIdx]}</Text>
-        <TouchableOpacity onPress={() => setAffIdx((affIdx + 1) % AFFIRMATIONS.length)} style={{ marginTop: 12 }}>
-          <Text style={[styles.reminderRefresh, { color: theme.accent }]}>Another reminder ↻</Text>
-        </TouchableOpacity>
-      </GlassCard>
+        <GlassCard theme={theme} style={styles.homeReflectionCard}>
+          <Text style={[styles.homeReflectionTitle, { color: theme.text }]}>
+            ✦ Today's reflection
+          </Text>
+          <Text style={[styles.homeReflectionBody, { color: theme.mutedText }]}>
+            {copy.reflectionBody}
+          </Text>
+          <View style={[styles.homeReflectionGlow, { backgroundColor: theme.glow }]} pointerEvents="none">
+            <Sparkles size={28} color={theme.accent} strokeWidth={1.75} />
+          </View>
+        </GlassCard>
 
-      <CheckInModal visible={showCheckIn} onClose={() => setShowCheckIn(false)} />
-    </Screen>
+        <GlassCard theme={theme} style={styles.homeEmoHereCard} onPress={() => onNav('talk')}>
+          <View style={styles.homeEmoHereContent}>
+            <Text style={[styles.homeEmoHereTitle, { color: theme.text }]}>Emo is here 🌿</Text>
+            <Text style={[styles.homeEmoHereBody, { color: theme.mutedText }]}>
+              I'm here to support, listen and guide you.
+            </Text>
+            <View style={[styles.homeEmoHereBtn, { backgroundColor: theme.isDark ? theme.card : '#FFFFFF' }]}>
+              <Text style={[styles.homeEmoHereBtnText, { color: theme.accent }]}>Begin conversation →</Text>
+            </View>
+          </View>
+          <EmoAvatar size={52} theme={theme} />
+        </GlassCard>
+
+        <View style={styles.homeActionGrid}>
+          <TouchableOpacity activeOpacity={0.88} style={styles.homeActionTile} onPress={() => onNav('checkin')}>
+            <LinearGradient colors={checkInGradient} style={styles.homeActionTileInner}>
+              <Heart size={22} color="#FFFFFF" strokeWidth={2.25} fill="rgba(255,255,255,0.25)" />
+              <Text style={styles.homeActionTileLabelLight}>Check In</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => onNav('talk')}
+          >
+            <View style={styles.homeActionTileInner}>
+              <MessageCircle size={22} color={theme.accent} strokeWidth={2.25} />
+              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Talk</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => onNav('breathe')}
+          >
+            <View style={styles.homeActionTileInner}>
+              <Wind size={22} color={theme.accent} strokeWidth={2.25} />
+              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Breathe</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <GlassCard theme={theme} style={styles.homeReminderCard}>
+          <Text style={[styles.homeReminderEyebrow, { color: theme.isDark ? '#86EFAC' : '#059669' }]}>
+            {copy.reminderEyebrow}
+          </Text>
+          <Text style={[styles.homeReminderText, { color: theme.text }]}>{AFFIRMATIONS[affIdx]}</Text>
+          <TouchableOpacity onPress={nextReminder} style={styles.homeReminderRefreshBtn}>
+            <Text style={[styles.homeReminderRefresh, { color: theme.accent }]}>Another reminder ↻</Text>
+          </TouchableOpacity>
+        </GlassCard>
+      </Screen>
+    </View>
   );
 }
 
 /* ------------------------------------------------------------------ *
- * Chat
+ * Talk (voice sanctuary — separate from text chat)
  * ------------------------------------------------------------------ */
 
-function ChatScreen({ userName }: { userName: string }) {
+function TalkScreen({ userName, onNav }: { userName: string; onNav: (key: ScreenKey) => void }) {
+  return <VoiceTalkScreen userName={userName} onClose={() => onNav('talk')} />;
+}
+
+/* ------------------------------------------------------------------ *
+ * Chat (text conversation)
+ * ------------------------------------------------------------------ */
+
+const CHAT_USER_GRADIENT = ['#9458E8', '#E87898'] as [string, string];
+const CHAT_SEND_GRADIENT = ['#9473FF', '#6366F1'] as [string, string];
+
+const CHAT_MENU_SOLID = '#2A1848';
+const CHAT_VOICE_ALOUD_KEY = 'chatVoiceAloudEnabled';
+
+function makeWelcomeMessage(userName: string): ChatMessage {
+  const n = userName.trim() || 'friend';
+  return {
+    id: 'welcome',
+    role: 'bot',
+    text: `Hello, ${n}. I'm Emo — heart and mind in one place. 💜\n\nAsk me anything, send a photo, plan your day, or just share how you feel. I'm here.`,
+    time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+  };
+}
+
+function rebuildApiHistory(messages: ChatMessage[]): ApiMessage[] {
+  return messages
+    .filter((m) => m.id !== 'welcome')
+    .map((m) => ({
+      role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.text,
+    }));
+}
+
+function EmoChatText({
+  text,
+  style,
+  paragraphGap = 10,
+}: {
+  text: string;
+  style: object;
+  paragraphGap?: number;
+}) {
+  const paragraphs = splitEmoReplyParagraphs(text);
+  if (paragraphs.length <= 1) {
+    return <Text style={style}>{polishEmoReplyText(text)}</Text>;
+  }
+  return (
+    <>
+      {paragraphs.map((paragraph, index) => (
+        <Text key={`${index}-${paragraph.slice(0, 12)}`} style={[style, index > 0 && { marginTop: paragraphGap }]}>
+          {paragraph}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function ChatMenuSheet({
+  visible,
+  theme,
+  onClose,
+  onClear,
+  onArchive,
+  onNewChat,
+  onSave,
+}: {
+  visible: boolean;
+  theme: CircadianTheme;
+  onClose: () => void;
+  onClear: () => void;
+  onArchive: () => void;
+  onNewChat: () => void;
+  onSave: () => void;
+}) {
+  const items = [
+    { label: 'Save chat', action: onSave },
+    { label: 'New chat', action: onNewChat },
+    { label: 'Archive', action: onArchive },
+    { label: 'Clear chat history', action: onClear, destructive: true },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.chatMenuOverlay} onPress={onClose}>
+        <View style={styles.chatMenuAnchor}>
+          <View
+            style={[
+              styles.chatMenuSheet,
+              { backgroundColor: CHAT_MENU_SOLID, borderColor: theme.border },
+            ]}
+          >
+            {items.map((item, index) => (
+              <Pressable
+                key={item.label}
+                onPress={() => {
+                  onClose();
+                  item.action();
+                }}
+                style={({ pressed }) => [
+                  styles.chatMenuItem,
+                  index < items.length - 1 && styles.chatMenuItemBorder,
+                  pressed && styles.chatMenuItemPressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.chatMenuItemText,
+                    { color: item.destructive ? '#F08A8A' : theme.text },
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+type ChatBubbleMenuVariant = 'user' | 'bot';
+
+function ChatBubbleMenuSheet({
+  visible,
+  theme,
+  variant,
+  bottomInset,
+  onClose,
+  onCopy,
+  onPaste,
+  onEdit,
+  onDelete,
+  onListen,
+}: {
+  visible: boolean;
+  theme: CircadianTheme;
+  variant: ChatBubbleMenuVariant;
+  bottomInset: number;
+  onClose: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onListen?: () => void;
+}) {
+  const items =
+    variant === 'user'
+      ? [
+          { label: 'Copy', action: onCopy },
+          { label: 'Paste', action: onPaste },
+          { label: 'Edit', action: onEdit },
+          { label: 'Delete', action: onDelete, destructive: true },
+          { label: 'Cancel', cancel: true },
+        ]
+      : [
+          { label: 'Copy', action: onCopy },
+          ...(onListen ? [{ label: 'Listen', action: onListen }] : []),
+          { label: 'Cancel', cancel: true },
+        ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.chatBubbleMenuOverlay}>
+        <Pressable style={styles.chatBubbleMenuBackdrop} onPress={onClose} accessibilityLabel="Close menu" />
+        <View
+          style={[
+            styles.chatBubbleMenuSheet,
+            {
+              backgroundColor: CHAT_MENU_SOLID,
+              borderColor: theme.border,
+              marginBottom: bottomInset + 12,
+            },
+          ]}
+        >
+          {items.map((item, index) => (
+            <Pressable
+              key={item.label}
+              onPress={() => {
+                onClose();
+                if (!item.cancel && item.action) {
+                  item.action();
+                }
+              }}
+              style={({ pressed }) => [
+                styles.chatMenuItem,
+                index < items.length - 1 && styles.chatMenuItemBorder,
+                pressed && styles.chatMenuItemPressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.chatMenuItemText,
+                  item.destructive && { color: '#F08A8A' },
+                  item.cancel && { color: theme.mutedText, fontWeight: '600' },
+                  !item.destructive && !item.cancel && { color: theme.text },
+                ]}
+              >
+                {item.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: ScreenKey) => void }) {
+  const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isWaiting, setIsWaiting] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [voiceAloudEnabled, setVoiceAloudEnabled] = useState(false);
+  const [isEmoSpeaking, setIsEmoSpeaking] = useState(false);
   const [history, setHistory] = useState<ApiMessage[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [bubbleMenuMsg, setBubbleMenuMsg] = useState<ChatMessage | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
+  const inputRef = useRef<TextInput | null>(null);
+
+  const persistChat = async (msgs: ChatMessage[]) => {
+    try {
+      await AsyncStorage.setItem('chatCurrent', JSON.stringify(msgs));
+    } catch {}
+  };
+
+  const loadChat = async () => {
+    try {
+      const saved = await AsyncStorage.getItem('chatCurrent');
+      if (saved) {
+        const parsed: ChatMessage[] = JSON.parse(saved);
+        if (parsed.length > 0) {
+          setMessages(parsed);
+          setHistory(rebuildApiHistory(parsed));
+          return;
+        }
+      }
+    } catch {}
+    const welcome = makeWelcomeMessage(userName);
+    setMessages([welcome]);
+    setHistory([]);
+  };
 
   useEffect(() => {
-    const n = userName ? `, ${userName}` : '';
-    setMessages([
-      {
-        role: 'bot',
-        text: `Hello${n}. I'm really glad you're here. 💜\n\nYou don't need to have the right words. Just share what feels true right now — I'm listening.`,
-        time: 'Just now',
-      },
-    ]);
+    loadChat();
   }, [userName]);
 
-  const send = async () => {
-    if (!input.trim() || isWaiting) return;
-    const msg = input.trim();
-    setInput('');
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newMessages: ChatMessage[] = [...messages, { role: 'user', text: msg, time }];
-    setMessages(newMessages);
-    const newHistory: ApiMessage[] = [...history, { role: 'user', content: msg }];
-    setHistory(newHistory);
-    setIsWaiting(true);
+  useEffect(() => {
+    AsyncStorage.getItem(CHAT_VOICE_ALOUD_KEY)
+      .then((raw) => {
+        if (raw === '1') setVoiceAloudEnabled(true);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(
+    () => () => {
+      stopSpeaking();
+    },
+    [],
+  );
+
+  const persistVoiceAloud = async (enabled: boolean) => {
     try {
+      await AsyncStorage.setItem(CHAT_VOICE_ALOUD_KEY, enabled ? '1' : '0');
+    } catch {}
+  };
+
+  const speakEmoReply = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    void speakAloud(trimmed, {
+      onStart: () => setIsEmoSpeaking(true),
+      onDone: () => setIsEmoSpeaking(false),
+      onProvider: (provider) => {
+        if (__DEV__ && provider === 'system') {
+          console.warn('[Emo voice] Using device voice — check ElevenLabs credits/model');
+        }
+      },
+      onElevenLabsError: (message) => {
+        console.warn('[Emo voice]', describeElevenLabsError(message));
+      },
+    });
+  };
+
+  const toggleVoiceAloud = () => {
+    if (isEmoSpeaking) {
+      stopSpeaking();
+      setIsEmoSpeaking(false);
+      return;
+    }
+    const next = !voiceAloudEnabled;
+    setVoiceAloudEnabled(next);
+    void persistVoiceAloud(next);
+  };
+
+  useEffect(() => {
+    if (messages.length > 0) persistChat(messages);
+  }, [messages]);
+
+  const copyMessage = async (msg: ChatMessage) => {
+    await Clipboard.setStringAsync(msg.text);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  };
+
+  const pasteIntoComposer = async () => {
+    try {
+      const text = (await Clipboard.getStringAsync()).trim();
+      if (text) {
+        setInput(text);
+        inputRef.current?.focus();
+      }
+    } catch {}
+  };
+
+  const editUserMessage = (msg: ChatMessage) => {
+    setEditingId(msg.id);
+    setInput(msg.text);
+    inputRef.current?.focus();
+  };
+
+  const deleteUserMessage = (msg: ChatMessage) => {
+    setMessages((prev) => {
+      const next = prev.filter((m) => m.id !== msg.id);
+      setHistory(rebuildApiHistory(next));
+      return next;
+    });
+    if (editingId === msg.id) {
+      setEditingId(null);
+      setInput('');
+    }
+  };
+
+  const openBubbleMenu = (msg: ChatMessage) => {
+    setBubbleMenuMsg(msg);
+  };
+
+  const closeBubbleMenu = () => {
+    setBubbleMenuMsg(null);
+  };
+
+  const startFreshChat = () => {
+    const welcome = makeWelcomeMessage(userName);
+    setMessages([welcome]);
+    setHistory([]);
+    setEditingId(null);
+    setInput('');
+  };
+
+  const handleClear = () => {
+    Alert.alert('Clear chat history', 'Remove all messages in this conversation?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear', style: 'destructive', onPress: startFreshChat },
+    ]);
+  };
+
+  const handleArchive = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('chatArchived');
+      const archived = raw ? JSON.parse(raw) : [];
+      await AsyncStorage.setItem(
+        'chatArchived',
+        JSON.stringify([
+          { id: Date.now(), date: new Date().toISOString(), messages },
+          ...archived,
+        ]),
+      );
+      startFreshChat();
+      Alert.alert('Archived', 'This chat was moved to your archive.');
+    } catch {
+      Alert.alert('Could not archive', 'Please try again.');
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('chatSaved');
+      const saved = raw ? JSON.parse(raw) : [];
+      await AsyncStorage.setItem(
+        'chatSaved',
+        JSON.stringify([
+          { id: Date.now(), date: new Date().toISOString(), messages },
+          ...saved,
+        ]),
+      );
+      Alert.alert('Saved', 'Chat saved on this device.');
+    } catch {
+      Alert.alert('Could not save', 'Please try again.');
+    }
+  };
+
+  const addAttachment = async (
+    uri: string,
+    kind: 'photo' | 'file',
+    label: string,
+    fileName?: string,
+  ) => {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const msg: ChatMessage = {
+      id: `att-${Date.now()}`,
+      role: 'user',
+      text: label,
+      time,
+      attachmentUri: uri,
+      attachmentKind: kind,
+      attachmentName: fileName,
+    };
+    const newMessages = [...messages, msg];
+    setMessages(newMessages);
+    await requestEmoReply(newMessages);
+  };
+
+  const requestEmoReply = async (chatMessages: ChatMessage[]) => {
+    if (isWaiting) return;
+    setIsWaiting(true);
+    setIsSearching(false);
+
+    try {
+      const apiMessages = await buildAnthropicMessagesFromChat(chatMessages);
+      if (apiMessages.length === 0) {
+        setIsWaiting(false);
+        return;
+      }
+
+      const lastUserMsg = [...chatMessages].reverse().find((m) => m.role === 'user');
+      const intent = lastUserMsg ? classifyEmoIntent(lastUserMsg.text) : { mode: 'sanctuary' as const };
+
+      let researchBlock = '';
+      if (lastUserMsg && shouldRunOracleSearch(intent.mode, lastUserMsg.text)) {
+        setIsSearching(true);
+        try {
+          const research = await fetchOracleResearchContext(lastUserMsg.text);
+          if (research.hadResults && research.contextBlock) {
+            researchBlock = `\n\n${research.contextBlock}`;
+            void logOracleInquiry({
+              message: lastUserMsg.text,
+              query: research.query,
+              sources: research.sources,
+            });
+          }
+        } catch {
+          if (__DEV__) console.warn('[Emo Oracle] Web research failed');
+        } finally {
+          setIsSearching(false);
+        }
+      }
+
+      const system = `${getChatSystemPrompt(userName)}\n\n${getIntentModeAppendix(intent.mode)}${researchBlock}`;
+
       const result = await callAnthropicMessages({
-        system: SYSTEM_PROMPT,
-        maxTokens: 1000,
-        messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
+        system,
+        maxTokens: intent.mode === 'oracle' ? 1600 : 1200,
+        messages: apiMessages,
       });
 
       const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       if (result.ok && result.data?.content?.[0]?.text) {
-        const replyText: string = result.data.content[0].text;
-        setHistory([...newHistory, { role: 'assistant', content: replyText }]);
-        setMessages([...newMessages, { role: 'bot', text: replyText, time: replyTime }]);
-        Speech.speak(replyText, { pitch: 0.9, rate: 0.85 });
+        const replyText = polishEmoReplyText(result.data.content[0].text);
+        const botMsg: ChatMessage = {
+          id: `b-${Date.now()}`,
+          role: 'bot',
+          text: replyText,
+          time: replyTime,
+        };
+        setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
+        setMessages((prev) => [...prev, botMsg]);
+        if (voiceAloudEnabled) {
+          speakEmoReply(replyText);
+        }
       } else {
-        const reason = describeAnthropicError(result.data ?? { error: result.error });
-        console.warn('[EmoCare] Anthropic chat failed:', result.status, reason);
-        setMessages([
-          ...newMessages,
+        const errMsg =
+          result.error != null
+            ? describeAnthropicError(result.error)
+            : "I'm still here with you. Something interrupted my reply just now — try sending that again? 💜";
+        setMessages((prev) => [
+          ...prev,
           {
+            id: `b-${Date.now()}`,
             role: 'bot',
-            text: "I'm still here with you. Something interrupted my reply just now — try sending that again? 💜",
+            text: errMsg,
             time: replyTime,
           },
         ]);
       }
-    } catch (err) {
-      console.warn('[EmoCare] Anthropic chat threw:', err);
-      setMessages([
-        ...newMessages,
-        { role: 'bot', text: 'Something went gently wrong. Please try again. 🌿', time: '' },
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `b-${Date.now()}`,
+          role: 'bot',
+          text: 'Something went gently wrong. Please try again. 🌿',
+          time: '',
+        },
       ]);
     }
+    setIsSearching(false);
     setIsWaiting(false);
   };
 
+  const pickPhoto = async () => {
+    if (isWaiting) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo access to share images with Emo.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      addAttachment(result.assets[0].uri, 'photo', 'Can you see this photo?');
+    }
+  };
+
+  const pickFile = async () => {
+    if (isWaiting) return;
+    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+    if (!result.canceled && result.assets[0]?.uri) {
+      const name = result.assets[0].name ?? 'File';
+      const isPdf = name.toLowerCase().endsWith('.pdf');
+      addAttachment(
+        result.assets[0].uri,
+        'file',
+        isPdf ? `Can you read this PDF? (${name})` : `Can you read this file? (${name})`,
+        name,
+      );
+    }
+  };
+
+  const handleSendFiles = () => {
+    Alert.alert('Send files and photos', undefined, [
+      { text: 'Photo from library', onPress: pickPhoto },
+      { text: 'Choose a file', onPress: pickFile },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const send = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || isWaiting) return;
+
+    stopSpeaking();
+
+    if (editingId) {
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === editingId ? { ...m, text: trimmed } : m));
+        setHistory(rebuildApiHistory(next));
+        return next;
+      });
+      setEditingId(null);
+      setInput('');
+      return;
+    }
+
+    setInput('');
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      text: trimmed,
+      time,
+    };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setHistory((prev) => [...prev, { role: 'user', content: trimmed }]);
+    await requestEmoReply(newMessages);
+  };
+
+  const navBtnStyle = {
+    backgroundColor: theme.card,
+    borderColor: theme.border,
+  };
+  const botBubbleBg = theme.isDark ? theme.card : 'rgba(255,255,255,0.92)';
+  const chatStatusLine = isEmoSpeaking
+    ? 'Emo is speaking…'
+    : isSearching
+      ? 'Oracle · gathering research…'
+      : isWaiting
+        ? 'Thinking with you…'
+        : voiceAloudEnabled
+          ? 'Read aloud on'
+          : 'Always here for you';
+
   return (
     <View style={styles.flex}>
-      <ScreenBackground />
-      <SafeAreaView style={styles.flex} edges={['top']}>
+      <CircadianBackground theme={theme} />
+      <StatusBar style="light" />
+      <TopChrome>
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={insets.top + 8}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <View style={styles.chatHeader}>
-            <EmoAvatar size={38} />
-            <View>
-              <Text style={[styles.cardTitle, { fontSize: 15 }]}>Emo</Text>
-              <Text style={styles.cardSub}>{isWaiting ? 'Emo is here with you...' : 'Always here with you ✨'}</Text>
+          <View style={styles.chatHeaderUnified}>
+            <Pressable
+              onPress={() => onNav('home')}
+              style={({ pressed }) => [
+                styles.chatNavBtn,
+                navBtnStyle,
+                pressed && styles.chatNavBtnPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Back to Home"
+            >
+              <ChevronLeft size={22} color={theme.text} strokeWidth={2.5} />
+            </Pressable>
+
+            <View style={styles.chatHeaderBrand}>
+              <EmoAvatar size={44} theme={theme} plain />
+              <View style={styles.chatHeaderTextCol}>
+                <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>Emo</Text>
+                <Text style={[styles.chatHeroTaglineInline, { color: theme.secondaryText }]}>
+                  {chatStatusLine}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.chatClassicTopActions}>
+              <Pressable
+                onPress={toggleVoiceAloud}
+                style={({ pressed }) => [
+                  styles.chatNavBtn,
+                  navBtnStyle,
+                  voiceAloudEnabled && styles.chatVoiceBtnActive,
+                  voiceAloudEnabled && { borderColor: theme.accent },
+                  pressed && styles.chatNavBtnPressed,
+                ]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: voiceAloudEnabled }}
+                accessibilityLabel={voiceAloudEnabled ? 'Turn read aloud off' : 'Turn read aloud on'}
+              >
+                {voiceAloudEnabled ? (
+                  <Volume2 size={18} color={theme.accent} strokeWidth={2.5} />
+                ) : (
+                  <VolumeX size={18} color={theme.text} strokeWidth={2.5} />
+                )}
+              </Pressable>
+              <Pressable
+                onPress={() => onNav('voice')}
+                style={({ pressed }) => [
+                  styles.chatNavBtn,
+                  navBtnStyle,
+                  pressed && styles.chatNavBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Voice talk"
+              >
+                <Mic size={18} color={theme.text} strokeWidth={2.5} />
+              </Pressable>
+              <Pressable
+                onPress={() => setMenuOpen(true)}
+                style={({ pressed }) => [
+                  styles.chatNavBtn,
+                  navBtnStyle,
+                  pressed && styles.chatNavBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Chat menu"
+              >
+                <Menu size={18} color={theme.text} strokeWidth={2.5} />
+              </Pressable>
             </View>
           </View>
 
           <ScrollView
             ref={scrollRef}
-            style={styles.flex}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 }}
+            style={styles.chatMessagesScroll}
+            contentContainerStyle={[styles.chatScrollContent, styles.chatScrollContentGrow]}
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
           >
-            {messages.map((m, i) => (
-              <View
-                key={i}
-                style={[styles.msgWrap, m.role === 'user' ? styles.msgWrapUser : styles.msgWrapBot]}
-              >
-                <View style={m.role === 'user' ? styles.bubbleUser : styles.bubbleBot}>
-                  <Text style={[styles.bubbleText, m.role === 'user' ? styles.bubbleTextUser : null]}>
-                    {m.text}
-                  </Text>
+            {messages.map((m) =>
+              m.role === 'bot' ? (
+                <View key={m.id} style={styles.chatMsgBotClassic}>
+                  <Pressable
+                    onPress={() => openBubbleMenu(m)}
+                    style={({ pressed }) => [
+                      styles.chatBotBubble,
+                      styles.chatBotBubbleClassic,
+                      { backgroundColor: botBubbleBg, borderColor: theme.border },
+                      pressed && styles.chatBubblePressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Emo message options"
+                  >
+                    <EmoChatText text={m.text} style={[styles.chatBotText, { color: theme.text }]} />
+                  </Pressable>
+                  {m.time ? (
+                    <Text style={[styles.chatMsgTime, { color: theme.mutedText }]}>{m.time}</Text>
+                  ) : null}
                 </View>
-                {m.time ? (
-                  <Text style={[styles.msgTime, m.role === 'user' && styles.msgTimeUser]}>{m.time}</Text>
-                ) : null}
-              </View>
-            ))}
+              ) : (
+                <View key={m.id} style={styles.chatMsgRowUser}>
+                  <Pressable
+                    onPress={() => openBubbleMenu(m)}
+                    style={({ pressed }) => [pressed && styles.chatBubblePressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Your message options"
+                  >
+                    <LinearGradient
+                      colors={CHAT_USER_GRADIENT}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={styles.chatUserBubble}
+                    >
+                      {m.attachmentUri && m.attachmentKind === 'photo' ? (
+                        <Image
+                          source={{ uri: m.attachmentUri }}
+                          style={styles.chatAttachmentImage}
+                          resizeMode="cover"
+                        />
+                      ) : null}
+                      <Text style={styles.chatUserText}>{m.text}</Text>
+                    </LinearGradient>
+                  </Pressable>
+                  {m.time ? (
+                    <Text style={[styles.chatMsgTime, styles.chatMsgTimeUser, { color: theme.mutedText }]}>
+                      {m.time} ✓✓
+                    </Text>
+                  ) : null}
+                </View>
+              ),
+            )}
             {isWaiting ? (
-              <View style={[styles.bubbleBot, styles.typingBubble]}>
-                <Text style={styles.typingGlyph}>···</Text>
+              <View style={styles.chatMsgBotClassic}>
+                <View
+                  style={[
+                    styles.chatBotBubble,
+                    styles.chatTypingBubble,
+                    { backgroundColor: botBubbleBg, borderColor: theme.border },
+                  ]}
+                >
+                  <Text style={[styles.chatTypingGlyph, { color: theme.accent }]}>···</Text>
+                </View>
               </View>
             ) : null}
           </ScrollView>
 
-          {/* Input row reserves space for the floating nav bar so it is never blocked. */}
-          <View style={[styles.chatInputRow, { marginBottom: NAV_CONTENT_HEIGHT + insets.bottom }]}>
-            <TextInput
-              style={styles.chatInput}
-              placeholder="What's on your heart today..."
-              placeholderTextColor={C.white30}
-              value={input}
-              onChangeText={setInput}
-              onSubmitEditing={send}
-              editable={!isWaiting}
-              returnKeyType="send"
-              blurOnSubmit={false}
-              multiline
-            />
-            <TouchableOpacity
-              style={[styles.sendBtn, isWaiting && styles.btnDisabled]}
-              onPress={send}
-              disabled={isWaiting}
+          {editingId ? (
+            <View style={[styles.chatEditBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.chatEditBannerText, { color: theme.mutedText }]}>Editing message</Text>
+              <Pressable
+                onPress={() => {
+                  setEditingId(null);
+                  setInput('');
+                }}
+              >
+                <Text style={{ color: theme.accent, fontWeight: '600' }}>Cancel</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          <View
+            style={[
+              styles.chatComposerWrap,
+              { paddingBottom: NAV_CONTENT_HEIGHT + (insets.bottom ?? 0) + 6 },
+            ]}
+          >
+            <View
+              style={[
+                styles.chatComposerPill,
+                { backgroundColor: theme.card, borderColor: theme.border },
+              ]}
             >
-              <Text style={styles.sendGlyph}>↑</Text>
-            </TouchableOpacity>
+              <Pressable
+                onPress={handleSendFiles}
+                style={({ pressed }) => [styles.chatPlusBtn, pressed && styles.chatNavBtnPressed, isWaiting && styles.btnDisabled]}
+                disabled={isWaiting}
+                accessibilityRole="button"
+                accessibilityLabel="Send files and photos"
+              >
+                <Plus size={20} color={theme.text} strokeWidth={2.5} />
+              </Pressable>
+              <TextInput
+                ref={inputRef}
+                style={[styles.chatComposerInput, { color: theme.text }]}
+                placeholder="Ask anything, share a feeling, or attach a photo..."
+                placeholderTextColor={theme.mutedText}
+                value={input}
+                onChangeText={setInput}
+                onSubmitEditing={send}
+                editable={!isWaiting}
+                returnKeyType="send"
+                submitBehavior="submit"
+                blurOnSubmit={false}
+                multiline={false}
+              />
+              <TouchableOpacity
+                style={[styles.chatSendWrap, isWaiting && styles.btnDisabled]}
+                onPress={send}
+                disabled={isWaiting}
+                activeOpacity={0.88}
+              >
+                <LinearGradient colors={CHAT_SEND_GRADIENT} style={styles.chatSendBtn}>
+                  <Text style={styles.chatSendGlyph}>↑</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.chatPrivacyRow}>
+              <Lock size={12} color={theme.mutedText} strokeWidth={2.2} />
+              <Text style={[styles.chatPrivacy, { color: theme.mutedText }]}>
+                Your conversations are private and secure
+              </Text>
+            </View>
           </View>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </TopChrome>
+
+      <ChatMenuSheet
+        visible={menuOpen}
+        theme={theme}
+        onClose={() => setMenuOpen(false)}
+        onClear={handleClear}
+        onArchive={handleArchive}
+        onNewChat={() => {
+          Alert.alert('New chat', 'Start a fresh conversation?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'New chat', onPress: startFreshChat },
+          ]);
+        }}
+        onSave={handleSave}
+      />
+
+      <ChatBubbleMenuSheet
+        visible={bubbleMenuMsg != null}
+        theme={theme}
+        variant={bubbleMenuMsg?.role === 'user' ? 'user' : 'bot'}
+        bottomInset={NAV_CONTENT_HEIGHT + (insets.bottom ?? 0)}
+        onClose={closeBubbleMenu}
+        onCopy={() => {
+          if (bubbleMenuMsg) void copyMessage(bubbleMenuMsg);
+        }}
+        onPaste={() => {
+          void pasteIntoComposer();
+        }}
+        onEdit={() => {
+          if (bubbleMenuMsg?.role === 'user') editUserMessage(bubbleMenuMsg);
+        }}
+        onDelete={() => {
+          if (bubbleMenuMsg?.role === 'user') deleteUserMessage(bubbleMenuMsg);
+        }}
+        onListen={
+          bubbleMenuMsg?.role === 'bot'
+            ? () => speakEmoReply(bubbleMenuMsg.text)
+            : undefined
+        }
+      />
     </View>
   );
 }
@@ -1530,6 +1999,7 @@ function ChatScreen({ userName }: { userName: string }) {
  * ------------------------------------------------------------------ */
 
 function BreatheScreen() {
+  const theme = useCircadianTheme();
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState('Tap to begin');
   const [selected, setSelected] = useState('Box');
@@ -1572,7 +2042,7 @@ function BreatheScreen() {
   );
 
   return (
-    <Screen scroll={false} contentStyle={styles.breatheRoot}>
+    <Screen scroll={false} contentStyle={styles.breatheRoot} theme={theme}>
       <Text style={styles.sanctuaryLabel}>Breathing exercise</Text>
       <Text style={styles.heroGreeting}>Box breathing</Text>
       <View style={styles.breatheStage}>
@@ -1615,6 +2085,7 @@ function BreatheScreen() {
  * ------------------------------------------------------------------ */
 
 function JournalScreen() {
+  const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState('');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -1657,9 +2128,9 @@ function JournalScreen() {
     const e = entries[viewing];
     return (
       <View style={styles.flex}>
-        <ScreenBackground />
-        <SafeAreaView style={styles.flex} edges={['top']}>
-          <View style={styles.chatHeader}>
+        <CircadianBackground theme={theme} />
+        <TopChrome>
+        <View style={styles.chatHeader}>
             <TouchableOpacity onPress={() => setViewing(null)} style={{ padding: 4 }}>
               <Text style={styles.backGlyph}>←</Text>
             </TouchableOpacity>
@@ -1684,16 +2155,16 @@ function JournalScreen() {
           <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}>
             <Text style={styles.journalReadText}>{e.text}</Text>
           </ScrollView>
-        </SafeAreaView>
+        </TopChrome>
       </View>
     );
   }
 
   return (
     <View style={styles.flex}>
-      <ScreenBackground />
-      <SafeAreaView style={styles.flex} edges={['top']}>
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <CircadianBackground theme={theme} />
+      <TopChrome>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
             contentContainerStyle={{ padding: 20, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}
             showsVerticalScrollIndicator={false}
@@ -1758,7 +2229,7 @@ function JournalScreen() {
             ))}
           </ScrollView>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </TopChrome>
     </View>
   );
 }
@@ -1771,12 +2242,24 @@ function NavBar({ active, onNav }: { active: ScreenKey; onNav: (key: ScreenKey) 
   const insets = useSafeAreaInsets();
   const tabs: { key: ScreenKey; icon: string; label: string }[] = [
     { key: 'home', icon: '🏠', label: 'Home' },
-    { key: 'chat', icon: '💬', label: 'Talk' },
+    { key: 'talk', icon: '💬', label: 'Talk' },
     { key: 'breathe', icon: '🌬️', label: 'Breathe' },
     { key: 'journal', icon: '📓', label: 'Journal' },
   ];
   return (
-    <View style={[styles.navBar, { height: NAV_CONTENT_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
+    <View
+      style={[
+        styles.navBar,
+        {
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: NAV_CONTENT_HEIGHT + insets.bottom,
+          paddingBottom: insets.bottom,
+        },
+      ]}
+    >
       {tabs.map((t) => (
         <TouchableOpacity key={t.key} style={styles.navItem} onPress={() => onNav(t.key)}>
           <Text style={{ fontSize: 22 }}>{t.icon}</Text>
@@ -1794,32 +2277,33 @@ function NavBar({ active, onNav }: { active: ScreenKey; onNav: (key: ScreenKey) 
 function Root() {
   const [onboarded, setOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [splashDone, setSplashDone] = useState(false);
   const [userName, setUserName] = useState('');
   const [screen, setScreen] = useState<ScreenKey>('home');
 
   useEffect(() => {
-    AsyncStorage.getItem('onboarded').then((v) => {
-      if (v === 'true') {
-        AsyncStorage.getItem('userName').then((n) => {
-          setUserName(n || '');
-          setOnboarded(true);
-          setLoading(false);
-        });
-      } else {
-        setLoading(false);
+    async function bootstrap() {
+      if (__DEV__) {
+        await AsyncStorage.removeItem('onboarded');
       }
-    });
+      const v = await AsyncStorage.getItem('onboarded');
+      if (v === 'true') {
+        const n = await AsyncStorage.getItem('userName');
+        setUserName(n || '');
+        setOnboarded(true);
+      }
+      setLoading(false);
+      NativeSplash.hideAsync().catch(() => {});
+    }
+    bootstrap();
   }, []);
 
-  // Page 1 — show the splash until data has loaded AND the splash animation finishes.
-  if (loading || !splashDone) {
-    return <SplashScreen onDone={() => setSplashDone(true)} />;
+  if (loading) {
+    return null;
   }
 
   if (!onboarded) {
     return (
-      <OnboardingScreen
+      <OnboardingFlow
         onComplete={({ name }) => {
           setUserName(name);
           setOnboarded(true);
@@ -1828,27 +2312,60 @@ function Root() {
     );
   }
 
+  return (
+    <SanctuaryAmbientProvider>
+      <VoiceStreamProvider>
+        <RootMain userName={userName} screen={screen} setScreen={setScreen} />
+      </VoiceStreamProvider>
+    </SanctuaryAmbientProvider>
+  );
+}
+
+function RootMain({
+  userName,
+  screen,
+  setScreen,
+}: {
+  userName: string;
+  screen: ScreenKey;
+  setScreen: (key: ScreenKey) => void;
+}) {
+  const handleNav = (key: ScreenKey) => {
+    setScreen(key === 'chat' ? 'talk' : key);
+  };
+
   const screens: Record<ScreenKey, React.ReactNode> = {
-    home: <HomeScreen userName={userName} onNav={setScreen} />,
-    chat: <ChatScreen userName={userName} />,
+    home: <HomeScreen userName={userName} onNav={handleNav} />,
+    checkin: <CheckInScreen onNav={handleNav} />,
+    talk: <ChatScreen userName={userName} onNav={handleNav} />,
+    voice: <TalkScreen userName={userName} onNav={handleNav} />,
+    chat: <ChatScreen userName={userName} onNav={handleNav} />,
     breathe: <BreatheScreen />,
     journal: <JournalScreen />,
   };
 
   const theme = getCircadianTheme();
+  const navActive: ScreenKey =
+    screen === 'checkin' ? 'home' : screen === 'chat' || screen === 'voice' ? 'talk' : screen;
+  const statusTheme =
+    screen === 'home' || screen === 'checkin' || screen === 'chat' || screen === 'talk' || screen === 'voice'
+      ? theme.isDark
+        ? 'light'
+        : 'dark'
+      : 'light';
 
   return (
     <View style={styles.flex}>
-      <StatusBar style={screen === 'home' ? (theme.isDark ? 'light' : 'dark') : 'light'} />
+      <StatusBar style={statusTheme} />
       <View style={styles.flex}>{screens[screen]}</View>
-      <NavBar active={screen} onNav={setScreen} />
+      {screen !== 'voice' ? <NavBar active={navActive} onNav={handleNav} /> : null}
     </View>
   );
 }
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <Root />
     </SafeAreaProvider>
   );
@@ -1860,6 +2377,8 @@ export default function App() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  screenForeground: { flex: 1, zIndex: 1 },
+  screenScrollContent: { flexGrow: 0 },
 
   glass: {
     backgroundColor: C.card,
@@ -1868,16 +2387,26 @@ const styles = StyleSheet.create({
     borderColor: C.cardBorder,
     overflow: 'hidden',
   },
+  glassPressed: { opacity: 0.88 },
   cardPad: { paddingVertical: 16, paddingHorizontal: 16, marginBottom: 16 },
   cardPadLg: { paddingVertical: 18, paddingHorizontal: 18, marginBottom: 16 },
 
   // Avatar
-  avatarRing: {
-    borderWidth: 1.5,
-    borderColor: C.purple,
+  avatarPlainWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.purpleLight,
+  },
+  avatarRingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarRingGradient: {
+    position: 'absolute',
+  },
+  avatarRing: {
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarFallback: {
@@ -1886,10 +2415,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  // Chat presence orb (circadian hero)
+  presenceOrbWrap: {
+    width: 168,
+    height: 168,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  presenceOrbHalo: {
+    position: 'absolute',
+  },
+  presenceOrbGlow: {
+    position: 'absolute',
+  },
+  presenceOrbRing: {
+    position: 'absolute',
+    opacity: 0.85,
+  },
+  presenceOrbFacePlate: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  presenceMicBadge: {
+    position: 'absolute',
+    right: 18,
+    top: 18,
+  },
+
   // Emo orb (home screen pulse)
   orbWrap: { alignItems: 'center', justifyContent: 'center', height: 130, marginTop: 8, marginBottom: 6 },
+  orbWrapCompact: { height: 98, marginTop: 0, marginBottom: 0 },
   orbGlow: { position: 'absolute', width: 130, height: 130, borderRadius: 65, backgroundColor: C.purpleGlow },
+  orbGlowCompact: {},
   orbImage: { width: 116, height: 116, borderRadius: 58 },
+  orbImageCompact: {},
   orbFallback: {
     width: 116,
     height: 116,
@@ -1898,6 +2460,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: C.purpleLight,
   },
+  orbFallbackCompact: {},
 
   // Splash / Launch (Page 1)
   splashContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
@@ -1982,6 +2545,7 @@ const styles = StyleSheet.create({
 
   // Onboarding
   obSlide: { flex: 1, alignItems: 'center', paddingHorizontal: 28, paddingTop: 20, paddingBottom: 20 },
+  obSlidePage: { flex: 1, justifyContent: 'center' },
   // Welcome (slide 1) — airy layout, button pinned to bottom
   obWelcomeSlide: { paddingTop: 0, paddingBottom: 12 },
   obWelcomeEyebrow: { marginBottom: 14, marginTop: 0 },
@@ -2011,8 +2575,8 @@ const styles = StyleSheet.create({
   obPrivacyBtn: { marginTop: 'auto', marginBottom: 4 },
 
   // Page 4 — Name + First Mood (airy spacing, CTA pinned below)
-  obNameSlide: { alignItems: 'stretch', paddingTop: 4, paddingBottom: 12 },
-  obNameScrollContent: { paddingBottom: 16 },
+  obNameSlide: { flex: 0, alignItems: 'stretch', paddingTop: 4, paddingBottom: 12 },
+  obNameScrollContent: { paddingHorizontal: 28, paddingBottom: 120 },
   obNameHeaderBlock: {
     width: '100%',
     alignItems: 'center',
@@ -2081,7 +2645,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   obMoodCardPro: {
-    width: (width - 70) / 2,
+    width: (width - 56 - 14) / 2,
+    flexBasis: (width - 56 - 14) / 2,
+    flexGrow: 0,
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 12,
@@ -2126,7 +2693,7 @@ const styles = StyleSheet.create({
   obBackBtn: {
     position: 'absolute',
     left: 16,
-    top: 8,
+    top: 52,
     width: 40,
     height: 40,
     alignItems: 'center',
@@ -2300,114 +2867,178 @@ const styles = StyleSheet.create({
   dayLabel: { fontSize: 10, color: C.white30 },
   dayLabelToday: { color: C.orange, fontWeight: '600' },
 
-  // Home actions
-  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  checkInBtn: {
-    flex: 1.2,
-    backgroundColor: C.orange,
-    borderRadius: 18,
-    paddingVertical: 18,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    gap: 8,
+  // Home — Sanctuary (Page 5)
+  homeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 22,
+    gap: 12,
   },
-  checkInBtnText: { fontSize: 13, fontWeight: '700', color: C.white },
-  actionSmallBtn: {
+  homeHeaderCopy: { flex: 1, minWidth: 0 },
+  homeHeaderOrb: { marginTop: 2 },
+  homeGreetingLine: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontFamily: SERIF,
+    marginBottom: 2,
+  },
+  homeNameSerif: {
+    fontSize: 34,
+    lineHeight: 42,
+    fontFamily: SERIF,
+    marginBottom: 10,
+  },
+  homeTagline: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1.8,
+    marginBottom: 8,
+  },
+  homeSubline: { fontSize: 14, lineHeight: 21 },
+  homeReflectionCard: {
+    paddingVertical: 20,
+    paddingHorizontal: 18,
+    marginBottom: 14,
+    overflow: 'hidden',
+    minHeight: 132,
+  },
+  homeReflectionTitle: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontFamily: SERIF,
+    marginBottom: 10,
+    paddingRight: 72,
+  },
+  homeReflectionBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    paddingRight: 72,
+  },
+  homeReflectionGlow: {
+    position: 'absolute',
+    right: 14,
+    bottom: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.55,
+  },
+  homeEmoHereCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 14,
+    gap: 12,
+  },
+  homeEmoHereContent: { flex: 1, minWidth: 0 },
+  homeEmoHereTitle: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontFamily: SERIF,
+    marginBottom: 6,
+  },
+  homeEmoHereBody: { fontSize: 13, lineHeight: 20, marginBottom: 14 },
+  homeEmoHereBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  homeEmoHereBtnText: { fontSize: 13, fontWeight: '600' },
+  homeActionGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  homeActionTile: {
     flex: 1,
-    backgroundColor: C.card,
-    borderRadius: 18,
-    paddingVertical: 18,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    gap: 8,
+    borderRadius: 20,
     borderWidth: 0.5,
-    borderColor: C.cardBorder,
+    overflow: 'hidden',
+    minHeight: 96,
   },
-  actionSmallText: { fontSize: 12, fontWeight: '600', color: C.white },
-  emoCard: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16, gap: 14 },
-  chevron: { color: C.white60, fontSize: 20 },
-  reminderEyebrow: {
-    color: C.teal,
+  homeActionTileInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 8,
+  },
+  homeActionTileLabel: { fontSize: 13, fontWeight: '600' },
+  homeActionTileLabelLight: { fontSize: 13, fontWeight: '700', color: C.white },
+  homeReminderCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 8,
+  },
+  homeReminderEyebrow: {
     fontWeight: '600',
     letterSpacing: 1,
     fontSize: 10,
     textTransform: 'uppercase',
     marginBottom: 10,
   },
-  affirmationText: { fontSize: 14, color: C.white80, lineHeight: 24, fontStyle: 'italic' },
-  reminderRefresh: { color: C.teal, fontSize: 12 },
-
-  // Check-in modal
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalSheet: {
-    flex: 1,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    overflow: 'hidden',
+  homeReminderText: {
+    fontSize: 14,
+    lineHeight: 24,
+    fontStyle: 'italic',
   },
+  homeReminderRefreshBtn: { marginTop: 12, alignSelf: 'flex-start' },
+  homeReminderRefresh: { fontSize: 13, fontWeight: '600' },
+
+  // Check-in screen
+  ciForeground: { zIndex: 1 },
   ciHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
+    justifyContent: 'flex-end',
+    paddingBottom: 8,
     paddingHorizontal: 18,
+    gap: 12,
   },
+  ciHeaderSpacer: { flex: 1 },
+  ciBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 0.5,
+  },
+  ciBackLabel: { fontSize: 14, fontWeight: '600' },
+  ciTitleBlock: { alignItems: 'center', paddingHorizontal: 22, paddingBottom: 12 },
   ciCircleBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: C.card,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 0.5,
-    borderColor: C.cardBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ciCircleGlyph: { color: C.white, fontSize: 16 },
-  ciTitle: { fontSize: 20, fontWeight: '700', color: C.white },
-  ciSubtitle: { fontSize: 12, color: C.white60, marginTop: 4, textAlign: 'center' },
-  moodGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  moodGridCard: {
-    width: (width - 88) / 3,
-    backgroundColor: C.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    gap: 6,
-    position: 'relative',
-  },
-  moodGlowEmoji: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.white10,
-  },
-  moodGridLabel: { fontSize: 13, fontWeight: '600', color: C.white, textAlign: 'center' },
-  moodGridDesc: { fontSize: 10, color: C.white30, textAlign: 'center', lineHeight: 14 },
-  checkMark: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkMarkGlyph: { color: C.white, fontSize: 10 },
-  innerInputCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
+  ciTitle: { fontSize: 22, fontWeight: '700', fontFamily: SERIF, textAlign: 'center' },
+  ciSubtitle: { fontSize: 13, marginTop: 6, textAlign: 'center', lineHeight: 20 },
+  ciNoteCard: { paddingVertical: 18, paddingHorizontal: 18, marginTop: 8, marginBottom: 16 },
+  ciNoteInput: {
+    fontSize: 14,
+    minHeight: 88,
+    lineHeight: 21,
+    borderRadius: 14,
     borderWidth: 0.5,
-    borderColor: C.cardBorder,
     paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
   },
-  checkInNote: { fontSize: 13, color: C.white, minHeight: 70, lineHeight: 21 },
+  ciSaveWrap: { borderRadius: 18, overflow: 'hidden', marginBottom: 12 },
+  ciSaveBtn: { paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center', borderRadius: 18 },
+  ciBackLink: { alignItems: 'center', marginBottom: 12 },
+  ciBackLinkText: { fontSize: 14, fontWeight: '600' },
+  ciPrivacyNote: { fontSize: 12, textAlign: 'center', marginBottom: 8 },
 
   // Buttons
   primaryBtn: { borderRadius: 18, paddingVertical: 18, paddingHorizontal: 18, alignItems: 'center' },
@@ -2415,16 +3046,317 @@ const styles = StyleSheet.create({
   orangeBtn: { backgroundColor: C.orange },
   btnDisabled: { opacity: 0.4 },
 
-  // Chat
-  chatHeader: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  // Chat — text talk screen
+  chatHeaderUnified: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+    gap: 8,
+  },
+  chatHeaderBrand: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 0,
+  },
+  chatHeaderTextCol: {
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  chatClassicTopActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  chatHeroTaglineInline: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
+    letterSpacing: 0.1,
+  },
+  chatHeroTagline: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 2,
+    letterSpacing: 0.2,
+  },
+  chatMsgBotClassic: {
+    alignSelf: 'flex-start',
+    maxWidth: '88%',
+    marginBottom: 6,
+  },
+  chatBotBubbleClassic: {
+    borderRadius: 22,
+    borderBottomLeftRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  chatQuickChipRow: {
+    gap: 8,
+    paddingBottom: 10,
+    paddingRight: 8,
+  },
+  chatQuickChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 0.5,
+  },
+  chatQuickChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  chatHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+  },
+  chatTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingBottom: 4,
+  },
+  chatNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatNavBtnPressed: { opacity: 0.82 },
+  chatVoiceBtnActive: {
+    backgroundColor: 'rgba(148, 115, 255, 0.14)',
+  },
+  chatHeroTitleCompact: {
+    fontSize: 20,
+    fontWeight: '400',
+    fontFamily: SERIF,
+  },
+  chatHeroSubCompact: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  chatHero: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 12,
+    gap: 4,
+  },
+  chatHeroTitle: {
+    fontSize: 26,
+    fontWeight: '600',
+    fontFamily: SERIF,
+    marginTop: 2,
+  },
+  chatHeroSub: {
+    fontSize: 13,
+    color: '#7B6F9E',
+    fontWeight: '500',
+  },
+  chatMessagesScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  chatScrollContentGrow: {
+    flexGrow: 1,
+  },
+  chatScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 16,
+    gap: 18,
+  },
+  chatMsgRowBot: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    maxWidth: '88%',
+  },
+  chatMsgCol: { flexShrink: 1 },
+  chatBotBubble: {
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    borderWidth: 0.5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  chatBotText: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  chatMsgRowUser: {
+    alignSelf: 'flex-end',
+    maxWidth: '82%',
+    marginLeft: 'auto',
+  },
+  chatUserBubble: {
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  chatUserText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  chatMsgTime: {
+    fontSize: 10,
+    marginTop: 4,
+    paddingHorizontal: 4,
+  },
+  chatMsgTimeUser: { textAlign: 'right' },
+  chatBubblePressed: { opacity: 0.88 },
+  chatBubbleMenuOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  chatBubbleMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  chatBubbleMenuSheet: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  chatTypingBubble: { paddingVertical: 10, paddingHorizontal: 18 },
+  chatTypingGlyph: { fontSize: 18, letterSpacing: 4 },
+  chatAttachmentImage: {
+    width: 180,
+    height: 120,
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  chatEditBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  chatEditBannerText: { fontSize: 12, fontWeight: '500' },
+  chatMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  chatMenuAnchor: {
+    alignItems: 'flex-end',
+    paddingTop: 56,
+    paddingRight: 14,
+  },
+  chatMenuSheet: {
+    minWidth: 220,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  chatMenuItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  chatMenuItemBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+  },
+  chatMenuItemPressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  chatMenuItemText: { fontSize: 15, fontWeight: '500' },
+  chatComposerWrap: {
+    marginTop: 'auto',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  chatComposerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 28,
+    borderWidth: 0.5,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    gap: 6,
+  },
+  chatPlusBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatComposerInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  chatSendWrap: { borderRadius: 22, overflow: 'hidden' },
+  chatSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatSendGlyph: { color: '#FFFFFF', fontSize: 20, fontWeight: '600' },
+  chatPrivacy: {
+    fontSize: 11,
+  },
+  chatPrivacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+
+  // Chat — legacy (journal entry view)
+  chatHeader: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     backgroundColor: C.card,
     borderBottomWidth: 0.5,
     borderBottomColor: C.cardBorder,
+  },
+  chatHeaderCopy: { flex: 1, minWidth: 0 },
+  chatIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.card,
+    borderWidth: 0.5,
+    borderColor: C.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   msgWrap: { maxWidth: '82%', marginBottom: 14 },
   msgWrapUser: { alignSelf: 'flex-end' },
@@ -2538,6 +3470,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderTopColor: C.cardBorder,
     paddingTop: 10,
+    zIndex: 10,
   },
   navItem: { flex: 1, alignItems: 'center', gap: 4 },
   navLabel: { fontSize: 10, color: C.white30 },

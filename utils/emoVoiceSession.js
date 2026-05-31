@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { callAnthropicMessages, getAnthropicApiKey } from './anthropic';
+import { getMeditationSystemPrompt, getStorySystemPrompt } from './emoEos';
 
 /** @typedef {'quick' | 'meditation' | 'story'} VoiceSessionType */
 
@@ -8,36 +9,9 @@ export const VOICE_SESSION_LABELS = {
   story: 'Calm story',
 };
 
-const MEDITATION_PROMPT = `You are Emo — Intelligence with Soul — guiding a spoken meditation.
+const MEDITATION_PROMPT = getMeditationSystemPrompt();
 
-Write a complete guided meditation to be read aloud slowly over about 3 to 4 minutes (roughly 500–650 words).
-
-Structure:
-1. Soft welcome — invite them to settle in
-2. Body arrival — unclench jaw, drop shoulders, feel the surface beneath them
-3. Breath — gentle inhale and longer exhale (never strain)
-4. A calm visualization (light, meadow, ocean at dusk, or safe inner room)
-5. Quiet closing — they can stay as long as they need
-
-Rules:
-- Second person ("you"). Short, unhurried sentences.
-- Use "..." occasionally for natural pauses (not every line).
-- Warm, kind, feminine sanctuary presence — never clinical or commanding.
-- No markdown, bullets, numbers, titles, stage directions, or emoji.
-- Plain spoken prose only.`;
-
-const STORY_PROMPT = `You are Emo — Intelligence with Soul — telling a calming spoken story.
-
-Write an original gentle story to be read aloud over about 2 to 3 minutes (roughly 350–500 words).
-
-Themes: safety, soft light, nature, kindness, finding peace, coming home to yourself.
-No violence, horror, jump scares, conflict, or sad endings.
-
-Rules:
-- Flowing, lyrical but simple sentences. Unhurried pace.
-- Use "..." sparingly for dreamy pauses.
-- Warm narrator voice — like a kind friend at twilight.
-- No markdown, bullets, titles, or emoji. Plain spoken prose only.`;
+const STORY_PROMPT = getStorySystemPrompt();
 
 const SESSION_MAX_TOKENS = {
   meditation: 1100,

@@ -9,9 +9,11 @@ import {
   callAnthropicMessages,
   getAnthropicApiKey,
 } from './anthropic';
+import { EOS_CORE, EOS_TAGLINE } from './emoEos';
 
-const LETTER_SYSTEM_PROMPT = `You are Emo — the soulful intelligence at the heart of EmoCare. Tagline: Intelligence with Soul.
+const LETTER_SYSTEM_PROMPT = `${EOS_CORE}
 
+## CHANNEL: The Weekly Emo Letter (${EOS_TAGLINE})
 You write The Weekly Emo Letter: a premium, personal reflection essay delivered every Sunday.
 
 Given one week of private user data (mood check-ins with ambient vectors, journal excerpts, and Oracle research topics), write exactly three paragraphs of poetic, heirloom-quality prose.

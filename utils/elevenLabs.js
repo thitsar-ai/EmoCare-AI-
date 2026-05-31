@@ -8,25 +8,22 @@ import { bytesToBase64, base64ToBytes } from '../components/voice/pcmUtils';
  */
 export const ELEVENLABS_DEFAULT_VOICE_ID = 'XrExE9yKIg1WjnnlVkGX';
 
-/** Highest-quality model for natural, non-robotic speech. */
-export const ELEVENLABS_MODEL = 'eleven_multilingual_v2';
+/** Default TTS model — flash uses the fewest credits (multilingual_v2 often fails on free tier). */
+export const ELEVENLABS_MODEL =
+  cleanEnvKey(process.env.EXPO_PUBLIC_ELEVENLABS_MODEL) || 'eleven_flash_v2_5';
 
-/** Sanctuary delivery — soft, unhurried, kind. Lower stability = more natural warmth. */
+/** Sanctuary delivery — soft, unhurried, kind. */
 export const EMO_VOICE_SETTINGS = {
   stability: 0.42,
   similarity_boost: 0.88,
-  style: 0.12,
   use_speaker_boost: true,
-  speed: 0.86,
 };
 
 /** Even slower, dreamier delivery for meditations and stories. */
 export const EMO_SESSION_VOICE_SETTINGS = {
   stability: 0.36,
   similarity_boost: 0.9,
-  style: 0.06,
   use_speaker_boost: true,
-  speed: 0.8,
 };
 
 function readExpoExtra() {
@@ -42,8 +39,7 @@ export function getElevenLabsApiKey() {
   const candidates = [
     cleanEnvKey(process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY),
     cleanEnvKey(readExpoExtra().elevenLabsApiKey),
-  ].filter(Boolean);
-  // Prefer the longest non-empty value (handles partial/stale Metro inlining).
+  ].filter((key) => key.length >= 20);
   return candidates.sort((a, b) => b.length - a.length)[0] || '';
 }
 
@@ -51,9 +47,19 @@ export function getElevenLabsVoiceId() {
   const candidates = [
     cleanEnvKey(process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID),
     cleanEnvKey(readExpoExtra().elevenLabsVoiceId),
-    ELEVENLABS_DEFAULT_VOICE_ID,
   ].filter(Boolean);
   return candidates[0] || ELEVENLABS_DEFAULT_VOICE_ID;
+}
+
+export function getElevenLabsDebugInfo() {
+  const key = getElevenLabsApiKey();
+  return {
+    configured: Boolean(key),
+    keyLength: key.length,
+    voiceId: getElevenLabsVoiceId(),
+    fromEnv: Boolean(cleanEnvKey(process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY)),
+    fromExtra: Boolean(cleanEnvKey(readExpoExtra().elevenLabsApiKey)),
+  };
 }
 
 export function isElevenLabsConfigured() {
@@ -100,7 +106,15 @@ async function requestElevenLabsAudio(text, outputFormat, signal, { sanctuarySes
     let detail = `ElevenLabs TTS failed (${response.status})`;
     try {
       const err = await response.json();
-      detail = err?.detail?.message || err?.detail || err?.message || detail;
+      const nested = err?.detail;
+      const code = typeof nested === 'object' ? nested?.code : null;
+      const message = nested?.message || nested || err?.message;
+      if (code === 'quota_exceeded') {
+        detail =
+          'ElevenLabs voice credits are low. Add credits at elevenlabs.io or set EXPO_PUBLIC_ELEVENLABS_MODEL=eleven_flash_v2_5 in .env.';
+      } else if (typeof message === 'string' && message.length) {
+        detail = message;
+      }
     } catch {}
     throw new Error(typeof detail === 'string' ? detail : 'ElevenLabs TTS failed');
   }

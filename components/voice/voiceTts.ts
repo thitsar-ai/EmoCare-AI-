@@ -2,7 +2,9 @@ import * as Speech from 'expo-speech';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
+  fetchElevenLabsMp3,
   fetchElevenLabsPcm,
+  getElevenLabsDebugInfo,
   getElevenLabsVoiceId,
   isElevenLabsConfigured,
 } from '../../utils/elevenLabs';
@@ -13,6 +15,7 @@ export interface SpeakAloudOptions {
   onDone?: () => void;
   onAmplitude?: (amplitude: number) => void;
   onProvider?: (provider: 'elevenlabs' | 'system') => void;
+  onElevenLabsError?: (message: string) => void;
   /** Slower, dreamier voice for meditations and stories. */
   sanctuarySession?: boolean;
   /** Called before each segment in a long session (1-based index). */
@@ -205,36 +208,13 @@ async function speakWithExpoSpeech(trimmed: string, options: SpeakAloudOptions):
   });
 }
 
-async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, finishTimeoutMs = 90000): Promise<void> {
-  const generation = speakGeneration;
-  haltAllVoiceOutput();
-  const controller = new AbortController();
-  activeAbort = controller;
-
-  await enterPlaybackMode();
-
-  options.onProvider?.('elevenlabs');
-  options.onStart?.();
-
-  const pcmBytes = await fetchElevenLabsPcm(trimmed, controller.signal, {
-    sanctuarySession: options.sanctuarySession,
-  });
-  if (!pcmBytes?.length || controller.signal.aborted || !isSpeakGenerationActive(generation)) {
-    throw new Error('Empty ElevenLabs audio');
-  }
-
-  const pcmBase64 = bytesToBase64(pcmBytes);
-  const wavBase64 = pcm16ToWavBase64(pcmBase64, VOICE_SAMPLE_RATE);
-  const fileUri = `${FileSystem.cacheDirectory}emo-voice-${Date.now()}.wav`;
-
-  await FileSystem.writeAsStringAsync(fileUri, wavBase64, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-
-  if (!isSpeakGenerationActive(generation)) {
-    throw new Error('Voice playback superseded');
-  }
-
+async function playElevenLabsFile(
+  fileUri: string,
+  generation: number,
+  controller: AbortController,
+  options: SpeakAloudOptions,
+  finishTimeoutMs: number,
+): Promise<void> {
   stopActivePlayer();
   activePlayer = createAudioPlayer({ uri: fileUri }, { updateInterval: 40 });
   await waitForPlayerReady(activePlayer);
@@ -245,7 +225,7 @@ async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, 
   activePlayer.play();
 
   if (__DEV__) {
-    console.log('[Emo voice] ElevenLabs playing', getElevenLabsVoiceId());
+    console.log('[Emo voice] ElevenLabs playing', getElevenLabsVoiceId(), fileUri.slice(-8));
   }
 
   ampInterval = setInterval(() => {
@@ -268,6 +248,64 @@ async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, 
   options.onAmplitude?.(0);
 }
 
+async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, finishTimeoutMs = 90000): Promise<void> {
+  const generation = speakGeneration;
+  haltAllVoiceOutput();
+  const controller = new AbortController();
+  activeAbort = controller;
+
+  await enterPlaybackMode();
+
+  options.onProvider?.('elevenlabs');
+  options.onStart?.();
+
+  let lastError: Error | null = null;
+
+  // 1) PCM → WAV (most reliable on iOS simulator/device)
+  try {
+    const pcmBytes = await fetchElevenLabsPcm(trimmed, controller.signal, {
+      sanctuarySession: options.sanctuarySession,
+    });
+    if (!pcmBytes?.length || controller.signal.aborted || !isSpeakGenerationActive(generation)) {
+      throw new Error('Empty ElevenLabs PCM audio');
+    }
+    const wavBase64 = pcm16ToWavBase64(bytesToBase64(pcmBytes), VOICE_SAMPLE_RATE);
+    const wavUri = `${FileSystem.cacheDirectory}emo-voice-${Date.now()}.wav`;
+    await FileSystem.writeAsStringAsync(wavUri, wavBase64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    await playElevenLabsFile(wavUri, generation, controller, options, finishTimeoutMs);
+    return;
+  } catch (err) {
+    lastError = err instanceof Error ? err : new Error(String(err));
+    if (__DEV__) {
+      console.warn('[Emo voice] PCM/WAV path failed:', lastError.message);
+    }
+  }
+
+  // 2) MP3 fallback
+  try {
+    const mp3Bytes = await fetchElevenLabsMp3(trimmed, controller.signal, {
+      sanctuarySession: options.sanctuarySession,
+    });
+    if (!mp3Bytes?.length || controller.signal.aborted || !isSpeakGenerationActive(generation)) {
+      throw new Error('Empty ElevenLabs MP3 audio');
+    }
+    const mp3Uri = `${FileSystem.cacheDirectory}emo-voice-${Date.now()}.mp3`;
+    await FileSystem.writeAsStringAsync(mp3Uri, bytesToBase64(mp3Bytes), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    await playElevenLabsFile(mp3Uri, generation, controller, options, finishTimeoutMs);
+    return;
+  } catch (err) {
+    const mp3Error = err instanceof Error ? err : new Error(String(err));
+    if (__DEV__) {
+      console.warn('[Emo voice] MP3 path failed:', mp3Error.message);
+    }
+    throw lastError ?? mp3Error;
+  }
+}
+
 export function speakAloud(text: string, options: SpeakAloudOptions = {}): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) return Promise.resolve();
@@ -283,8 +321,10 @@ export function speakAloud(text: string, options: SpeakAloudOptions = {}): Promi
         }
         return;
       } catch (err) {
+        const message = err instanceof Error ? err.message : 'ElevenLabs unavailable';
+        options.onElevenLabsError?.(message);
         if (__DEV__) {
-          console.warn('[Emo voice] ElevenLabs failed:', err?.message);
+          console.warn('[Emo voice] ElevenLabs failed:', message, getElevenLabsDebugInfo());
         }
         if (!isSpeakGenerationActive(generation)) return;
         haltAllVoiceOutput();
@@ -292,6 +332,10 @@ export function speakAloud(text: string, options: SpeakAloudOptions = {}): Promi
         await speakWithExpoSpeech(trimmed, options);
         return;
       }
+    }
+
+    if (__DEV__) {
+      console.warn('[Emo voice] ElevenLabs not configured', getElevenLabsDebugInfo());
     }
 
     await speakWithExpoSpeech(trimmed, options);
@@ -345,6 +389,16 @@ export async function speakAloudSession(segments: string[], options: SpeakAloudO
       options.onDone?.();
     }
   });
+}
+
+export function describeElevenLabsError(message: string): string {
+  if (/quota|credit/i.test(message)) {
+    return 'Emo voice credits are low — add credits at elevenlabs.io';
+  }
+  if (/invalid.*api|authentication|401|403/i.test(message)) {
+    return 'Emo voice key issue — check EXPO_PUBLIC_ELEVENLABS_API_KEY';
+  }
+  return 'Emo voice unavailable — using device voice';
 }
 
 export function isUsingElevenLabsVoice(): boolean {

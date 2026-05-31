@@ -129,8 +129,8 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
     setIsListening(true);
     setStatusLabel(
       isElevenLabsConfigured()
-        ? `Emo's voice ready · ElevenLabs`
-        : 'Add EXPO_PUBLIC_ELEVENLABS_API_KEY to .env for Emo\'s real voice',
+        ? 'Emo\'s voice is ready · speak or type'
+        : 'Add EXPO_PUBLIC_ELEVENLABS_API_KEY to .env, then restart with --clear',
     );
 
     const conversation = new VoiceLocalConversation({

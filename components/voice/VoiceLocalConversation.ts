@@ -12,7 +12,7 @@ import {
   isSpeechRecognitionSupported,
 } from './speechRecognitionBridge';
 import { isElevenLabsConfigured } from '../../utils/elevenLabs';
-import { speakAloud, speakAloudSession, stopSpeaking } from './voiceTts';
+import { speakAloud, speakAloudSession, stopSpeaking, describeElevenLabsError } from './voiceTts';
 
 type IntentMode = 'sanctuary' | 'oracle';
 type VoiceSessionType = 'meditation' | 'story';
@@ -350,10 +350,13 @@ export class VoiceLocalConversation {
       onProvider: (provider) => {
         this.options.onVoiceProvider?.(provider);
         if (provider === 'elevenlabs') {
-          this.options.onStatus?.('Emo is speaking · ElevenLabs');
+          this.options.onStatus?.('Emo is speaking…');
         } else {
-          this.options.onStatus?.('Emo is speaking · system voice');
+          this.options.onStatus?.('Emo is speaking · device voice');
         }
+      },
+      onElevenLabsError: (message) => {
+        this.options.onStatus?.(describeElevenLabsError(message));
       },
       onAmplitude: (amp) => {
         this.stopAmpPulse();

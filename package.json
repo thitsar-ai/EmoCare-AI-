@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
+    "start:clear": "expo start --clear",
     "start:simulator": "expo start --localhost --go",
     "ios": "expo start --ios --localhost --go",
     "ios:build": "expo run:ios",
