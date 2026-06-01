@@ -26,6 +26,7 @@ import { useSanctuaryAmbient } from '../SanctuaryAmbientContext';
 import { VoiceStreamClient, type VoiceConnectionState } from './VoiceStreamClient';
 import { VoiceLocalConversation } from './VoiceLocalConversation';
 import { meteringToAmplitude } from './pcmUtils';
+import { stopSpeaking } from './voiceTts';
 
 const RELAY_CONNECT_MS = 4500;
 
@@ -53,6 +54,11 @@ interface VoiceStreamContextValue {
   bargeIn: () => void;
   submitVoiceMessage: (text: string) => void;
   submitVoiceSession: (sessionType: 'meditation' | 'story') => void;
+  playWelcomeGreeting: () => void;
+  isEmoSpeaking: boolean;
+  isMicMuted: boolean;
+  toggleMicMute: () => void;
+  stopEmoSpeech: () => void;
 }
 
 const VoiceStreamContext = createContext<VoiceStreamContextValue | null>(null);
@@ -96,6 +102,8 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
   const [isListening, setIsListening] = React.useState(false);
   const [statusLabel, setStatusLabel] = React.useState('Acoustic sanctuary');
   const [requiresTextInput, setRequiresTextInput] = React.useState(false);
+  const [isMicMuted, setIsMicMuted] = React.useState(false);
+  const [isEmoSpeaking, setIsEmoSpeaking] = React.useState(false);
 
   const applyIntentMode = useCallback((mode: VoiceIntentMode) => {
     voiceIntent.value = withTiming(mode === 'sanctuary' ? 1 : 0, { duration: 900 });
@@ -127,20 +135,18 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
     setPipelineMode('local');
     setConnectionState('connected');
     setIsListening(true);
-    setStatusLabel(
-      isElevenLabsConfigured()
-        ? 'Emo\'s voice is ready · speak or type'
-        : 'Add EXPO_PUBLIC_ELEVENLABS_API_KEY to .env, then restart with --clear',
-    );
+    setStatusLabel('Tap Emo when you\'re ready');
 
     const conversation = new VoiceLocalConversation({
       onStatus: setStatusLabel,
       onBeforeSpeak: () => {
         isSpeakingRef.current = true;
+        setIsEmoSpeaking(true);
         void pauseMicIfNeeded();
       },
       onAfterSpeak: () => {
         isSpeakingRef.current = false;
+        setIsEmoSpeaking(false);
         void resumeMicIfNeeded();
       },
       onFallbackMode: (enabled) => {
@@ -196,6 +202,8 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
   }, [pipelineMode]);
 
   const submitVoiceMessage = useCallback((text: string) => {
+    localConversationRef.current?.setOutputMuted(false);
+    setIsMicMuted(false);
     localConversationRef.current?.submitMessage(text);
   }, []);
 
@@ -203,12 +211,51 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
     localConversationRef.current?.submitSession(sessionType);
   }, []);
 
+  const playWelcomeGreeting = useCallback(() => {
+    localConversationRef.current?.setOutputMuted(false);
+    setIsMicMuted(false);
+    void localConversationRef.current?.playWelcomeGreeting();
+  }, []);
+
+  const toggleMicMute = useCallback(async () => {
+    setIsMicMuted((prev) => {
+      const next = !prev;
+      localConversationRef.current?.setOutputMuted(next);
+      if (next) {
+        stopSpeaking();
+        isSpeakingRef.current = false;
+        audioVolume.value = withTiming(0, { duration: 200 });
+        localConversationRef.current?.interruptSpeaking();
+        setStatusLabel('Muted');
+        void stopMicRecording(recorder);
+      } else if (voiceSessionActiveRef.current) {
+        localConversationRef.current?.setOutputMuted(false);
+        setStatusLabel('Listening…');
+        void resumeMicIfNeeded();
+      }
+      return next;
+    });
+  }, [audioVolume, recorder, resumeMicIfNeeded]);
+
+  const stopEmoSpeech = useCallback(() => {
+    stopSpeaking();
+    isSpeakingRef.current = false;
+    setIsEmoSpeaking(false);
+    audioVolume.value = withTiming(0, { duration: 300 });
+    localConversationRef.current?.interruptSpeaking();
+    if (voiceSessionActiveRef.current) {
+      setStatusLabel(isMicMuted ? 'Muted' : 'Tap Emo when you\'re ready');
+    }
+  }, [audioVolume, isMicMuted]);
+
   const exitVoiceMode = useCallback(() => {
     voiceSessionActiveRef.current = false;
     isVoiceModeActive.value = withSpring(0, SANCTUARY_SPRING);
     audioVolume.value = withTiming(0, { duration: 400 });
     isSpeakingRef.current = false;
+    setIsEmoSpeaking(false);
     setIsListening(false);
+    setIsMicMuted(false);
     setStatusLabel('Acoustic sanctuary');
     setPipelineMode('local');
 
@@ -225,14 +272,14 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
     if (voiceSessionActiveRef.current) return;
     voiceSessionActiveRef.current = true;
 
+    isVoiceModeActive.value = withSpring(1, SANCTUARY_SPRING);
+
     const { granted } = await requestRecordingPermissionsAsync();
     if (!granted) {
-      voiceSessionActiveRef.current = false;
-      setStatusLabel('Microphone permission needed');
+      setStatusLabel('Type a message · Emo will speak back');
+      await activateLocalAcousticMode();
       return;
     }
-
-    isVoiceModeActive.value = withSpring(1, SANCTUARY_SPRING);
 
     const wsUrl = resolveVoiceWsUrl();
     if (wsUrl) {
@@ -276,7 +323,6 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
         setConnectionState('connected');
         setIsListening(true);
         setStatusLabel('Listening…');
-        return;
       } catch {
         client.disconnect();
         clientRef.current = null;
@@ -312,6 +358,11 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
       bargeIn,
       submitVoiceMessage,
       submitVoiceSession,
+      playWelcomeGreeting,
+      isEmoSpeaking,
+      isMicMuted,
+      toggleMicMute,
+      stopEmoSpeech,
     }),
     [
       audioVolume,
@@ -319,13 +370,18 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
       connectionState,
       enterVoiceMode,
       exitVoiceMode,
+      isEmoSpeaking,
       isListening,
+      isMicMuted,
       isVoiceModeActive,
       pipelineMode,
+      playWelcomeGreeting,
       requiresTextInput,
       statusLabel,
+      stopEmoSpeech,
       submitVoiceMessage,
       submitVoiceSession,
+      toggleMicMute,
       voiceIntent,
     ],
   );

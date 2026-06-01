@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { fetch } from 'expo/fetch';
 
 /** User-requested model id (see utils/anthropic.js). */
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -32,8 +33,9 @@ export function getAnthropicApiKey() {
 }
 
 export function describeAnthropicError(data) {
-  const type = data?.error?.type;
-  const message = data?.error?.message || 'Anthropic request failed';
+  const error = data?.error ?? data;
+  const type = error?.type;
+  const message = error?.message || 'Anthropic request failed';
 
   if (type === 'authentication_error') {
     return 'Anthropic authentication failed. Confirm EXPO_PUBLIC_ANTHROPIC_KEY in .env, then restart Metro with cache cleared (npm run ios -- --clear).';

@@ -20,9 +20,19 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Eye, Lock, Shield, Trash2, User, type LucideIcon } from 'lucide-react-native';
+import { Eye, Lock, Shield, Trash2, User, ChevronLeft, Sparkles, type LucideIcon } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from '../../constants/obMoods';
-import { CircadianBackground, getCircadianTheme, type CircadianTheme } from '../../theme/circadianTheme';
+import { hapticLight } from '../../utils/haptics';
+import {
+  useCircadianTheme,
+  type CircadianTheme,
+} from '../../theme/circadianTheme';
+import {
+  HOME_LANDING_MODE_KEY,
+  INITIAL_CHECKIN_PAYLOAD_KEY,
+  INITIAL_EMO_INTENT_KEY,
+  resolveOnboardingSession,
+} from '../../utils/onboardingLanding';
 
 const { width, height } = Dimensions.get('window');
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
@@ -54,7 +64,7 @@ const PRIVACY_CARDS: { icon: LucideIcon; title: string; desc: string; color: str
   {
     icon: Trash2,
     title: 'Memory Ledger control',
-    desc: 'See, manage, and delete your memories anytime.',
+    desc: 'See, manage, and delete your context data and historical ledger logs anytime.',
     color: '#B79DFF',
   },
   {
@@ -62,6 +72,12 @@ const PRIVACY_CARDS: { icon: LucideIcon; title: string; desc: string; color: str
     title: 'Full transparency',
     desc: 'We believe in clarity, honesty, and your full control.',
     color: '#60A5FA',
+  },
+  {
+    icon: Sparkles,
+    title: 'AI conversations',
+    desc: "AI conversations use Anthropic's API — see our privacy policy for details.",
+    color: '#A78BFA',
   },
 ];
 
@@ -165,7 +181,10 @@ function MoodGrid({
                 backgroundColor: m.accentBg ?? 'rgba(155,123,255,0.16)',
               },
             ]}
-            onPress={() => onSelect(m)}
+            onPress={() => {
+              void hapticLight();
+              onSelect(m);
+            }}
           >
             <View
               style={[
@@ -267,6 +286,17 @@ function SplashSlide({
       ))}
 
       <Animated.View style={[styles.splashInner, { opacity: fadeIn }]}>
+        <View style={styles.splashGlowOuter} pointerEvents="none">
+          <LinearGradient
+            colors={['rgba(123,92,255,0.55)', 'rgba(183,157,255,0.08)', 'transparent']}
+            style={styles.splashGlowRing}
+          />
+          <LinearGradient
+            colors={['rgba(198,176,255,0.35)', 'rgba(91,61,196,0.06)', 'transparent']}
+            style={styles.splashGlowRingInner}
+          />
+        </View>
+
         <View style={styles.splashFaceWrap}>
           {failed ? (
             <Animated.View style={{ transform: [{ scale }], opacity: faceOpacity }}>
@@ -304,21 +334,79 @@ function SplashSlide({
   );
 }
 
-export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: string }) => void }) {
-  const theme = getCircadianTheme();
+export function OnboardingFlow({
+  onComplete,
+  reviewMode = false,
+  initialSlide = 1,
+  onExitReview,
+}: {
+  onComplete: (args: {
+    name: string;
+    landingMode: 'sanctuary' | 'oracle';
+    intentMode: 'sanctuary' | 'oracle';
+  }) => void;
+  reviewMode?: boolean;
+  initialSlide?: number;
+  onExitReview?: () => void;
+}) {
+  const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
-  const [slide, setSlide] = useState(1);
+  const [slide, setSlide] = useState(initialSlide);
   const [name, setName] = useState('');
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
   const [journalNote, setJournalNote] = useState('');
+  const [moodAckVisible, setMoodAckVisible] = useState('');
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const MOOD_ACKS: Record<string, string> = {
+    Heavy: 'Thank you for trusting me with something heavy. We can hold it gently together.',
+    Overwhelmed: 'When everything feels like too much, one breath at a time is enough.',
+    Neutral: 'Neutral is honest — there is wisdom in simply showing up.',
+    Hopeful: 'Hope is a soft light. I see it in you already.',
+    Light: 'Lightness is worth celebrating. I am here with you in it.',
+    Peaceful: 'Peace is a quiet kind of strength. I am glad you named it.',
+    Grateful: 'Gratitude opens the heart. That is beautiful.',
+    Joyful: 'Joy is alive in you — I am glad you let yourself feel it.',
+  };
+
+  useEffect(
+    () => () => {
+      if (typewriterRef.current) clearInterval(typewriterRef.current);
+    },
+    [],
+  );
+
+  const handleMoodSelect = (m: Mood) => {
+    setSelectedMood(m);
+    const full = MOOD_ACKS[m.label] ?? `I hear you — ${m.label.toLowerCase()} is valid, and you are not alone.`;
+    setMoodAckVisible('');
+    if (typewriterRef.current) clearInterval(typewriterRef.current);
+    let idx = 0;
+    typewriterRef.current = setInterval(() => {
+      idx += 1;
+      setMoodAckVisible(full.slice(0, idx));
+      if (idx >= full.length && typewriterRef.current) {
+        clearInterval(typewriterRef.current);
+        typewriterRef.current = null;
+      }
+    }, 28);
+  };
+
+  useEffect(() => {
+    AsyncStorage.getItem('userName')
+      .then((stored) => {
+        if (stored?.trim()) setName(stored.trim());
+      })
+      .catch(() => {});
+  }, []);
 
   const goTo = (next: number) => {
     Animated.sequence([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 240, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
     ]).start();
-    setTimeout(() => setSlide(next), 160);
+    setTimeout(() => setSlide(next), 220);
   };
 
   const slideRef = useRef(slide);
@@ -349,9 +437,17 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
 
   const enterSanctuary = async () => {
     if (!selectedMood) return;
+    const session = resolveOnboardingSession(selectedMood, journalNote);
+    if (reviewMode) {
+      onExitReview?.();
+      return;
+    }
     try {
       await AsyncStorage.setItem('onboarded', 'true');
       await AsyncStorage.setItem('userName', name.trim());
+      await AsyncStorage.setItem(HOME_LANDING_MODE_KEY, session.landingMode);
+      await AsyncStorage.setItem(INITIAL_EMO_INTENT_KEY, session.intentMode);
+      await AsyncStorage.setItem(INITIAL_CHECKIN_PAYLOAD_KEY, session.payload);
       const saved = await AsyncStorage.getItem('checkIns');
       const all = saved ? JSON.parse(saved) : [];
       await AsyncStorage.setItem(
@@ -362,12 +458,18 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
             date: new Date().toISOString(),
             mood: selectedMood,
             note: journalNote.trim(),
+            landingMode: session.landingMode,
+            intentMode: session.intentMode,
           },
           ...all,
         ]),
       );
     } catch {}
-    onComplete({ name: name.trim() });
+    onComplete({
+      name: name.trim(),
+      landingMode: session.landingMode,
+      intentMode: session.intentMode as 'sanctuary' | 'oracle',
+    });
   };
 
   const scrollPad = { paddingBottom: Math.max(insets.bottom, 20) + 16 };
@@ -393,7 +495,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
               A private, supportive space for reflection, emotional awareness, and personal growth.
             </Text>
             <Text style={[styles.quote, { color: theme.secondaryText }]}>
-              "You don't need to have the right words. Just begin."
+              You don't need to have the right words. Just begin.
             </Text>
 
             <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>
@@ -407,11 +509,16 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
                 placeholderTextColor={theme.mutedText}
                 value={name}
                 onChangeText={setName}
-                maxLength={30}
+                maxLength={48}
                 autoCorrect={false}
                 autoCapitalize="words"
+                textContentType="name"
               />
             </View>
+
+            <Pressable onPress={() => goTo(3)} hitSlop={8} style={styles.skipLinkWrap}>
+              <Text style={[styles.skipLink, { color: theme.mutedText }]}>Skip for now</Text>
+            </Pressable>
 
             <ObCard theme={theme} style={styles.noticeCard}>
               <View style={styles.noticeHeader}>
@@ -419,12 +526,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
                 <Text style={[styles.noticeTitle, { color: theme.text }]}>Important Notice</Text>
               </View>
               <Text style={[styles.noticeBody, { color: theme.mutedText }]}>
-                EmoCare provides emotional support, reflection, and wellness guidance.{'\n\n'}
-                It is not a licensed therapist, medical provider, crisis service, or substitute for
-                professional mental health care.{'\n\n'}
-                If you are experiencing a mental health emergency or are in immediate danger, please
-                contact local emergency services, a crisis hotline, or a qualified healthcare
-                professional.
+                EmoCare is an architectural life companion — a private space for reflection, clarity,
+                and growth.{'\n\n'}
+                It is not a licensed therapist, medical provider, or crisis service. Emo holds clear
+                boundaries: no diagnosis, no prescription, no substitute for human relationships.{'\n\n'}
+                If you are in immediate danger or experiencing a mental health emergency, please
+                contact local emergency services or a qualified crisis professional now.
               </Text>
             </ObCard>
 
@@ -439,7 +546,19 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
             contentContainerStyle={[styles.scrollPad, scrollPad]}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={[styles.eyebrow, { color: theme.secondaryText }]}>YOUR PRIVACY</Text>
+            <View style={styles.privacyHeroWrap}>
+              <LinearGradient
+                colors={['rgba(123,92,255,0.45)', 'rgba(183,157,255,0.12)', 'transparent']}
+                style={styles.privacyHeroGlow}
+              />
+              <View style={[styles.privacyHeroIcon, { borderColor: `${theme.accent}55` }]}>
+                <Shield size={28} color={theme.accent} strokeWidth={2.2} />
+                <View style={styles.privacyHeroLock}>
+                  <Lock size={14} color="#FFFFFF" strokeWidth={2.5} />
+                </View>
+              </View>
+            </View>
+
             <Text style={[styles.headline, { color: theme.text }]}>
               Your thoughts{'\n'}stay with you.
             </Text>
@@ -484,12 +603,16 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
               Choose the feeling that feels closest.
             </Text>
 
-            <MoodGrid theme={theme} selected={selectedMood} onSelect={setSelectedMood} />
+            <MoodGrid theme={theme} selected={selectedMood} onSelect={handleMoodSelect} />
+
+            {moodAckVisible ? (
+              <ObCard theme={theme} style={styles.moodAckCard}>
+                <Text style={[styles.moodAckLabel, { color: theme.secondaryText }]}>Emo</Text>
+                <Text style={[styles.moodAckText, { color: theme.text }]}>{moodAckVisible}</Text>
+              </ObCard>
+            ) : null}
 
             <Text style={[styles.journalTitle, { color: theme.text }]}>What's on your heart?</Text>
-            <Text style={[styles.journalSub, { color: theme.mutedText }]}>
-              You can write anything. Emo is here to listen.
-            </Text>
             <ObCard theme={theme} style={styles.journalCard}>
               <TextInput
                 style={[styles.journalInput, { color: theme.text }]}
@@ -504,7 +627,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
             </ObCard>
 
             <LavenderButton
-              label="Enter Your Sanctuary →"
+              label={reviewMode ? 'Done reviewing →' : 'Enter Your Sanctuary →'}
               onPress={enterSanctuary}
               disabled={!selectedMood}
               theme={theme}
@@ -520,8 +643,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
 
   return (
     <View style={styles.flex} {...panResponder.panHandlers}>
-      <CircadianBackground theme={theme} />
-      <StatusBar style="light" />
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
         {slide > 1 ? (
           <View style={styles.progressRow}>
@@ -547,14 +669,20 @@ export function OnboardingFlow({ onComplete }: { onComplete: (args: { name: stri
           <View style={styles.progressSpacer} />
         )}
 
-        {slide > 2 ? (
+        {slide > 1 ? (
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => goTo(slide - 1)}
+            onPress={() => {
+              if (reviewMode && slide === 2) {
+                onExitReview?.();
+                return;
+              }
+              goTo(slide - 1);
+            }}
             hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             accessibilityLabel="Go back"
           >
-            <Text style={[styles.backText, { color: theme.text }]}>←</Text>
+            <ChevronLeft size={22} color={theme.text} strokeWidth={2.5} />
           </TouchableOpacity>
         ) : null}
 
@@ -594,7 +722,27 @@ const styles = StyleSheet.create({
 
   splashSlide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   splashInner: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, width: '100%' },
-  splashFaceWrap: { width: 260, height: 260, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  splashGlowOuter: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    alignItems: 'center',
+    justifyContent: 'center',
+    top: '22%',
+  },
+  splashGlowRing: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+  },
+  splashGlowRingInner: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+  },
+  splashFaceWrap: { width: 260, height: 260, alignItems: 'center', justifyContent: 'center', marginBottom: 16, zIndex: 2 },
   splashFace: { width: 240, height: 240 },
   splashTitle: {
     fontSize: 40,
@@ -687,6 +835,39 @@ const styles = StyleSheet.create({
   noticeBody: { fontSize: 12, lineHeight: 19 },
 
   card: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  privacyHeroWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 22,
+    marginTop: 4,
+    height: 96,
+  },
+  privacyHeroGlow: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  privacyHeroIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(123,92,255,0.22)',
+    borderWidth: 1,
+  },
+  privacyHeroLock: {
+    position: 'absolute',
+    bottom: 8,
+    right: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(91,61,196,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   privacyList: { gap: 10, marginBottom: 24, marginTop: 8 },
   privacyCard: {
     flexDirection: 'row',
@@ -761,4 +942,9 @@ const styles = StyleSheet.create({
   ctaBtn: { paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center', borderRadius: 18 },
   ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   legalFooter: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 12 },
+  skipLinkWrap: { alignItems: 'center', marginBottom: 16 },
+  skipLink: { fontSize: 13, fontWeight: '500', textDecorationLine: 'underline' },
+  moodAckCard: { padding: 14, marginBottom: 16 },
+  moodAckLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
+  moodAckText: { fontSize: 14, lineHeight: 21, fontStyle: 'italic' },
 });

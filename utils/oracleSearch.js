@@ -120,7 +120,7 @@ function formatContextBlock(query, rows) {
     '## ORACLE WEB RESEARCH (internal — synthesize for the user; never paste raw)',
     `Research query: ${query}`,
     '',
-    'Instructions: Weave these findings into flowing, soulful prose with short paragraphs separated by blank lines. No JSON, no markdown, no bullet lists, no bracketed source tags. Mention key facts naturally and note how they support the user\'s peace of mind or next step when relevant.',
+    'Instructions: Per EOS Search Integration Style — weave these findings into flowing, soulful prose with spacious paragraphs. Never paste raw snippets, JSON, markdown, bullet lists, or bracketed source tags. Synthesize calmly and note how key facts support the user\'s peace of mind or next step.',
     '',
   ];
 

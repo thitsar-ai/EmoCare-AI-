@@ -5,7 +5,8 @@ import {
   getAnthropicApiKey,
 } from './anthropic';
 import { classifyEmoIntent } from './emoIntent';
-import { getVoiceSystemPrompt } from './emoEos';
+import { getVoiceSystemPrompt, getCrisisSafetyAppendix } from './emoEos';
+import { detectCrisisSignals } from './emoCrisis';
 import { generateEmoOpening, getSyncFallbackOpening, stripGenericGreetingPrefix } from './emoOpening';
 
 function buildFallbackVoiceReply(userText, userName) {
@@ -44,7 +45,10 @@ export async function generateVoiceReply({ userText, userName } = {}) {
   const name = userName?.trim() || 'friend';
   const apiKey = getAnthropicApiKey();
   const { mode } = classifyEmoIntent(text);
-  const voiceSystem = getVoiceSystemPrompt(mode, name);
+  const crisis = detectCrisisSignals(text);
+  const voiceSystem = crisis.inCrisis
+    ? `${getVoiceSystemPrompt('sanctuary', name)}\n\n${getCrisisSafetyAppendix()}`
+    : getVoiceSystemPrompt(mode, name);
 
   const context = moodLabel
     ? `User name: ${name}\nToday's check-in mood: ${moodLabel}\nUser said aloud: "${text}"`

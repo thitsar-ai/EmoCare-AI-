@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { classifyEmoIntent } from '../../utils/emoIntent';
 import { generateVoiceGreeting, generateVoiceReply } from '../../utils/emoVoiceReply';
+import { getSyncFallbackOpening } from '../../utils/emoOpening';
 import {
   detectVoiceSessionType,
   generateVoiceSession,
@@ -44,6 +45,8 @@ export class VoiceLocalConversation {
 
   private speaking = false;
 
+  private outputMuted = false;
+
   private fallbackMode = false;
 
   private hasGreeted = false;
@@ -85,26 +88,53 @@ export class VoiceLocalConversation {
         this.fallbackMode = false;
         this.options.onFallbackMode?.(false);
         this.attachListeners(speechModule);
-        if (!this.hasGreeted) {
-          this.hasGreeted = true;
-          await this.speak(await generateVoiceGreeting(this.userName));
-        }
         this.beginListening(speechModule);
+        this.options.onStatus?.('Tap Emo when you\'re ready');
         return true;
       }
     }
 
     this.fallbackMode = true;
     this.options.onFallbackMode?.(true);
+    this.options.onStatus?.('Tap Emo or type a message');
+    return true;
+  }
 
-    if (!this.hasGreeted) {
-      this.hasGreeted = true;
-      this.options.onStatus?.('Emo is greeting you…');
-      await this.speak(await generateVoiceGreeting(this.userName));
+  async playWelcomeGreeting(): Promise<void> {
+    if (!this.active || this.processing || this.speaking) return;
+
+    this.outputMuted = false;
+
+    const speechModule = getSpeechRecognitionModule();
+    try {
+      speechModule?.abort();
+    } catch {}
+    try {
+      speechModule?.stop();
+    } catch {}
+
+    // Brief pause lets iOS release the mic before playback.
+    await new Promise((resolve) => setTimeout(resolve, 180));
+
+    if (!this.active || this.processing || this.speaking) return;
+
+    this.processing = true;
+    this.options.onStatus?.('Emo is preparing…');
+
+    let greeting = '';
+    try {
+      greeting = await generateVoiceGreeting(this.userName);
+    } catch {
+      greeting = getSyncFallbackOpening(this.userName, 'voice');
     }
 
-    this.options.onStatus?.('Type your message · Emo speaks back');
-    return true;
+    if (!this.active) {
+      this.processing = false;
+      return;
+    }
+
+    this.hasGreeted = true;
+    await this.speak(greeting.trim() || getSyncFallbackOpening(this.userName, 'voice'));
   }
 
   submitMessage(text: string): void {
@@ -123,6 +153,7 @@ export class VoiceLocalConversation {
     this.processing = false;
     this.speaking = false;
     this.fallbackMode = false;
+    this.outputMuted = false;
     this.hasGreeted = false;
     this.options.onFallbackMode?.(false);
     this.stopAmpPulse();
@@ -139,12 +170,7 @@ export class VoiceLocalConversation {
 
   bargeIn(): void {
     if (this.processing || this.speaking) {
-      stopSpeaking();
-      this.speaking = false;
-      this.processing = false;
-      this.stopAmpPulse();
-      this.options.onOutputAmplitude?.(0);
-      this.options.onAfterSpeak?.();
+      this.interruptSpeaking();
     }
 
     const pending = this.lastInterim.trim();
@@ -164,6 +190,22 @@ export class VoiceLocalConversation {
     this.options.onStatus?.('Listening…');
     if (speechModule) {
       this.beginListening(speechModule);
+    }
+  }
+
+  interruptSpeaking(): void {
+    stopSpeaking();
+    this.speaking = false;
+    this.processing = false;
+    this.stopAmpPulse();
+    this.options.onOutputAmplitude?.(0);
+    this.options.onAfterSpeak?.();
+  }
+
+  setOutputMuted(muted: boolean): void {
+    this.outputMuted = muted;
+    if (muted) {
+      this.interruptSpeaking();
     }
   }
 
@@ -225,6 +267,18 @@ export class VoiceLocalConversation {
     }
   }
 
+  private async releaseListeningForPlayback(): Promise<void> {
+    const speechModule = getSpeechRecognitionModule();
+    try {
+      speechModule?.abort();
+    } catch {}
+    try {
+      speechModule?.stop();
+    } catch {}
+    stopSpeaking();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+  }
+
   private async handleUtterance(
     transcript: string,
     forcedSession?: VoiceSessionType,
@@ -239,12 +293,12 @@ export class VoiceLocalConversation {
     this.lastInterim = '';
     this.lastResponseAt = now;
 
-    const speechModule = getSpeechRecognitionModule();
-    try {
-      speechModule?.stop();
-    } catch {}
+    await this.releaseListeningForPlayback();
+    if (!this.active || this.speaking) {
+      this.processing = false;
+      return;
+    }
 
-    this.options.onBeforeSpeak?.();
     this.options.onInputAmplitude?.(0);
 
     const sessionType = forcedSession || detectVoiceSessionType(text);
@@ -281,6 +335,12 @@ export class VoiceLocalConversation {
         return;
       }
 
+      if (this.outputMuted) {
+        this.processing = false;
+        this.options.onStatus?.('Muted');
+        return;
+      }
+
       this.speaking = true;
       this.processing = false;
       this.options.onBeforeSpeak?.();
@@ -293,6 +353,7 @@ export class VoiceLocalConversation {
       }
 
       await speakAloudSession(session.segments, {
+        restoreRecordMode: true,
         sanctuarySession: true,
         onProvider: (provider) => {
           this.options.onVoiceProvider?.(provider);
@@ -335,6 +396,13 @@ export class VoiceLocalConversation {
   private async speak(text: string): Promise<void> {
     if (!this.active || !text.trim()) return;
 
+    if (this.outputMuted) {
+      this.processing = false;
+      this.options.onStatus?.('Muted');
+      this.options.onAfterSpeak?.();
+      return;
+    }
+
     this.speaking = true;
     this.processing = false;
     this.options.onBeforeSpeak?.();
@@ -344,6 +412,7 @@ export class VoiceLocalConversation {
     }
 
     await speakAloud(text, {
+      restoreRecordMode: true,
       onStart: () => {
         this.options.onStatus?.('Emo is speaking…');
       },

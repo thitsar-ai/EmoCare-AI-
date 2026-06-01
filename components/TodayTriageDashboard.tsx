@@ -9,8 +9,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -168,12 +166,6 @@ export function TodayTriageDashboard({
 
   return (
     <View style={styles.root}>
-      <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFillObject} />
-      <LinearGradient
-        colors={['rgba(255,255,255,0.58)', 'rgba(251,233,210,0.22)', 'rgba(232,223,255,0.38)']}
-        style={StyleSheet.absoluteFillObject}
-      />
-
       <View style={styles.inner}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>

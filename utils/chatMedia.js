@@ -140,7 +140,9 @@ export async function buildAnthropicMessagesFromChat(chatMessages) {
 
   for (const msg of rows) {
     if (msg.role === 'bot') {
-      out.push({ role: 'assistant', content: msg.text });
+      const text = msg.text?.trim();
+      if (!text) continue;
+      out.push({ role: 'assistant', content: text });
       continue;
     }
 

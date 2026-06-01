@@ -1,6 +1,8 @@
 import * as Speech from 'expo-speech';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import {
   fetchElevenLabsMp3,
   fetchElevenLabsPcm,
@@ -8,6 +10,7 @@ import {
   getElevenLabsVoiceId,
   isElevenLabsConfigured,
 } from '../../utils/elevenLabs';
+import { getVoiceVolume } from '../../utils/voiceVolume';
 import { bytesToBase64, pcm16ToWavBase64, VOICE_SAMPLE_RATE } from './pcmUtils';
 
 export interface SpeakAloudOptions {
@@ -20,6 +23,8 @@ export interface SpeakAloudOptions {
   sanctuarySession?: boolean;
   /** Called before each segment in a long session (1-based index). */
   onSegmentStart?: (index: number, total: number) => void;
+  /** After playback, restore mic-friendly audio mode (voice sanctuary). */
+  restoreRecordMode?: boolean;
 }
 
 const SESSION_SEGMENT_PAUSE_MS = 1400;
@@ -32,12 +37,17 @@ let ampInterval: ReturnType<typeof setInterval> | null = null;
 let speakChain: Promise<void> = Promise.resolve();
 let speakGeneration = 0;
 
+/** expo-audio file playback is unreliable on iOS Simulator — use system TTS there. */
+function isIosSimulator(): boolean {
+  return Platform.OS === 'ios' && Constants.isDevice === false;
+}
+
 async function enterPlaybackMode(): Promise<void> {
   await setAudioModeAsync({
     allowsRecording: false,
     playsInSilentMode: true,
     shouldRouteThroughEarpiece: false,
-    interruptionMode: 'doNotMix',
+    interruptionMode: isIosSimulator() ? 'duckOthers' : 'doNotMix',
   });
 }
 
@@ -48,6 +58,15 @@ async function enterRecordMode(): Promise<void> {
     shouldRouteThroughEarpiece: false,
     interruptionMode: 'duckOthers',
   });
+}
+
+async function finishPlayback(options: SpeakAloudOptions): Promise<void> {
+  if (options.restoreRecordMode) {
+    await enterRecordMode().catch(() => {});
+  } else {
+    await enterPlaybackMode().catch(() => {});
+  }
+  options.onAmplitude?.(0);
 }
 
 function clearAmpPulse(): void {
@@ -154,13 +173,14 @@ async function speakWithExpoSpeech(trimmed: string, options: SpeakAloudOptions):
   haltAllVoiceOutput();
   options.onProvider?.('system');
   await enterPlaybackMode();
+  const vol = Math.max(await getVoiceVolume(), isIosSimulator() ? 1 : 0);
 
   return new Promise<void>((resolve) => {
     Speech.speak(trimmed, {
       language: 'en-US',
       rate: 0.92,
       pitch: 1.08,
-      volume: 1.0,
+      volume: vol,
       onStart: () => {
         if (!isSpeakGenerationActive(generation)) return;
         options.onStart?.();
@@ -174,8 +194,7 @@ async function speakWithExpoSpeech(trimmed: string, options: SpeakAloudOptions):
           return;
         }
         clearAmpPulse();
-        void enterRecordMode().finally(() => {
-          options.onAmplitude?.(0);
+        void finishPlayback(options).finally(() => {
           options.onDone?.();
           resolve();
         });
@@ -186,8 +205,7 @@ async function speakWithExpoSpeech(trimmed: string, options: SpeakAloudOptions):
           return;
         }
         clearAmpPulse();
-        void enterRecordMode().finally(() => {
-          options.onAmplitude?.(0);
+        void finishPlayback(options).finally(() => {
           options.onDone?.();
           resolve();
         });
@@ -198,8 +216,7 @@ async function speakWithExpoSpeech(trimmed: string, options: SpeakAloudOptions):
           return;
         }
         clearAmpPulse();
-        void enterRecordMode().finally(() => {
-          options.onAmplitude?.(0);
+        void finishPlayback(options).finally(() => {
           options.onDone?.();
           resolve();
         });
@@ -216,13 +233,29 @@ async function playElevenLabsFile(
   finishTimeoutMs: number,
 ): Promise<void> {
   stopActivePlayer();
+  const vol = await getVoiceVolume();
   activePlayer = createAudioPlayer({ uri: fileUri }, { updateInterval: 40 });
   await waitForPlayerReady(activePlayer);
   if (!isSpeakGenerationActive(generation) || controller.signal.aborted) {
     stopActivePlayer();
     throw new Error('Voice playback superseded');
   }
+  activePlayer.volume = vol;
   activePlayer.play();
+
+  // expo-audio often "plays" silently on iOS Simulator — detect and fall back to system TTS.
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  const started = activePlayer.currentStatus;
+  if (
+    !controller.signal.aborted
+    && isSpeakGenerationActive(generation)
+    && !started.playing
+    && !started.isBuffering
+    && started.currentTime < 0.05
+  ) {
+    stopActivePlayer();
+    throw new Error('Audio player did not start (simulator or session conflict)');
+  }
 
   if (__DEV__) {
     console.log('[Emo voice] ElevenLabs playing', getElevenLabsVoiceId(), fileUri.slice(-8));
@@ -244,8 +277,7 @@ async function playElevenLabsFile(
 
   clearAmpPulse();
   stopActivePlayer();
-  await enterRecordMode().catch(() => {});
-  options.onAmplitude?.(0);
+  await finishPlayback(options);
 }
 
 async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, finishTimeoutMs = 90000): Promise<void> {
@@ -312,8 +344,9 @@ export function speakAloud(text: string, options: SpeakAloudOptions = {}): Promi
 
   return enqueueSpeak(async () => {
     const generation = bumpSpeakGeneration();
+    const useElevenLabs = isElevenLabsConfigured() && !isIosSimulator();
 
-    if (isElevenLabsConfigured()) {
+    if (useElevenLabs) {
       try {
         await speakWithElevenLabs(trimmed, options);
         if (isSpeakGenerationActive(generation)) {
@@ -328,17 +361,29 @@ export function speakAloud(text: string, options: SpeakAloudOptions = {}): Promi
         }
         if (!isSpeakGenerationActive(generation)) return;
         haltAllVoiceOutput();
-        options.onProvider?.('system');
-        await speakWithExpoSpeech(trimmed, options);
+        if (__DEV__) {
+          console.warn('[Emo voice] ElevenLabs failed:', message, getElevenLabsDebugInfo());
+        }
+        options.onElevenLabsError?.(message);
+        options.onDone?.();
         return;
       }
     }
 
-    if (__DEV__) {
+    if (isIosSimulator()) {
+      if (__DEV__) {
+        console.log('[Emo voice] iOS Simulator — using system voice (ElevenLabs file playback is unreliable here)');
+      }
+      await speakWithExpoSpeech(trimmed, options);
+      return;
+    }
+
+    if (__DEV__ && !isElevenLabsConfigured()) {
       console.warn('[Emo voice] ElevenLabs not configured', getElevenLabsDebugInfo());
     }
 
-    await speakWithExpoSpeech(trimmed, options);
+    options.onElevenLabsError?.('ElevenLabs not configured');
+    options.onDone?.();
   });
 }
 
@@ -367,16 +412,16 @@ export async function speakAloudSession(segments: string[], options: SpeakAloudO
         onDone: undefined,
       };
 
-      if (isElevenLabsConfigured()) {
+      if (isElevenLabsConfigured() && !isIosSimulator()) {
         try {
           await speakWithElevenLabs(parts[i], segmentOptions, SESSION_CHUNK_TIMEOUT_MS);
         } catch (err) {
           if (!isSpeakGenerationActive(generation)) break;
           if (__DEV__) console.warn('[Emo voice] session segment failed:', err);
           haltAllVoiceOutput();
-          await speakWithExpoSpeech(parts[i], segmentOptions);
+          options.onElevenLabsError?.(err instanceof Error ? err.message : 'ElevenLabs unavailable');
         }
-      } else {
+      } else if (isIosSimulator()) {
         await speakWithExpoSpeech(parts[i], segmentOptions);
       }
 

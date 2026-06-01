@@ -3,6 +3,9 @@ import { STORAGE_KEYS } from './emoAnalytics';
 
 const MAX_LOG_ENTRIES = 80;
 
+/**
+ * @param {{ message?: string; query?: string; sources?: { title?: string; url?: string }[] }} args
+ */
 export async function logOracleInquiry({ message, query, sources = [] }) {
   const trimmed = message?.trim();
   if (!trimmed) return;

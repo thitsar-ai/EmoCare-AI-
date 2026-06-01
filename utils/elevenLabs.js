@@ -3,10 +3,9 @@ import { cleanEnvKey } from './anthropic';
 import { bytesToBase64, base64ToBytes } from '../components/voice/pcmUtils';
 
 /**
- * Matilda — warm, calm, reassuring adult female (ElevenLabs premade).
- * Feels human, gentle, and comforting for a sanctuary companion.
+ * Rachel — warm, clear ElevenLabs premade voice (Human Acoustic Layer).
  */
-export const ELEVENLABS_DEFAULT_VOICE_ID = 'XrExE9yKIg1WjnnlVkGX';
+export const ELEVENLABS_DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 
 /** Default TTS model — flash uses the fewest credits (multilingual_v2 often fails on free tier). */
 export const ELEVENLABS_MODEL =
@@ -37,6 +36,7 @@ function readExpoExtra() {
 
 export function getElevenLabsApiKey() {
   const candidates = [
+    cleanEnvKey(process.env.EXPO_PUBLIC_ELEVENLABS_KEY),
     cleanEnvKey(process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY),
     cleanEnvKey(readExpoExtra().elevenLabsApiKey),
   ].filter((key) => key.length >= 20);
@@ -81,7 +81,7 @@ async function requestElevenLabsAudio(text, outputFormat, signal, { sanctuarySes
 
   const apiKey = getElevenLabsApiKey();
   if (!apiKey) {
-    throw new Error('Missing EXPO_PUBLIC_ELEVENLABS_API_KEY');
+    throw new Error('Missing EXPO_PUBLIC_ELEVENLABS_KEY');
   }
 
   const voiceId = getElevenLabsVoiceId();

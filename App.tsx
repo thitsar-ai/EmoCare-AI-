@@ -31,19 +31,39 @@ import { speakAloud, stopSpeaking, describeElevenLabsError } from './components/
 import {
   ChevronLeft,
   Heart,
+  LayoutGrid,
   Lock,
   Menu,
   MessageCircle,
+  MessageSquarePlus,
   Mic,
+  MicOff,
   Plus,
+  Bookmark,
+  BookOpen,
+  AudioLines,
+  FileText,
+  Search,
   Sparkles,
-  Volume2,
-  VolumeX,
+  Trash2,
   Wind,
   X,
+  Image as ImageIcon,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from './constants/obMoods';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
+import {
+  AppMenuSheet,
+  AppNavProvider,
+  ProfileNameSheet,
+  ScreenNavChrome,
+  useAppNav,
+  useScreenSwipeNav,
+  type MainScreenKey,
+  type NavTarget,
+} from './components/navigation/AppNavigation';
+import { VoiceMicControlSheet } from './components/voice/VoiceMicControlSheet';
 
 // Keep the native launch screen up until our animated splash is mounted (no white flash).
 NativeSplash.preventAutoHideAsync().catch(() => {});
@@ -72,17 +92,23 @@ import {
 } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { callAnthropicMessages, describeAnthropicError } from './utils/anthropic';
+import { streamAnthropicMessages } from './utils/anthropicStream';
+import { hapticBreathPulse, hapticLight, hapticMedium } from './utils/haptics';
 import { buildAnthropicMessagesFromChat } from './utils/chatMedia';
-import { getChatSystemPrompt, getIntentModeAppendix } from './utils/emoEos';
+import { getChatSystemPrompt, getCrisisSafetyAppendix, getIntentModeAppendix } from './utils/emoEos';
+import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
 import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
 import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracleSearch';
 import { logOracleInquiry } from './utils/oracleTopicLog';
+import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { VoiceStreamProvider } from './components/voice/VoiceStreamContext';
 import { VoiceTalkScreen } from './components/voice/VoiceTalkScreen';
+import { TodayTriageDashboard } from './components/TodayTriageDashboard';
+import { MemoryLedgerSheet } from './components/MemoryLedgerSheet';
 import {
-  CircadianBackground,
+  CircadianThemeProvider,
   getCircadianPhase,
   getCircadianTheme,
   useCircadianTheme,
@@ -315,12 +341,9 @@ function Screen({ children, scroll = true, scrollRef, onContentSizeChange, conte
   const navOffset = NAV_CONTENT_HEIGHT + (insets.bottom ?? 0);
   const topPad = useTopInset(4);
 
-  const background = <CircadianBackground theme={theme} />;
-
   if (!scroll) {
     return (
       <View style={styles.flex}>
-        {background}
         <View
           style={[
             styles.flex,
@@ -337,7 +360,6 @@ function Screen({ children, scroll = true, scrollRef, onContentSizeChange, conte
 
   return (
     <View style={styles.flex}>
-      {background}
       <ScrollView
         ref={scrollRef}
         style={[styles.flex, { marginBottom: navOffset }]}
@@ -393,19 +415,22 @@ function EmoAvatar({
   size = 44,
   theme: themeProp,
   plain = false,
+  streamLevel = 0,
 }: {
   size?: number;
   theme?: CircadianTheme;
   plain?: boolean;
+  streamLevel?: number;
 }) {
   const theme = themeProp ?? getCircadianTheme();
   const faceSource = theme.emoFace;
   const [failed, setFailed] = useState(false);
   const ringSize = size + 8;
+  const streamBoost = 1 + Math.min(1, streamLevel) * 0.1;
 
   if (plain) {
     return (
-      <View style={[styles.avatarPlainWrap, { width: size, height: size }]}>
+      <View style={[styles.avatarPlainWrap, { width: size, height: size, transform: [{ scale: streamBoost }] }]}>
         {failed ? (
           <View
             style={[
@@ -428,9 +453,9 @@ function EmoAvatar({
   }
 
   return (
-    <View style={[styles.avatarRingWrap, { width: ringSize, height: ringSize }]}>
+    <View style={[styles.avatarRingWrap, { width: ringSize, height: ringSize, transform: [{ scale: streamBoost }] }]}>
       <LinearGradient
-        colors={theme.ringGradient as string[]}
+        colors={[...theme.ringGradient]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.avatarRingGradient, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}
@@ -533,7 +558,7 @@ function EmoPresenceOrb({
         ]}
       />
       <LinearGradient
-        colors={theme.ringGradient as string[]}
+        colors={[...theme.ringGradient]}
         start={{ x: 0.15, y: 0 }}
         end={{ x: 0.85, y: 1 }}
         style={[styles.presenceOrbRing, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}
@@ -727,9 +752,7 @@ function SplashScreen({ onDone }: { onDone?: () => void }) {
 
   return (
     <View style={styles.flex}>
-      <CircadianBackground theme={theme} />
-
-      {/* Floating particles */}
+      {/* Background from CircadianThemeProvider */}
       {SPLASH_PARTICLES.map((p, i) => (
         <View
           key={i}
@@ -838,12 +861,13 @@ function MoodWave() {
  * Check-in screen
  * ------------------------------------------------------------------ */
 
-function CheckInScreen({ onNav }: { onNav: (key: ScreenKey) => void }) {
+function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = getCircadianTheme();
   const insets = useSafeAreaInsets();
+  const { goBack } = useAppNav();
   const [selected, setSelected] = useState<Mood | null>(null);
   const [note, setNote] = useState('');
-  const onClose = () => onNav('home');
+  const onClose = () => goBack();
 
   const saveGradient = theme.isDark
     ? (['#9473FF', '#6366F1'] as [string, string])
@@ -851,6 +875,7 @@ function CheckInScreen({ onNav }: { onNav: (key: ScreenKey) => void }) {
 
   const save = async () => {
     if (!selected) return;
+    void hapticMedium();
     try {
       const saved = await AsyncStorage.getItem('checkIns');
       const all = saved ? JSON.parse(saved) : [];
@@ -866,24 +891,9 @@ function CheckInScreen({ onNav }: { onNav: (key: ScreenKey) => void }) {
 
   return (
     <View style={styles.flex}>
-      <CircadianBackground theme={theme} />
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <TopChrome>
-      <View style={styles.ciHeader}>
-        <View style={styles.ciHeaderSpacer} />
-        <Pressable
-          onPress={onClose}
-          style={({ pressed }) => [
-            styles.ciCircleBtn,
-            { backgroundColor: theme.card, borderColor: theme.border },
-            pressed && styles.glassPressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Close check in"
-        >
-          <X size={18} color={theme.text} strokeWidth={2.5} />
-        </Pressable>
-      </View>
+      <ScreenNavChrome theme={theme} title="Check In" />
 
       <View style={styles.ciTitleBlock}>
         <Text style={[styles.ciTitle, { color: theme.text }]}>Check In ✦</Text>
@@ -929,7 +939,10 @@ function CheckInScreen({ onNav }: { onNav: (key: ScreenKey) => void }) {
                       shadowOffset: { width: 0, height: 0 },
                     },
                   ]}
-                  onPress={() => setSelected(m)}
+                  onPress={() => {
+                    void hapticLight();
+                    setSelected(m);
+                  }}
                 >
                   <View
                     style={[
@@ -1020,38 +1033,36 @@ function HomeScreen({
   onNav,
 }: {
   userName: string;
-  onNav: (key: ScreenKey) => void;
+  onNav: (key: MainScreenKey) => void;
 }) {
-  const [affIdx, setAffIdx] = useState(() => Math.floor(Math.random() * AFFIRMATIONS.length));
+  const [oracleQuery, setOracleQuery] = useState('');
   const theme = useCircadianTheme();
   const copy = getHomeSanctuaryCopy(theme.phase);
   const displayName = userName.trim() || 'friend';
 
-  const checkInGradient = theme.isDark
-    ? (['#9473FF', '#6366F1'] as [string, string])
-    : ([theme.accent, '#7F77DD'] as [string, string]);
-
-  const nextReminder = () => {
-    setAffIdx((current) => {
-      if (AFFIRMATIONS.length <= 1) return current;
-      let next = current;
-      while (next === current) {
-        next = Math.floor(Math.random() * AFFIRMATIONS.length);
-      }
-      return next;
-    });
+  const submitOracleQuery = async () => {
+    const trimmed = oracleQuery.trim();
+    if (!trimmed) {
+      onNav('talk');
+      return;
+    }
+    try {
+      await AsyncStorage.setItem(PENDING_TALK_QUERY_KEY, trimmed);
+    } catch {}
+    onNav('talk');
   };
 
   return (
-    <View style={styles.flex}>
+    <>
       <Screen theme={theme}>
+        <ScreenNavChrome theme={theme} title="Home" />
         <View style={styles.homeHeaderRow}>
           <View style={styles.homeHeaderCopy}>
             <Text style={[styles.homeGreetingLine, { color: theme.text }]}>
               {copy.timeLabel},
             </Text>
             <Text style={[styles.homeNameSerif, { color: theme.text }]}>
-              {displayName} 💜
+              {displayName}
             </Text>
             <Text style={[styles.homeTagline, { color: theme.secondaryText }]}>
               Intelligence with Soul
@@ -1059,42 +1070,31 @@ function HomeScreen({
             <Text style={[styles.homeSubline, { color: theme.mutedText }]}>{copy.subline}</Text>
           </View>
           <View style={styles.homeHeaderOrb}>
-            <EmoOrb theme={theme} compact />
+            <EmoAvatar size={58} theme={theme} />
           </View>
         </View>
 
-        <GlassCard theme={theme} style={styles.homeReflectionCard}>
-          <Text style={[styles.homeReflectionTitle, { color: theme.text }]}>
-            ✦ Today's reflection
-          </Text>
-          <Text style={[styles.homeReflectionBody, { color: theme.mutedText }]}>
-            {copy.reflectionBody}
-          </Text>
-          <View style={[styles.homeReflectionGlow, { backgroundColor: theme.glow }]} pointerEvents="none">
-            <Sparkles size={28} color={theme.accent} strokeWidth={1.75} />
-          </View>
-        </GlassCard>
-
-        <GlassCard theme={theme} style={styles.homeEmoHereCard} onPress={() => onNav('talk')}>
-          <View style={styles.homeEmoHereContent}>
-            <Text style={[styles.homeEmoHereTitle, { color: theme.text }]}>Emo is here 🌿</Text>
-            <Text style={[styles.homeEmoHereBody, { color: theme.mutedText }]}>
-              I'm here to support, listen and guide you.
-            </Text>
-            <View style={[styles.homeEmoHereBtn, { backgroundColor: theme.isDark ? theme.card : '#FFFFFF' }]}>
-              <Text style={[styles.homeEmoHereBtnText, { color: theme.accent }]}>Begin conversation →</Text>
-            </View>
-          </View>
-          <EmoAvatar size={52} theme={theme} />
-        </GlassCard>
+        <View style={[styles.homeAmbientSearch, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Search size={18} color={theme.mutedText} strokeWidth={2.2} />
+          <TextInput
+            style={[styles.homeAmbientSearchInput, { color: theme.text }]}
+            placeholder="Ask Emo anything… search knowledge or reflect"
+            placeholderTextColor={theme.mutedText}
+            value={oracleQuery}
+            onChangeText={setOracleQuery}
+            onSubmitEditing={() => void submitOracleQuery()}
+            returnKeyType="search"
+          />
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={() => void submitOracleQuery()}
+            style={[styles.homeOracleGo, { backgroundColor: theme.accent }]}
+          >
+            <Text style={styles.homeOracleGoText}>→</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.homeActionGrid}>
-          <TouchableOpacity activeOpacity={0.88} style={styles.homeActionTile} onPress={() => onNav('checkin')}>
-            <LinearGradient colors={checkInGradient} style={styles.homeActionTileInner}>
-              <Heart size={22} color="#FFFFFF" strokeWidth={2.25} fill="rgba(255,255,255,0.25)" />
-              <Text style={styles.homeActionTileLabelLight}>Check In</Text>
-            </LinearGradient>
-          </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.88}
             style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
@@ -1102,7 +1102,7 @@ function HomeScreen({
           >
             <View style={styles.homeActionTileInner}>
               <MessageCircle size={22} color={theme.accent} strokeWidth={2.25} />
-              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Talk</Text>
+              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Talk with Emo</Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity
@@ -1115,19 +1115,45 @@ function HomeScreen({
               <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Breathe</Text>
             </View>
           </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => void submitOracleQuery()}
+          >
+            <View style={styles.homeActionTileInner}>
+              <Sparkles size={22} color={theme.accent} strokeWidth={2.25} />
+              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Oracle Deep Research</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
-        <GlassCard theme={theme} style={styles.homeReminderCard}>
-          <Text style={[styles.homeReminderEyebrow, { color: theme.isDark ? '#86EFAC' : '#059669' }]}>
-            {copy.reminderEyebrow}
+        <GlassCard theme={theme} style={styles.lockedTodayCard}>
+          <View style={styles.lockedTodayHeader}>
+            <Lock size={15} color={theme.mutedText} strokeWidth={2.2} />
+            <Text style={[styles.lockedTodayEyebrow, { color: theme.secondaryText }]}>PHASE 3 · LIFE OS</Text>
+          </View>
+          <Text style={[styles.lockedTodayTitle, { color: theme.text }]}>Today Dashboard coming soon</Text>
+          <Text style={[styles.lockedTodaySub, { color: theme.mutedText }]}>
+            A calm command center for your day — smart triage arriving in a future release.
           </Text>
-          <Text style={[styles.homeReminderText, { color: theme.text }]}>{AFFIRMATIONS[affIdx]}</Text>
-          <TouchableOpacity onPress={nextReminder} style={styles.homeReminderRefreshBtn}>
-            <Text style={[styles.homeReminderRefresh, { color: theme.accent }]}>Another reminder ↻</Text>
-          </TouchableOpacity>
+          <View style={styles.lockedTodaySegments}>
+            {[
+              { label: 'Deep Focus', color: theme.accent },
+              { label: 'Low-Energy Admin', color: '#86EFAC' },
+              { label: 'Restorative', color: '#F472B6' },
+            ].map((segment) => (
+              <View
+                key={segment.label}
+                style={[styles.lockedTodaySegment, { backgroundColor: theme.card, borderColor: theme.border }]}
+              >
+                <View style={[styles.lockedTodayDot, { backgroundColor: segment.color }]} />
+                <Text style={[styles.lockedTodaySegmentLabel, { color: theme.text }]}>{segment.label}</Text>
+              </View>
+            ))}
+          </View>
         </GlassCard>
       </Screen>
-    </View>
+    </>
   );
 }
 
@@ -1135,8 +1161,8 @@ function HomeScreen({
  * Talk (voice sanctuary — separate from text chat)
  * ------------------------------------------------------------------ */
 
-function TalkScreen({ userName, onNav }: { userName: string; onNav: (key: ScreenKey) => void }) {
-  return <VoiceTalkScreen userName={userName} onClose={() => onNav('talk')} />;
+function TalkScreen({ userName }: { userName: string }) {
+  return <VoiceTalkScreen userName={userName} />;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1148,13 +1174,15 @@ const CHAT_SEND_GRADIENT = ['#9473FF', '#6366F1'] as [string, string];
 
 const CHAT_MENU_SOLID = '#2A1848';
 const CHAT_VOICE_ALOUD_KEY = 'chatVoiceAloudEnabled';
+const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
+const PENDING_JOURNAL_CONTEXT_KEY = 'pendingJournalContext';
 
 function makeWelcomeMessage(userName: string): ChatMessage {
   const n = userName.trim() || 'friend';
   return {
     id: 'welcome',
     role: 'bot',
-    text: `Hello, ${n}. I'm Emo — heart and mind in one place. 💜\n\nAsk me anything, send a photo, plan your day, or just share how you feel. I'm here.`,
+    text: `Hello, ${n}. I'm Emo — intelligence with soul, heart and mind in one place. 💜\n\nAsk me anything, send a photo, plan your day, or just share how you feel. I'm here.`,
     time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
   };
 }
@@ -1196,24 +1224,29 @@ function ChatMenuSheet({
   visible,
   theme,
   onClose,
-  onClear,
-  onArchive,
-  onNewChat,
+  onStart,
   onSave,
+  onSaveJournal,
+  onDelete,
 }: {
   visible: boolean;
   theme: CircadianTheme;
   onClose: () => void;
-  onClear: () => void;
-  onArchive: () => void;
-  onNewChat: () => void;
+  onStart: () => void;
   onSave: () => void;
+  onSaveJournal: () => void;
+  onDelete: () => void;
 }) {
-  const items = [
-    { label: 'Save chat', action: onSave },
-    { label: 'New chat', action: onNewChat },
-    { label: 'Archive', action: onArchive },
-    { label: 'Clear chat history', action: onClear, destructive: true },
+  const items: {
+    label: string;
+    Icon: LucideIcon;
+    action: () => void;
+    destructive?: boolean;
+  }[] = [
+    { label: 'Start conversation', Icon: MessageSquarePlus, action: onStart },
+    { label: 'Save conversation', Icon: Bookmark, action: onSave },
+    { label: 'Save to journal', Icon: BookOpen, action: onSaveJournal },
+    { label: 'Delete', Icon: Trash2, action: onDelete, destructive: true },
   ];
 
   return (
@@ -1239,10 +1272,79 @@ function ChatMenuSheet({
                   pressed && styles.chatMenuItemPressed,
                 ]}
               >
+                <item.Icon
+                  size={17}
+                  color={item.destructive ? '#F08A8A' : theme.secondaryText}
+                  strokeWidth={2.2}
+                />
                 <Text
                   style={[
                     styles.chatMenuItemText,
                     { color: item.destructive ? '#F08A8A' : theme.text },
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function AttachmentMenuSheet({
+  visible,
+  theme,
+  onClose,
+  onPhoto,
+  onFile,
+}: {
+  visible: boolean;
+  theme: CircadianTheme;
+  onClose: () => void;
+  onPhoto: () => void;
+  onFile: () => void;
+}) {
+  const items = [
+    { label: 'Photo from library', Icon: ImageIcon, action: onPhoto },
+    { label: 'Choose a file', Icon: FileText, action: onFile },
+    { label: 'Cancel', Icon: X, action: onClose, cancel: true },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.micMenuOverlay} onPress={onClose}>
+        <View style={styles.plusMenuAnchor}>
+          <View
+            style={[
+              styles.chatMenuSheet,
+              { backgroundColor: CHAT_MENU_SOLID, borderColor: theme.border },
+            ]}
+          >
+            {items.map((item, index) => (
+              <Pressable
+                key={item.label}
+                onPress={() => {
+                  onClose();
+                  if (!item.cancel) item.action();
+                }}
+                style={({ pressed }) => [
+                  styles.chatMenuItem,
+                  index < items.length - 1 && styles.chatMenuItemBorder,
+                  pressed && styles.chatMenuItemPressed,
+                ]}
+              >
+                <item.Icon
+                  size={17}
+                  color={item.cancel ? theme.mutedText : theme.secondaryText}
+                  strokeWidth={2.2}
+                />
+                <Text
+                  style={[
+                    styles.chatMenuItemText,
+                    { color: item.cancel ? theme.mutedText : theme.text },
                   ]}
                 >
                   {item.label}
@@ -1343,21 +1445,50 @@ function ChatBubbleMenuSheet({
   );
 }
 
-function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: ScreenKey) => void }) {
+function ChatScreen({ userName }: { userName: string }) {
   const theme = useCircadianTheme();
+  const { goBack, setMenuOpen: setAppMenuOpen } = useAppNav();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isWaiting, setIsWaiting] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [voiceAloudEnabled, setVoiceAloudEnabled] = useState(false);
+  const [voiceAloudEnabled, setVoiceAloudEnabled] = useState(true);
   const [isEmoSpeaking, setIsEmoSpeaking] = useState(false);
   const [history, setHistory] = useState<ApiMessage[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [micMenuOpen, setMicMenuOpen] = useState(false);
   const [bubbleMenuMsg, setBubbleMenuMsg] = useState<ChatMessage | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [streamLevel, setStreamLevel] = useState(0);
+  const streamDecayRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
+
+  const bumpStreamLevel = () => {
+    setStreamLevel(1);
+    if (streamDecayRef.current) clearInterval(streamDecayRef.current);
+    streamDecayRef.current = setInterval(() => {
+      setStreamLevel((level) => {
+        const next = level * 0.84;
+        if (next < 0.04) {
+          if (streamDecayRef.current) clearInterval(streamDecayRef.current);
+          return 0;
+        }
+        return next;
+      });
+    }, 90);
+  };
+
+  useEffect(
+    () => () => {
+      if (streamDecayRef.current) clearInterval(streamDecayRef.current);
+      streamAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const persistChat = async (msgs: ChatMessage[]) => {
     try {
@@ -1387,9 +1518,44 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
   }, [userName]);
 
   useEffect(() => {
+    AsyncStorage.getItem(PENDING_TALK_QUERY_KEY)
+      .then((pending) => {
+        if (!pending?.trim()) return;
+        setInput(pending.trim());
+        inputRef.current?.focus();
+        return AsyncStorage.removeItem(PENDING_TALK_QUERY_KEY);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem(PENDING_JOURNAL_CONTEXT_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        try {
+          const ctx = JSON.parse(raw) as { text?: string; mood?: { label?: string } };
+          const moodLine = ctx.mood?.label ? ` You checked in as ${ctx.mood.label}.` : '';
+          const intro = ctx.text?.trim()
+            ? `I read what you wrote in your journal.${moodLine}\n\n"${ctx.text.trim()}"\n\nWhat feels most alive in that for you right now?`
+            : `I am here with what you wrote in your journal.${moodLine} What would you like to explore together?`;
+          const botMsg: ChatMessage = {
+            id: `journal-ctx-${Date.now()}`,
+            role: 'bot',
+            text: intro,
+            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          };
+          setMessages((prev) => (prev.length <= 1 ? [prev[0] ?? makeWelcomeMessage(userName), botMsg] : [...prev, botMsg]));
+        } catch {}
+        return AsyncStorage.removeItem(PENDING_JOURNAL_CONTEXT_KEY);
+      })
+      .catch(() => {});
+  }, [userName]);
+
+  useEffect(() => {
     AsyncStorage.getItem(CHAT_VOICE_ALOUD_KEY)
       .then((raw) => {
-        if (raw === '1') setVoiceAloudEnabled(true);
+        if (raw === '0') setVoiceAloudEnabled(false);
+        else if (raw === '1') setVoiceAloudEnabled(true);
       })
       .catch(() => {});
   }, []);
@@ -1424,16 +1590,13 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
     });
   };
 
-  const toggleVoiceAloud = () => {
-    if (isEmoSpeaking) {
-      stopSpeaking();
-      setIsEmoSpeaking(false);
-      return;
+  const lastBotReply = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
+      if (msg.role === 'bot' && msg.text.trim()) return msg.text;
     }
-    const next = !voiceAloudEnabled;
-    setVoiceAloudEnabled(next);
-    void persistVoiceAloud(next);
-  };
+    return '';
+  }, [messages]);
 
   useEffect(() => {
     if (messages.length > 0) persistChat(messages);
@@ -1488,29 +1651,48 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
     setInput('');
   };
 
-  const handleClear = () => {
-    Alert.alert('Clear chat history', 'Remove all messages in this conversation?', [
+  const handleSaveToJournal = async () => {
+    const transcript = messages
+      .filter((m) => m.text.trim())
+      .map((m) => `${m.role === 'bot' ? 'Emo' : 'You'}: ${m.text.trim()}`)
+      .join('\n\n');
+    if (!transcript.trim()) {
+      Alert.alert('Nothing to save', 'Start a conversation first.');
+      return;
+    }
+    try {
+      const raw = await AsyncStorage.getItem('journalEntries');
+      const entries = raw ? JSON.parse(raw) : [];
+      await AsyncStorage.setItem(
+        'journalEntries',
+        JSON.stringify([
+          {
+            id: Date.now(),
+            date: new Date().toISOString(),
+            text: transcript,
+            mood: { emoji: '💬', label: 'Conversation' },
+          },
+          ...entries,
+        ]),
+      );
+      Alert.alert('Saved to journal', 'This conversation was added to your journal.');
+    } catch {
+      Alert.alert('Could not save', 'Please try again.');
+    }
+  };
+
+  const handleDeleteConversation = () => {
+    Alert.alert('Delete conversation', 'Remove all messages in this conversation?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: startFreshChat },
+      { text: 'Delete', style: 'destructive', onPress: startFreshChat },
     ]);
   };
 
-  const handleArchive = async () => {
-    try {
-      const raw = await AsyncStorage.getItem('chatArchived');
-      const archived = raw ? JSON.parse(raw) : [];
-      await AsyncStorage.setItem(
-        'chatArchived',
-        JSON.stringify([
-          { id: Date.now(), date: new Date().toISOString(), messages },
-          ...archived,
-        ]),
-      );
-      startFreshChat();
-      Alert.alert('Archived', 'This chat was moved to your archive.');
-    } catch {
-      Alert.alert('Could not archive', 'Please try again.');
-    }
+  const handleStartConversation = () => {
+    Alert.alert('Start conversation', 'Begin a fresh conversation?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Start', onPress: startFreshChat },
+    ]);
   };
 
   const handleSave = async () => {
@@ -1564,10 +1746,13 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
       }
 
       const lastUserMsg = [...chatMessages].reverse().find((m) => m.role === 'user');
-      const intent = lastUserMsg ? classifyEmoIntent(lastUserMsg.text) : { mode: 'sanctuary' as const };
+      const crisis = lastUserMsg ? detectCrisisSignals(lastUserMsg.text) : { inCrisis: false };
+      const intent = lastUserMsg && !crisis.inCrisis
+        ? classifyEmoIntent(lastUserMsg.text)
+        : { mode: 'sanctuary' as const };
 
       let researchBlock = '';
-      if (lastUserMsg && shouldRunOracleSearch(intent.mode, lastUserMsg.text)) {
+      if (lastUserMsg && !crisis.inCrisis && shouldRunOracleSearch(intent.mode, lastUserMsg.text)) {
         setIsSearching(true);
         try {
           const research = await fetchOracleResearchContext(lastUserMsg.text);
@@ -1576,7 +1761,7 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
             void logOracleInquiry({
               message: lastUserMsg.text,
               query: research.query,
-              sources: research.sources,
+              sources: research.sources as { title: string; url: string }[],
             });
           }
         } catch {
@@ -1586,43 +1771,73 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
         }
       }
 
-      const system = `${getChatSystemPrompt(userName)}\n\n${getIntentModeAppendix(intent.mode)}${researchBlock}`;
+      const system = [
+        getChatSystemPrompt(userName),
+        crisis.inCrisis ? getCrisisSafetyAppendix() : getIntentModeAppendix(intent.mode),
+        researchBlock,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
 
-      const result = await callAnthropicMessages({
+      streamAbortRef.current?.abort();
+      const abort = new AbortController();
+      streamAbortRef.current = abort;
+
+      const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const streamId = `b-${Date.now()}`;
+      setMessages((prev) => [...prev, { id: streamId, role: 'bot', text: '', time: replyTime }]);
+
+      const result = await streamAnthropicMessages({
         system,
         maxTokens: intent.mode === 'oracle' ? 1600 : 1200,
         messages: apiMessages,
+        signal: abort.signal,
+        onStart: () => bumpStreamLevel(),
+        onTextDelta: (_chunk: string, full: string) => {
+          bumpStreamLevel();
+          setMessages((prev) =>
+            prev.map((m) => (m.id === streamId ? { ...m, text: full } : m)),
+          );
+          scrollRef.current?.scrollToEnd({ animated: true });
+        },
+        onDone: (fullText: string) => {
+          const replyText = polishEmoReplyText(fullText);
+          setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === streamId ? { ...m, text: replyText } : m)),
+          );
+          setStreamLevel(0);
+          if (voiceAloudEnabled) speakEmoReply(replyText);
+        },
+        onError: (message: string) => {
+          setStreamLevel(0);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamId
+                ? {
+                    ...m,
+                    text:
+                      message ||
+                      "I'm still here with you. Something interrupted my reply just now — try sending that again? 💜",
+                  }
+                : m,
+            ),
+          );
+        },
       });
 
-      const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-      if (result.ok && result.data?.content?.[0]?.text) {
-        const replyText = polishEmoReplyText(result.data.content[0].text);
-        const botMsg: ChatMessage = {
-          id: `b-${Date.now()}`,
-          role: 'bot',
-          text: replyText,
-          time: replyTime,
-        };
-        setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
-        setMessages((prev) => [...prev, botMsg]);
-        if (voiceAloudEnabled) {
-          speakEmoReply(replyText);
+      if (result.ok === false && !abort.signal.aborted) {
+        const aborted = 'aborted' in result && result.aborted;
+        if (!aborted) {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== streamId || m.text.trim()) return m;
+              const errObj = 'error' in result ? result.error : null;
+              const errMsg = describeAnthropicError({ error: errObj ?? {} });
+              return { ...m, text: errMsg };
+            }),
+          );
         }
-      } else {
-        const errMsg =
-          result.error != null
-            ? describeAnthropicError(result.error)
-            : "I'm still here with you. Something interrupted my reply just now — try sending that again? 💜";
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `b-${Date.now()}`,
-            role: 'bot',
-            text: errMsg,
-            time: replyTime,
-          },
-        ]);
       }
     } catch {
       setMessages((prev) => [
@@ -1671,11 +1886,7 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
   };
 
   const handleSendFiles = () => {
-    Alert.alert('Send files and photos', undefined, [
-      { text: 'Photo from library', onPress: pickPhoto },
-      { text: 'Choose a file', onPress: pickFile },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    setPlusMenuOpen(true);
   };
 
   const send = async () => {
@@ -1683,6 +1894,7 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
     if (!trimmed || isWaiting) return;
 
     stopSpeaking();
+    streamAbortRef.current?.abort();
 
     if (editingId) {
       setMessages((prev) => {
@@ -1713,20 +1925,20 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
     backgroundColor: theme.card,
     borderColor: theme.border,
   };
-  const botBubbleBg = theme.isDark ? theme.card : 'rgba(255,255,255,0.92)';
   const chatStatusLine = isEmoSpeaking
     ? 'Emo is speaking…'
     : isSearching
       ? 'Oracle · gathering research…'
       : isWaiting
-        ? 'Thinking with you…'
+        ? streamLevel > 0.05
+          ? 'Emo is writing…'
+          : 'Thinking with you…'
         : voiceAloudEnabled
           ? 'Read aloud on'
-          : 'Always here for you';
+          : 'Always here with you';
 
   return (
     <View style={styles.flex}>
-      <CircadianBackground theme={theme} />
       <StatusBar style="light" />
       <TopChrome>
         <KeyboardAvoidingView
@@ -1736,20 +1948,20 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
         >
           <View style={styles.chatHeaderUnified}>
             <Pressable
-              onPress={() => onNav('home')}
+              onPress={goBack}
               style={({ pressed }) => [
                 styles.chatNavBtn,
                 navBtnStyle,
                 pressed && styles.chatNavBtnPressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Back to Home"
+              accessibilityLabel="Go back"
             >
               <ChevronLeft size={22} color={theme.text} strokeWidth={2.5} />
             </Pressable>
 
             <View style={styles.chatHeaderBrand}>
-              <EmoAvatar size={44} theme={theme} plain />
+              <EmoAvatar size={44} theme={theme} plain streamLevel={streamLevel} />
               <View style={styles.chatHeaderTextCol}>
                 <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>Emo</Text>
                 <Text style={[styles.chatHeroTaglineInline, { color: theme.secondaryText }]}>
@@ -1760,35 +1972,16 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
 
             <View style={styles.chatClassicTopActions}>
               <Pressable
-                onPress={toggleVoiceAloud}
-                style={({ pressed }) => [
-                  styles.chatNavBtn,
-                  navBtnStyle,
-                  voiceAloudEnabled && styles.chatVoiceBtnActive,
-                  voiceAloudEnabled && { borderColor: theme.accent },
-                  pressed && styles.chatNavBtnPressed,
-                ]}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: voiceAloudEnabled }}
-                accessibilityLabel={voiceAloudEnabled ? 'Turn read aloud off' : 'Turn read aloud on'}
-              >
-                {voiceAloudEnabled ? (
-                  <Volume2 size={18} color={theme.accent} strokeWidth={2.5} />
-                ) : (
-                  <VolumeX size={18} color={theme.text} strokeWidth={2.5} />
-                )}
-              </Pressable>
-              <Pressable
-                onPress={() => onNav('voice')}
+                onPress={() => setAppMenuOpen(true)}
                 style={({ pressed }) => [
                   styles.chatNavBtn,
                   navBtnStyle,
                   pressed && styles.chatNavBtnPressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Voice talk"
+                accessibilityLabel="App menu"
               >
-                <Mic size={18} color={theme.text} strokeWidth={2.5} />
+                <LayoutGrid size={18} color={theme.text} strokeWidth={2.2} />
               </Pressable>
               <Pressable
                 onPress={() => setMenuOpen(true)}
@@ -1819,12 +2012,7 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
                 <View key={m.id} style={styles.chatMsgBotClassic}>
                   <Pressable
                     onPress={() => openBubbleMenu(m)}
-                    style={({ pressed }) => [
-                      styles.chatBotBubble,
-                      styles.chatBotBubbleClassic,
-                      { backgroundColor: botBubbleBg, borderColor: theme.border },
-                      pressed && styles.chatBubblePressed,
-                    ]}
+                    style={({ pressed }) => [styles.chatBotPlain, pressed && styles.chatBubblePressed]}
                     accessibilityRole="button"
                     accessibilityLabel="Emo message options"
                   >
@@ -1868,15 +2056,7 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
             )}
             {isWaiting ? (
               <View style={styles.chatMsgBotClassic}>
-                <View
-                  style={[
-                    styles.chatBotBubble,
-                    styles.chatTypingBubble,
-                    { backgroundColor: botBubbleBg, borderColor: theme.border },
-                  ]}
-                >
-                  <Text style={[styles.chatTypingGlyph, { color: theme.accent }]}>···</Text>
-                </View>
+                <Text style={[styles.chatTypingGlyph, { color: theme.accent }]}>···</Text>
               </View>
             ) : null}
           </ScrollView>
@@ -1930,6 +2110,23 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
                 blurOnSubmit={false}
                 multiline={false}
               />
+              <Pressable
+                onPress={() => setMicMenuOpen(true)}
+                style={({ pressed }) => [
+                  styles.chatMicBtn,
+                  pressed && styles.chatNavBtnPressed,
+                  isWaiting && styles.btnDisabled,
+                ]}
+                disabled={isWaiting}
+                accessibilityRole="button"
+                accessibilityLabel="Voice controls"
+              >
+                {voiceAloudEnabled ? (
+                  <Mic size={17} color={theme.accent} strokeWidth={2.4} />
+                ) : (
+                  <MicOff size={17} color={theme.mutedText} strokeWidth={2.4} />
+                )}
+              </Pressable>
               <TouchableOpacity
                 style={[styles.chatSendWrap, isWaiting && styles.btnDisabled]}
                 onPress={send}
@@ -1955,15 +2152,45 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
         visible={menuOpen}
         theme={theme}
         onClose={() => setMenuOpen(false)}
-        onClear={handleClear}
-        onArchive={handleArchive}
-        onNewChat={() => {
-          Alert.alert('New chat', 'Start a fresh conversation?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'New chat', onPress: startFreshChat },
-          ]);
-        }}
+        onStart={handleStartConversation}
         onSave={handleSave}
+        onSaveJournal={handleSaveToJournal}
+        onDelete={handleDeleteConversation}
+      />
+
+      <AttachmentMenuSheet
+        visible={plusMenuOpen}
+        theme={theme}
+        onClose={() => setPlusMenuOpen(false)}
+        onPhoto={pickPhoto}
+        onFile={pickFile}
+      />
+
+      <VoiceMicControlSheet
+        visible={micMenuOpen}
+        theme={theme}
+        onClose={() => setMicMenuOpen(false)}
+        onPause={() => {
+          stopSpeaking();
+          setIsEmoSpeaking(false);
+        }}
+        onPlay={() => {
+          if (!voiceAloudEnabled) {
+            setVoiceAloudEnabled(true);
+            void persistVoiceAloud(true);
+          }
+          if (lastBotReply) speakEmoReply(lastBotReply);
+        }}
+        onMute={() => {
+          setVoiceAloudEnabled(false);
+          void persistVoiceAloud(false);
+          stopSpeaking();
+          setIsEmoSpeaking(false);
+        }}
+        onStop={() => {
+          stopSpeaking();
+          setIsEmoSpeaking(false);
+        }}
       />
 
       <ChatBubbleMenuSheet
@@ -2000,6 +2227,7 @@ function ChatScreen({ userName, onNav }: { userName: string; onNav: (key: Screen
 
 function BreatheScreen() {
   const theme = useCircadianTheme();
+  const insets = useSafeAreaInsets();
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState('Tap to begin');
   const [selected, setSelected] = useState('Box');
@@ -2012,6 +2240,7 @@ function BreatheScreen() {
   const tick = () => {
     const p = phases[phaseIdx.current % 4];
     setPhase(p);
+    void hapticBreathPulse(p);
     Animated.parallel([
       Animated.timing(circleSize, { toValue: p === 'Inhale' ? 175 : 140, duration: 3800, useNativeDriver: false }),
       Animated.timing(glowOpacity, { toValue: p === 'Inhale' ? 0.7 : 0.3, duration: 3800, useNativeDriver: false }),
@@ -2042,41 +2271,56 @@ function BreatheScreen() {
   );
 
   return (
-    <Screen scroll={false} contentStyle={styles.breatheRoot} theme={theme}>
-      <Text style={styles.sanctuaryLabel}>Breathing exercise</Text>
-      <Text style={styles.heroGreeting}>Box breathing</Text>
-      <View style={styles.breatheStage}>
-        <Animated.View
-          style={[
-            styles.breatheGlow,
-            { width: circleSize, height: circleSize, opacity: glowOpacity },
-          ]}
-        />
-        <Animated.View style={[styles.breatheCircle, { width: circleSize, height: circleSize }]}>
-          <Text style={styles.breathePhase}>{phase}</Text>
-        </Animated.View>
-      </View>
-      <Text style={[styles.cardSub, { textAlign: 'center' }]}>
-        Inhale · 4  ·  Hold · 4  ·  Exhale · 4  ·  Hold · 4
-      </Text>
-      <View style={styles.techRow}>
-        {['Box', '4-7-8', 'Calm'].map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.techPill, selected === t && styles.techPillActive]}
-            onPress={() => {
-              setSelected(t);
-              if (running) toggle();
-            }}
-          >
-            <Text style={[styles.techPillText, selected === t && styles.techPillTextActive]}>{t}</Text>
+    <View style={styles.flex}>
+      <View
+        style={[
+          styles.flex,
+          styles.screenForeground,
+          {
+            paddingTop: insets.top + 4,
+            paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom,
+            paddingHorizontal: 22,
+          },
+        ]}
+      >
+        <ScreenNavChrome theme={theme} title="Breathe" />
+        <View style={styles.breatheRoot}>
+          <Text style={[styles.sanctuaryLabel, { color: theme.secondaryText }]}>Breathing exercise</Text>
+          <Text style={[styles.heroGreeting, { color: theme.text }]}>Box breathing</Text>
+          <View style={styles.breatheStage}>
+            <Animated.View
+              style={[
+                styles.breatheGlow,
+                { width: circleSize, height: circleSize, opacity: glowOpacity },
+              ]}
+            />
+            <Animated.View style={[styles.breatheCircle, { width: circleSize, height: circleSize }]}>
+              <Text style={styles.breathePhase}>{phase}</Text>
+            </Animated.View>
+          </View>
+          <Text style={[styles.cardSub, { textAlign: 'center' }]}>
+            Inhale · 4  ·  Hold · 4  ·  Exhale · 4  ·  Hold · 4
+          </Text>
+          <View style={styles.techRow}>
+            {['Box', '4-7-8', 'Calm'].map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.techPill, selected === t && styles.techPillActive]}
+                onPress={() => {
+                  setSelected(t);
+                  if (running) toggle();
+                }}
+              >
+                <Text style={[styles.techPillText, selected === t && styles.techPillTextActive]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity style={styles.breatheBtn} onPress={toggle}>
+            <Text style={styles.primaryBtnText}>{running ? 'Stop' : 'Begin'}</Text>
           </TouchableOpacity>
-        ))}
+        </View>
       </View>
-      <TouchableOpacity style={styles.breatheBtn} onPress={toggle}>
-        <Text style={styles.primaryBtnText}>{running ? 'Stop' : 'Begin'}</Text>
-      </TouchableOpacity>
-    </Screen>
+    </View>
   );
 }
 
@@ -2084,12 +2328,13 @@ function BreatheScreen() {
  * Journal
  * ------------------------------------------------------------------ */
 
-function JournalScreen() {
+function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState('');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [viewing, setViewing] = useState<number | null>(null);
+  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem('journalEntries').then((d) => {
@@ -2097,8 +2342,19 @@ function JournalScreen() {
     });
   }, []);
 
+  const askEmoAboutEntry = async (entry: JournalEntry) => {
+    try {
+      await AsyncStorage.setItem(
+        PENDING_JOURNAL_CONTEXT_KEY,
+        JSON.stringify({ text: entry.text, mood: entry.mood }),
+      );
+    } catch {}
+    onNav('talk');
+  };
+
   const save = async () => {
     if (!text.trim()) return;
+    void hapticMedium();
     const entry: JournalEntry = {
       id: Date.now(),
       date: new Date().toISOString(),
@@ -2107,6 +2363,7 @@ function JournalScreen() {
     };
     const updated = [entry, ...entries];
     setEntries(updated);
+    setLastSavedId(entry.id);
     await AsyncStorage.setItem('journalEntries', JSON.stringify(updated));
     setText('');
   };
@@ -2128,7 +2385,6 @@ function JournalScreen() {
     const e = entries[viewing];
     return (
       <View style={styles.flex}>
-        <CircadianBackground theme={theme} />
         <TopChrome>
         <View style={styles.chatHeader}>
             <TouchableOpacity onPress={() => setViewing(null)} style={{ padding: 4 }}>
@@ -2154,6 +2410,14 @@ function JournalScreen() {
           </View>
           <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}>
             <Text style={styles.journalReadText}>{e.text}</Text>
+            <TouchableOpacity
+              style={[styles.askEmoBtn, { backgroundColor: theme.accent }]}
+              activeOpacity={0.88}
+              onPress={() => void askEmoAboutEntry(e)}
+            >
+              <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
+              <Text style={styles.askEmoBtnText}>Ask Emo about this</Text>
+            </TouchableOpacity>
           </ScrollView>
         </TopChrome>
       </View>
@@ -2162,19 +2426,19 @@ function JournalScreen() {
 
   return (
     <View style={styles.flex}>
-      <CircadianBackground theme={theme} />
       <TopChrome>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScreenNavChrome theme={theme} title="Journal" />
           <ScrollView
             contentContainerStyle={{ padding: 20, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.heroGreeting}>My Journal</Text>
-            <Text style={[styles.cardSub, { marginBottom: 18 }]}>
+            <Text style={[styles.heroGreeting, { color: theme.text }]}>My Journal</Text>
+            <Text style={[styles.cardSub, { marginBottom: 18, color: theme.mutedText }]}>
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </Text>
-            <Text style={[styles.sanctuaryLabel, { marginBottom: 10 }]}>A prompt to begin</Text>
+            <Text style={[styles.sanctuaryLabel, { marginBottom: 10, color: theme.secondaryText }]}>A prompt to begin</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
               {prompts.map((p) => (
                 <TouchableOpacity key={p} style={styles.promptChip} onPress={() => setText(p + '\n\n')}>
@@ -2203,29 +2467,47 @@ function JournalScreen() {
               </Text>
             </GlassCard>
             {entries.length > 0 ? (
-              <Text style={[styles.sanctuaryLabel, { marginBottom: 12 }]}>Past entries</Text>
+              <Text style={[styles.sanctuaryLabel, { marginBottom: 12, color: theme.secondaryText }]}>Past entries</Text>
             ) : null}
             {entries.map((e, i) => (
-              <TouchableOpacity key={e.id} activeOpacity={0.85} onPress={() => setViewing(i)}>
-                <GlassCard style={styles.entryCard}>
-                  <View style={styles.entryHeader}>
-                    <Text style={[styles.cardTitle, { fontSize: 13 }]}>
-                      {new Date(e.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </Text>
-                    <View style={styles.entryHeaderRight}>
-                      <Text style={styles.cardSub}>
-                        {e.mood.emoji} {e.mood.label}
+              <View key={e.id}>
+                <TouchableOpacity activeOpacity={0.85} onPress={() => setViewing(i)}>
+                  <GlassCard
+                    style={
+                      lastSavedId === e.id
+                        ? { ...styles.entryCard, borderColor: theme.accent, borderWidth: 1 }
+                        : styles.entryCard
+                    }
+                  >
+                    <View style={styles.entryHeader}>
+                      <Text style={[styles.cardTitle, { fontSize: 13 }]}>
+                        {new Date(e.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                       </Text>
-                      <TouchableOpacity onPress={() => deleteEntry(e.id)}>
-                        <Text style={styles.deleteGlyph}>✕</Text>
-                      </TouchableOpacity>
+                      <View style={styles.entryHeaderRight}>
+                        <Text style={styles.cardSub}>
+                          {e.mood.emoji} {e.mood.label}
+                        </Text>
+                        <TouchableOpacity onPress={() => deleteEntry(e.id)}>
+                          <Text style={styles.deleteGlyph}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
-                  <Text style={[styles.cardSub, { lineHeight: 18 }]} numberOfLines={2}>
-                    {e.text}
-                  </Text>
-                </GlassCard>
-              </TouchableOpacity>
+                    <Text style={[styles.cardSub, { lineHeight: 18 }]} numberOfLines={2}>
+                      {e.text}
+                    </Text>
+                  </GlassCard>
+                </TouchableOpacity>
+                {lastSavedId === e.id ? (
+                  <TouchableOpacity
+                    style={[styles.askEmoBtn, { backgroundColor: theme.accent, marginTop: -4, marginBottom: 12 }]}
+                    activeOpacity={0.88}
+                    onPress={() => void askEmoAboutEntry(e)}
+                  >
+                    <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
+                    <Text style={styles.askEmoBtnText}>Ask Emo about this</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             ))}
           </ScrollView>
         </KeyboardAvoidingView>
@@ -2238,11 +2520,15 @@ function JournalScreen() {
  * Floating nav bar
  * ------------------------------------------------------------------ */
 
-function NavBar({ active, onNav }: { active: ScreenKey; onNav: (key: ScreenKey) => void }) {
+function NavBar() {
   const insets = useSafeAreaInsets();
-  const tabs: { key: ScreenKey; icon: string; label: string }[] = [
+  const theme = useCircadianTheme();
+  const { screen, navigate } = useAppNav();
+  const tabs: { key: MainScreenKey; icon: string; label: string; Icon?: LucideIcon }[] = [
     { key: 'home', icon: '🏠', label: 'Home' },
+    { key: 'checkin', icon: '💜', label: 'Check In' },
     { key: 'talk', icon: '💬', label: 'Talk' },
+    { key: 'voice', icon: '', label: 'Voice', Icon: AudioLines },
     { key: 'breathe', icon: '🌬️', label: 'Breathe' },
     { key: 'journal', icon: '📓', label: 'Journal' },
   ];
@@ -2257,15 +2543,34 @@ function NavBar({ active, onNav }: { active: ScreenKey; onNav: (key: ScreenKey) 
           bottom: 0,
           height: NAV_CONTENT_HEIGHT + insets.bottom,
           paddingBottom: insets.bottom,
+          backgroundColor: theme.navBar,
+          borderTopColor: theme.navBarBorder,
         },
       ]}
     >
-      {tabs.map((t) => (
-        <TouchableOpacity key={t.key} style={styles.navItem} onPress={() => onNav(t.key)}>
-          <Text style={{ fontSize: 22 }}>{t.icon}</Text>
-          <Text style={[styles.navLabel, active === t.key && styles.navLabelActive]}>{t.label}</Text>
-        </TouchableOpacity>
-      ))}
+      {tabs.map((t) => {
+        const isActive = screen === t.key;
+        const iconColor = isActive ? theme.accent : theme.mutedText;
+        return (
+          <TouchableOpacity key={t.key} style={styles.navItem} onPress={() => navigate(t.key)}>
+            {t.Icon ? (
+              <t.Icon size={20} color={iconColor} strokeWidth={isActive ? 2.4 : 2} />
+            ) : (
+              <Text style={{ fontSize: 20 }}>{t.icon}</Text>
+            )}
+            <Text
+              style={[
+                styles.navLabel,
+                { color: theme.mutedText },
+                isActive && [styles.navLabelActive, { color: theme.accent }],
+              ]}
+              numberOfLines={1}
+            >
+              {t.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -2278,17 +2583,17 @@ function Root() {
   const [onboarded, setOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState('');
-  const [screen, setScreen] = useState<ScreenKey>('home');
+  const [homeLandingMode, setHomeLandingMode] = useState<'sanctuary' | 'oracle'>('sanctuary');
+  const [screen, setScreen] = useState<MainScreenKey>('home');
 
   useEffect(() => {
     async function bootstrap() {
-      if (__DEV__) {
-        await AsyncStorage.removeItem('onboarded');
-      }
       const v = await AsyncStorage.getItem('onboarded');
       if (v === 'true') {
         const n = await AsyncStorage.getItem('userName');
+        const mode = await AsyncStorage.getItem(HOME_LANDING_MODE_KEY);
         setUserName(n || '');
+        setHomeLandingMode(mode === 'oracle' ? 'oracle' : 'sanctuary');
         setOnboarded(true);
       }
       setLoading(false);
@@ -2304,8 +2609,9 @@ function Root() {
   if (!onboarded) {
     return (
       <OnboardingFlow
-        onComplete={({ name }) => {
+        onComplete={({ name, landingMode }) => {
           setUserName(name);
+          setHomeLandingMode(landingMode);
           setOnboarded(true);
         }}
       />
@@ -2315,59 +2621,126 @@ function Root() {
   return (
     <SanctuaryAmbientProvider>
       <VoiceStreamProvider>
-        <RootMain userName={userName} screen={screen} setScreen={setScreen} />
+        <AppNavProvider
+          userName={userName}
+          setUserName={setUserName}
+          screen={screen}
+          setScreen={setScreen}
+        >
+          <RootMain homeLandingMode={homeLandingMode} />
+        </AppNavProvider>
       </VoiceStreamProvider>
     </SanctuaryAmbientProvider>
-  );
-}
-
-function RootMain({
-  userName,
-  screen,
-  setScreen,
-}: {
-  userName: string;
-  screen: ScreenKey;
-  setScreen: (key: ScreenKey) => void;
-}) {
-  const handleNav = (key: ScreenKey) => {
-    setScreen(key === 'chat' ? 'talk' : key);
-  };
-
-  const screens: Record<ScreenKey, React.ReactNode> = {
-    home: <HomeScreen userName={userName} onNav={handleNav} />,
-    checkin: <CheckInScreen onNav={handleNav} />,
-    talk: <ChatScreen userName={userName} onNav={handleNav} />,
-    voice: <TalkScreen userName={userName} onNav={handleNav} />,
-    chat: <ChatScreen userName={userName} onNav={handleNav} />,
-    breathe: <BreatheScreen />,
-    journal: <JournalScreen />,
-  };
-
-  const theme = getCircadianTheme();
-  const navActive: ScreenKey =
-    screen === 'checkin' ? 'home' : screen === 'chat' || screen === 'voice' ? 'talk' : screen;
-  const statusTheme =
-    screen === 'home' || screen === 'checkin' || screen === 'chat' || screen === 'talk' || screen === 'voice'
-      ? theme.isDark
-        ? 'light'
-        : 'dark'
-      : 'light';
-
-  return (
-    <View style={styles.flex}>
-      <StatusBar style={statusTheme} />
-      <View style={styles.flex}>{screens[screen]}</View>
-      {screen !== 'voice' ? <NavBar active={navActive} onNav={handleNav} /> : null}
-    </View>
   );
 }
 
 export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <Root />
+      <CircadianThemeProvider>
+        <Root />
+      </CircadianThemeProvider>
     </SafeAreaProvider>
+  );
+}
+
+function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
+  const theme = useCircadianTheme();
+  const swipe = useScreenSwipeNav();
+  const screenFade = useRef(new Animated.Value(1)).current;
+  const screenFirstMount = useRef(true);
+  const [memoryLedgerOpen, setMemoryLedgerOpen] = useState(false);
+  const {
+    userName,
+    setUserName,
+    screen,
+    navigate,
+    menuOpen,
+    setMenuOpen,
+    profileOpen,
+    setProfileOpen,
+    onboardingReviewSlide,
+    openOnboardingSlide,
+    closeOnboardingReview,
+  } = useAppNav();
+
+  useEffect(() => {
+    if (screenFirstMount.current) {
+      screenFirstMount.current = false;
+      return;
+    }
+    screenFade.setValue(0);
+    Animated.timing(screenFade, {
+      toValue: 1,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [screen, screenFade]);
+
+  const handleMenuSelect = (target: NavTarget) => {
+    if (target.kind === 'screen') navigate(target.key);
+    else openOnboardingSlide(target.slide);
+  };
+
+  const saveProfileName = async (name: string) => {
+    try {
+      await AsyncStorage.setItem('userName', name);
+    } catch {}
+    setUserName(name);
+  };
+
+  if (onboardingReviewSlide) {
+    return (
+      <OnboardingFlow
+        reviewMode
+        initialSlide={onboardingReviewSlide}
+        onExitReview={closeOnboardingReview}
+        onComplete={() => closeOnboardingReview()}
+      />
+    );
+  }
+
+  const screens: Record<MainScreenKey, React.ReactNode> = {
+    home: <HomeScreen userName={userName} onNav={navigate} />,
+    checkin: <CheckInScreen onNav={navigate} />,
+    talk: <ChatScreen userName={userName} />,
+    voice: <TalkScreen userName={userName} />,
+    breathe: <BreatheScreen />,
+    journal: <JournalScreen onNav={navigate} />,
+  };
+
+  const statusTheme = theme.isDark ? 'light' : 'dark';
+
+  return (
+    <View style={styles.flex} {...swipe.panHandlers}>
+      <StatusBar style={statusTheme} />
+      <Animated.View style={[styles.flex, { opacity: screenFade }]}>{screens[screen]}</Animated.View>
+      <NavBar />
+      <AppMenuSheet
+        visible={menuOpen}
+        theme={theme}
+        onClose={() => setMenuOpen(false)}
+        onSelect={handleMenuSelect}
+        onOpenProfile={() => setProfileOpen(true)}
+        onOpenMemoryLedger={() => {
+          setMenuOpen(false);
+          setMemoryLedgerOpen(true);
+        }}
+      />
+      <ProfileNameSheet
+        visible={profileOpen}
+        theme={theme}
+        userName={userName}
+        onClose={() => setProfileOpen(false)}
+        onSave={(name) => void saveProfileName(name)}
+      />
+      <MemoryLedgerSheet
+        visible={memoryLedgerOpen}
+        theme={theme}
+        onClose={() => setMemoryLedgerOpen(false)}
+      />
+    </View>
   );
 }
 
@@ -2443,6 +2816,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 18,
     top: 18,
+  },
+  chatMicBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
   },
 
   // Emo orb (home screen pulse)
@@ -2837,12 +3218,11 @@ const styles = StyleSheet.create({
   sanctuaryLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: C.purple,
     textTransform: 'uppercase',
     letterSpacing: 1.8,
     marginBottom: 8,
   },
-  heroGreeting: { fontSize: 34, fontWeight: '700', color: C.white, lineHeight: 44, marginBottom: 8 },
+  heroGreeting: { fontSize: 34, fontWeight: '700', lineHeight: 44, marginBottom: 8 },
   heroSub: { fontSize: 14, color: C.white60 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: C.white },
   cardSub: { fontSize: 12, color: C.white60, marginTop: 2, lineHeight: 18 },
@@ -2876,7 +3256,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   homeHeaderCopy: { flex: 1, minWidth: 0 },
-  homeHeaderOrb: { marginTop: 2 },
+  homeHeaderOrb: { marginTop: 2, marginRight: -2 },
+  homeAmbientSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 0.5,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 18,
+  },
+  homeAmbientSearchInput: { flex: 1, fontSize: 15, paddingVertical: 2, padding: 0 },
   homeGreetingLine: {
     fontSize: 28,
     lineHeight: 34,
@@ -2897,6 +3288,57 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   homeSubline: { fontSize: 14, lineHeight: 21 },
+  homeModePill: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  homeModePillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  homeOracleCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginBottom: 14,
+  },
+  homeOracleEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  homeOracleTitle: {
+    fontSize: 18,
+    lineHeight: 26,
+    fontFamily: SERIF,
+    marginBottom: 14,
+  },
+  homeOracleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  homeOracleInput: { flex: 1, fontSize: 14, paddingVertical: 4, padding: 0 },
+  homeOracleGo: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeOracleGoText: { color: '#FFFFFF', fontSize: 18, fontWeight: '600' },
+  homeReflectionCalm: { minHeight: 108, marginBottom: 22 },
+  homeSanctuarySpacer: { height: 28 },
   homeReflectionCard: {
     paddingVertical: 20,
     paddingHorizontal: 18,
@@ -2952,15 +3394,16 @@ const styles = StyleSheet.create({
   homeEmoHereBtnText: { fontSize: 13, fontWeight: '600' },
   homeActionGrid: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 8,
   },
   homeActionTile: {
-    flex: 1,
-    borderRadius: 20,
+    width: '47.5%',
+    borderRadius: 18,
     borderWidth: 0.5,
     overflow: 'hidden',
-    minHeight: 96,
+    minHeight: 108,
   },
   homeActionTileInner: {
     flex: 1,
@@ -2970,8 +3413,101 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 8,
   },
-  homeActionTileLabel: { fontSize: 13, fontWeight: '600' },
+  homeActionTileLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
   homeActionTileLabelLight: { fontSize: 13, fontWeight: '700', color: C.white },
+  lockedTodayCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    marginTop: 4,
+    marginBottom: 8,
+    opacity: 0.92,
+  },
+  lockedTodayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  lockedTodayEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+  },
+  lockedTodayTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: SERIF,
+    marginBottom: 6,
+  },
+  lockedTodaySub: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  lockedTodaySegments: { gap: 8 },
+  lockedTodaySegment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 0.5,
+  },
+  lockedTodayDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  lockedTodaySegmentLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  askEmoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  askEmoBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  todayModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  todayModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  todayModalSheet: {
+    maxHeight: '88%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 0.5,
+    paddingBottom: 8,
+    overflow: 'hidden',
+  },
+  todayModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  todayModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: SERIF,
+  },
   homeReminderCard: {
     paddingVertical: 18,
     paddingHorizontal: 18,
@@ -3094,6 +3630,10 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 8,
     paddingVertical: 14,
     paddingHorizontal: 16,
+  },
+  chatBotPlain: {
+    paddingVertical: 4,
+    paddingHorizontal: 2,
   },
   chatQuickChipRow: {
     gap: 8,
@@ -3278,6 +3818,9 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   chatMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingVertical: 14,
     paddingHorizontal: 18,
   },
@@ -3286,7 +3829,22 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.12)',
   },
   chatMenuItemPressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  chatMenuItemText: { fontSize: 15, fontWeight: '500' },
+  chatMenuItemText: { fontSize: 15, fontWeight: '500', flex: 1 },
+  micMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  micMenuAnchor: {
+    alignItems: 'flex-end',
+    paddingRight: 24,
+    paddingBottom: NAV_CONTENT_HEIGHT + 88,
+  },
+  plusMenuAnchor: {
+    alignItems: 'flex-start',
+    paddingLeft: 24,
+    paddingBottom: NAV_CONTENT_HEIGHT + 88,
+  },
   chatComposerWrap: {
     marginTop: 'auto',
     paddingHorizontal: 16,
@@ -3311,6 +3869,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  chatMicBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chatComposerInput: {
     flex: 1,
     fontSize: 14,
@@ -3319,9 +3884,9 @@ const styles = StyleSheet.create({
   },
   chatSendWrap: { borderRadius: 22, overflow: 'hidden' },
   chatSendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3416,7 +3981,13 @@ const styles = StyleSheet.create({
   sendGlyph: { color: C.white, fontSize: 18 },
 
   // Breathe
-  breatheRoot: { alignItems: 'center', justifyContent: 'center', gap: 24, paddingHorizontal: 24 },
+  breatheRoot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    width: '100%',
+  },
   breatheStage: { alignItems: 'center', justifyContent: 'center', width: 200, height: 200 },
   breatheGlow: { position: 'absolute', borderRadius: 100, backgroundColor: C.purpleGlow },
   breatheCircle: {
@@ -3466,13 +4037,11 @@ const styles = StyleSheet.create({
   // Nav
   navBar: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(17,9,34,0.92)',
     borderTopWidth: 0.5,
-    borderTopColor: C.cardBorder,
     paddingTop: 10,
     zIndex: 10,
   },
   navItem: { flex: 1, alignItems: 'center', gap: 4 },
-  navLabel: { fontSize: 10, color: C.white30 },
-  navLabelActive: { color: C.purple },
+  navLabel: { fontSize: 9 },
+  navLabelActive: { fontWeight: '600' },
 });
