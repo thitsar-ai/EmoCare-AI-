@@ -32,6 +32,15 @@ export type CircadianTheme = {
   barFill: string;
 };
 
+/** Text tokens for fixed dark overlay sheets (menu, profile) — readable in all circadian phases. */
+export const DARK_MENU_SURFACE = {
+  text: '#FFFFFF',
+  secondaryText: '#C4B7FF',
+  mutedText: '#A99CCF',
+  card: 'rgba(255,255,255,0.08)',
+  border: 'rgba(255,255,255,0.12)',
+} as const;
+
 const EMO_FACE_DAY: ImageSourcePropType = require('../assets/emo-face-day.png');
 const EMO_FACE_LAVENDER: ImageSourcePropType = require('../assets/emo-face-lavender.png');
 const EMO_FACE_LAVENDER_TRANSPARENT: ImageSourcePropType = require('../assets/emo-face-lavender-transparent.png');

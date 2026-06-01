@@ -13,7 +13,7 @@ import {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { getTimeOfDayFromHour, resolveAmbientProgress } from './LivingCanvas';
+import { getTimeOfDayFromHour, resolveAmbientProgress } from './livingCanvasAmbient';
 
 /** Organic mood-to-aura blend duration (UI thread, non-blocking). */
 export const AMBIENT_BLEND_MS = 1200;

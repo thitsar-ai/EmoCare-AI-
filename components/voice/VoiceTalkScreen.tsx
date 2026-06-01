@@ -20,6 +20,7 @@ import {
   useCircadianTheme,
   type CircadianTheme,
 } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
 import { getSanctuaryEmoFace, getSanctuaryEmoOrbSize } from '../../theme/sanctuaryEmoFace';
 import { useVoiceStream } from './VoiceStreamContext';
 import { VoiceMicControlSheet } from './VoiceMicControlSheet';
@@ -132,7 +133,7 @@ function VoiceMenuDropdown({
           <View
             style={[
               styles.menuSheet,
-              { backgroundColor: VOICE_MENU_SOLID, borderColor: theme.border },
+              { backgroundColor: VOICE_MENU_SOLID, borderColor: DARK_MENU_SURFACE.border },
             ]}
           >
             {items.map((item, index) => (
@@ -148,7 +149,7 @@ function VoiceMenuDropdown({
                   pressed && styles.menuItemPressed,
                 ]}
               >
-                <Text style={[styles.menuItemText, { color: theme.text }]}>{item.label}</Text>
+                <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]}>{item.label}</Text>
               </Pressable>
             ))}
           </View>

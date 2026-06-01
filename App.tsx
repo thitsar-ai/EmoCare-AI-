@@ -53,6 +53,7 @@ import {
 } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from './constants/obMoods';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
+import { SanctuaryDashboard } from './components/home/SanctuaryDashboard';
 import {
   AppMenuSheet,
   AppNavProvider,
@@ -93,7 +94,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { callAnthropicMessages, describeAnthropicError } from './utils/anthropic';
 import { streamAnthropicMessages } from './utils/anthropicStream';
-import { hapticBreathPulse, hapticLight, hapticMedium } from './utils/haptics';
+import { hapticLight, hapticMedium } from './utils/haptics';
 import { buildAnthropicMessagesFromChat } from './utils/chatMedia';
 import { getChatSystemPrompt, getCrisisSafetyAppendix, getIntentModeAppendix } from './utils/emoEos';
 import { detectCrisisSignals } from './utils/emoCrisis';
@@ -105,10 +106,13 @@ import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { VoiceStreamProvider } from './components/voice/VoiceStreamContext';
 import { VoiceTalkScreen } from './components/voice/VoiceTalkScreen';
-import { TodayTriageDashboard } from './components/TodayTriageDashboard';
 import { MemoryLedgerSheet } from './components/MemoryLedgerSheet';
+import { BreatheExperience } from './components/breathe/BreatheExperience';
+import { JournalScreen } from './components/journal/JournalScreen';
+import { PENDING_JOURNAL_CONTEXT_KEY } from './utils/journalStorage';
 import {
   CircadianThemeProvider,
+  DARK_MENU_SURFACE,
   getCircadianPhase,
   getCircadianTheme,
   useCircadianTheme,
@@ -230,13 +234,6 @@ interface ChatMessage {
 interface ApiMessage {
   role: 'user' | 'assistant';
   content: string;
-}
-
-interface JournalEntry {
-  id: number;
-  date: string;
-  text: string;
-  mood: { emoji: string; label: string };
 }
 
 /* ------------------------------------------------------------------ *
@@ -862,7 +859,7 @@ function MoodWave() {
  * ------------------------------------------------------------------ */
 
 function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
-  const theme = getCircadianTheme();
+  const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
   const { goBack } = useAppNav();
   const [selected, setSelected] = useState<Mood | null>(null);
@@ -893,24 +890,25 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
     <View style={styles.flex}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <TopChrome>
-      <ScreenNavChrome theme={theme} title="Check In" />
+        <ScreenNavChrome theme={theme} compact />
 
-      <View style={styles.ciTitleBlock}>
-        <Text style={[styles.ciTitle, { color: theme.text }]}>Check In ✦</Text>
-        <Text style={[styles.ciSubtitle, { color: theme.mutedText }]}>
-          Take a gentle moment to check in.
-        </Text>
-      </View>
+        <View style={styles.ciHeroBlock}>
+          <Text style={[styles.ciTitle, { color: theme.text }]}>Check In ✦</Text>
+          <Text style={[styles.ciSubtitle, { color: theme.mutedText }]}>
+            Take a gentle moment to check in.
+          </Text>
+        </View>
 
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={{
-          paddingHorizontal: 22,
-          paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24,
-        }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={{
+            paddingHorizontal: 22,
+            paddingTop: 4,
+            paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24,
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.obMoodHeaderBlock}>
             <Text style={[styles.obMoodSectionTitle, { color: theme.text }]}>
               How are you feeling right now?
@@ -1035,125 +1033,13 @@ function HomeScreen({
   userName: string;
   onNav: (key: MainScreenKey) => void;
 }) {
-  const [oracleQuery, setOracleQuery] = useState('');
-  const theme = useCircadianTheme();
-  const copy = getHomeSanctuaryCopy(theme.phase);
-  const displayName = userName.trim() || 'friend';
-
-  const submitOracleQuery = async () => {
-    const trimmed = oracleQuery.trim();
-    if (!trimmed) {
-      onNav('talk');
-      return;
-    }
-    try {
-      await AsyncStorage.setItem(PENDING_TALK_QUERY_KEY, trimmed);
-    } catch {}
-    onNav('talk');
-  };
-
+  const { setMenuOpen } = useAppNav();
   return (
-    <>
-      <Screen theme={theme}>
-        <ScreenNavChrome theme={theme} title="Home" />
-        <View style={styles.homeHeaderRow}>
-          <View style={styles.homeHeaderCopy}>
-            <Text style={[styles.homeGreetingLine, { color: theme.text }]}>
-              {copy.timeLabel},
-            </Text>
-            <Text style={[styles.homeNameSerif, { color: theme.text }]}>
-              {displayName}
-            </Text>
-            <Text style={[styles.homeTagline, { color: theme.secondaryText }]}>
-              Intelligence with Soul
-            </Text>
-            <Text style={[styles.homeSubline, { color: theme.mutedText }]}>{copy.subline}</Text>
-          </View>
-          <View style={styles.homeHeaderOrb}>
-            <EmoAvatar size={58} theme={theme} />
-          </View>
-        </View>
-
-        <View style={[styles.homeAmbientSearch, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Search size={18} color={theme.mutedText} strokeWidth={2.2} />
-          <TextInput
-            style={[styles.homeAmbientSearchInput, { color: theme.text }]}
-            placeholder="Ask Emo anything… search knowledge or reflect"
-            placeholderTextColor={theme.mutedText}
-            value={oracleQuery}
-            onChangeText={setOracleQuery}
-            onSubmitEditing={() => void submitOracleQuery()}
-            returnKeyType="search"
-          />
-          <TouchableOpacity
-            activeOpacity={0.88}
-            onPress={() => void submitOracleQuery()}
-            style={[styles.homeOracleGo, { backgroundColor: theme.accent }]}
-          >
-            <Text style={styles.homeOracleGoText}>→</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.homeActionGrid}>
-          <TouchableOpacity
-            activeOpacity={0.88}
-            style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => onNav('talk')}
-          >
-            <View style={styles.homeActionTileInner}>
-              <MessageCircle size={22} color={theme.accent} strokeWidth={2.25} />
-              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Talk with Emo</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.88}
-            style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => onNav('breathe')}
-          >
-            <View style={styles.homeActionTileInner}>
-              <Wind size={22} color={theme.accent} strokeWidth={2.25} />
-              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Breathe</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.88}
-            style={[styles.homeActionTile, { backgroundColor: theme.card, borderColor: theme.border }]}
-            onPress={() => void submitOracleQuery()}
-          >
-            <View style={styles.homeActionTileInner}>
-              <Sparkles size={22} color={theme.accent} strokeWidth={2.25} />
-              <Text style={[styles.homeActionTileLabel, { color: theme.text }]}>Oracle Deep Research</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <GlassCard theme={theme} style={styles.lockedTodayCard}>
-          <View style={styles.lockedTodayHeader}>
-            <Lock size={15} color={theme.mutedText} strokeWidth={2.2} />
-            <Text style={[styles.lockedTodayEyebrow, { color: theme.secondaryText }]}>PHASE 3 · LIFE OS</Text>
-          </View>
-          <Text style={[styles.lockedTodayTitle, { color: theme.text }]}>Today Dashboard coming soon</Text>
-          <Text style={[styles.lockedTodaySub, { color: theme.mutedText }]}>
-            A calm command center for your day — smart triage arriving in a future release.
-          </Text>
-          <View style={styles.lockedTodaySegments}>
-            {[
-              { label: 'Deep Focus', color: theme.accent },
-              { label: 'Low-Energy Admin', color: '#86EFAC' },
-              { label: 'Restorative', color: '#F472B6' },
-            ].map((segment) => (
-              <View
-                key={segment.label}
-                style={[styles.lockedTodaySegment, { backgroundColor: theme.card, borderColor: theme.border }]}
-              >
-                <View style={[styles.lockedTodayDot, { backgroundColor: segment.color }]} />
-                <Text style={[styles.lockedTodaySegmentLabel, { color: theme.text }]}>{segment.label}</Text>
-              </View>
-            ))}
-          </View>
-        </GlassCard>
-      </Screen>
-    </>
+    <SanctuaryDashboard
+      userName={userName}
+      onNav={onNav}
+      onOpenMenu={() => setMenuOpen(true)}
+    />
   );
 }
 
@@ -1175,7 +1061,6 @@ const CHAT_SEND_GRADIENT = ['#9473FF', '#6366F1'] as [string, string];
 const CHAT_MENU_SOLID = '#2A1848';
 const CHAT_VOICE_ALOUD_KEY = 'chatVoiceAloudEnabled';
 const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
-const PENDING_JOURNAL_CONTEXT_KEY = 'pendingJournalContext';
 
 function makeWelcomeMessage(userName: string): ChatMessage {
   const n = userName.trim() || 'friend';
@@ -1256,7 +1141,7 @@ function ChatMenuSheet({
           <View
             style={[
               styles.chatMenuSheet,
-              { backgroundColor: CHAT_MENU_SOLID, borderColor: theme.border },
+              { backgroundColor: CHAT_MENU_SOLID, borderColor: DARK_MENU_SURFACE.border },
             ]}
           >
             {items.map((item, index) => (
@@ -1274,13 +1159,13 @@ function ChatMenuSheet({
               >
                 <item.Icon
                   size={17}
-                  color={item.destructive ? '#F08A8A' : theme.secondaryText}
+                  color={item.destructive ? '#F08A8A' : DARK_MENU_SURFACE.secondaryText}
                   strokeWidth={2.2}
                 />
                 <Text
                   style={[
                     styles.chatMenuItemText,
-                    { color: item.destructive ? '#F08A8A' : theme.text },
+                    { color: item.destructive ? '#F08A8A' : DARK_MENU_SURFACE.text },
                   ]}
                 >
                   {item.label}
@@ -1320,7 +1205,7 @@ function AttachmentMenuSheet({
           <View
             style={[
               styles.chatMenuSheet,
-              { backgroundColor: CHAT_MENU_SOLID, borderColor: theme.border },
+              { backgroundColor: CHAT_MENU_SOLID, borderColor: DARK_MENU_SURFACE.border },
             ]}
           >
             {items.map((item, index) => (
@@ -1338,13 +1223,13 @@ function AttachmentMenuSheet({
               >
                 <item.Icon
                   size={17}
-                  color={item.cancel ? theme.mutedText : theme.secondaryText}
+                  color={item.cancel ? DARK_MENU_SURFACE.mutedText : DARK_MENU_SURFACE.secondaryText}
                   strokeWidth={2.2}
                 />
                 <Text
                   style={[
                     styles.chatMenuItemText,
-                    { color: item.cancel ? theme.mutedText : theme.text },
+                    { color: item.cancel ? DARK_MENU_SURFACE.mutedText : DARK_MENU_SURFACE.text },
                   ]}
                 >
                   {item.label}
@@ -1407,7 +1292,7 @@ function ChatBubbleMenuSheet({
             styles.chatBubbleMenuSheet,
             {
               backgroundColor: CHAT_MENU_SOLID,
-              borderColor: theme.border,
+              borderColor: DARK_MENU_SURFACE.border,
               marginBottom: bottomInset + 12,
             },
           ]}
@@ -1431,8 +1316,8 @@ function ChatBubbleMenuSheet({
                 style={[
                   styles.chatMenuItemText,
                   item.destructive && { color: '#F08A8A' },
-                  item.cancel && { color: theme.mutedText, fontWeight: '600' },
-                  !item.destructive && !item.cancel && { color: theme.text },
+                  item.cancel && { color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' },
+                  !item.destructive && !item.cancel && { color: DARK_MENU_SURFACE.text },
                 ]}
               >
                 {item.label}
@@ -2222,303 +2107,40 @@ function ChatScreen({ userName }: { userName: string }) {
 }
 
 /* ------------------------------------------------------------------ *
- * Breathe
- * ------------------------------------------------------------------ */
-
-function BreatheScreen() {
-  const theme = useCircadianTheme();
-  const insets = useSafeAreaInsets();
-  const [running, setRunning] = useState(false);
-  const [phase, setPhase] = useState('Tap to begin');
-  const [selected, setSelected] = useState('Box');
-  const circleSize = useRef(new Animated.Value(140)).current;
-  const glowOpacity = useRef(new Animated.Value(0.3)).current;
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const phaseIdx = useRef(0);
-  const phases = ['Inhale', 'Hold', 'Exhale', 'Hold'];
-
-  const tick = () => {
-    const p = phases[phaseIdx.current % 4];
-    setPhase(p);
-    void hapticBreathPulse(p);
-    Animated.parallel([
-      Animated.timing(circleSize, { toValue: p === 'Inhale' ? 175 : 140, duration: 3800, useNativeDriver: false }),
-      Animated.timing(glowOpacity, { toValue: p === 'Inhale' ? 0.7 : 0.3, duration: 3800, useNativeDriver: false }),
-    ]).start();
-    phaseIdx.current++;
-  };
-
-  const toggle = () => {
-    if (running) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      setRunning(false);
-      setPhase('Tap to begin');
-      circleSize.setValue(140);
-      glowOpacity.setValue(0.3);
-    } else {
-      setRunning(true);
-      phaseIdx.current = 0;
-      tick();
-      timerRef.current = setInterval(tick, 4000);
-    }
-  };
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    },
-    [],
-  );
-
-  return (
-    <View style={styles.flex}>
-      <View
-        style={[
-          styles.flex,
-          styles.screenForeground,
-          {
-            paddingTop: insets.top + 4,
-            paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom,
-            paddingHorizontal: 22,
-          },
-        ]}
-      >
-        <ScreenNavChrome theme={theme} title="Breathe" />
-        <View style={styles.breatheRoot}>
-          <Text style={[styles.sanctuaryLabel, { color: theme.secondaryText }]}>Breathing exercise</Text>
-          <Text style={[styles.heroGreeting, { color: theme.text }]}>Box breathing</Text>
-          <View style={styles.breatheStage}>
-            <Animated.View
-              style={[
-                styles.breatheGlow,
-                { width: circleSize, height: circleSize, opacity: glowOpacity },
-              ]}
-            />
-            <Animated.View style={[styles.breatheCircle, { width: circleSize, height: circleSize }]}>
-              <Text style={styles.breathePhase}>{phase}</Text>
-            </Animated.View>
-          </View>
-          <Text style={[styles.cardSub, { textAlign: 'center' }]}>
-            Inhale · 4  ·  Hold · 4  ·  Exhale · 4  ·  Hold · 4
-          </Text>
-          <View style={styles.techRow}>
-            {['Box', '4-7-8', 'Calm'].map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.techPill, selected === t && styles.techPillActive]}
-                onPress={() => {
-                  setSelected(t);
-                  if (running) toggle();
-                }}
-              >
-                <Text style={[styles.techPillText, selected === t && styles.techPillTextActive]}>{t}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TouchableOpacity style={styles.breatheBtn} onPress={toggle}>
-            <Text style={styles.primaryBtnText}>{running ? 'Stop' : 'Begin'}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Journal
- * ------------------------------------------------------------------ */
-
-function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
-  const theme = useCircadianTheme();
-  const insets = useSafeAreaInsets();
-  const [text, setText] = useState('');
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [viewing, setViewing] = useState<number | null>(null);
-  const [lastSavedId, setLastSavedId] = useState<number | null>(null);
-
-  useEffect(() => {
-    AsyncStorage.getItem('journalEntries').then((d) => {
-      if (d) setEntries(JSON.parse(d));
-    });
-  }, []);
-
-  const askEmoAboutEntry = async (entry: JournalEntry) => {
-    try {
-      await AsyncStorage.setItem(
-        PENDING_JOURNAL_CONTEXT_KEY,
-        JSON.stringify({ text: entry.text, mood: entry.mood }),
-      );
-    } catch {}
-    onNav('talk');
-  };
-
-  const save = async () => {
-    if (!text.trim()) return;
-    void hapticMedium();
-    const entry: JournalEntry = {
-      id: Date.now(),
-      date: new Date().toISOString(),
-      text: text.trim(),
-      mood: { emoji: '🙂', label: 'Light' },
-    };
-    const updated = [entry, ...entries];
-    setEntries(updated);
-    setLastSavedId(entry.id);
-    await AsyncStorage.setItem('journalEntries', JSON.stringify(updated));
-    setText('');
-  };
-
-  const deleteEntry = async (id: number) => {
-    const updated = entries.filter((e) => e.id !== id);
-    setEntries(updated);
-    await AsyncStorage.setItem('journalEntries', JSON.stringify(updated));
-  };
-
-  const prompts = [
-    'What am I grateful for?',
-    'What emotion am I carrying?',
-    'What do I need to let go of?',
-    'What went well today?',
-  ];
-
-  if (viewing !== null) {
-    const e = entries[viewing];
-    return (
-      <View style={styles.flex}>
-        <TopChrome>
-        <View style={styles.chatHeader}>
-            <TouchableOpacity onPress={() => setViewing(null)} style={{ padding: 4 }}>
-              <Text style={styles.backGlyph}>←</Text>
-            </TouchableOpacity>
-            <View style={styles.flex}>
-              <Text style={styles.cardTitle}>
-                {new Date(e.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              </Text>
-              <Text style={styles.cardSub}>
-                {e.mood.emoji} {e.mood.label}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => {
-                deleteEntry(e.id);
-                setViewing(null);
-              }}
-              style={{ padding: 8 }}
-            >
-              <Text style={styles.deleteText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}>
-            <Text style={styles.journalReadText}>{e.text}</Text>
-            <TouchableOpacity
-              style={[styles.askEmoBtn, { backgroundColor: theme.accent }]}
-              activeOpacity={0.88}
-              onPress={() => void askEmoAboutEntry(e)}
-            >
-              <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
-              <Text style={styles.askEmoBtnText}>Ask Emo about this</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </TopChrome>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.flex}>
-      <TopChrome>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScreenNavChrome theme={theme} title="Journal" />
-          <ScrollView
-            contentContainerStyle={{ padding: 20, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={[styles.heroGreeting, { color: theme.text }]}>My Journal</Text>
-            <Text style={[styles.cardSub, { marginBottom: 18, color: theme.mutedText }]}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </Text>
-            <Text style={[styles.sanctuaryLabel, { marginBottom: 10, color: theme.secondaryText }]}>A prompt to begin</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-              {prompts.map((p) => (
-                <TouchableOpacity key={p} style={styles.promptChip} onPress={() => setText(p + '\n\n')}>
-                  <Text style={styles.promptChipText}>{p.split(' ').slice(0, 3).join(' ')}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <GlassCard style={{ marginBottom: 12 }}>
-              <TextInput
-                style={styles.journalInput}
-                multiline
-                placeholder="This space is yours. Write freely — no one else will see this."
-                placeholderTextColor={C.white30}
-                value={text}
-                onChangeText={setText}
-                textAlignVertical="top"
-              />
-            </GlassCard>
-            <TouchableOpacity style={styles.obBtn} onPress={save}>
-              <Text style={styles.primaryBtnText}>✦  Save this entry</Text>
-            </TouchableOpacity>
-            <GlassCard style={styles.privacyCard}>
-              <Text style={{ fontSize: 16 }}>🔒</Text>
-              <Text style={[styles.cardSub, styles.flex]}>
-                Your entries are stored privately on this device only.
-              </Text>
-            </GlassCard>
-            {entries.length > 0 ? (
-              <Text style={[styles.sanctuaryLabel, { marginBottom: 12, color: theme.secondaryText }]}>Past entries</Text>
-            ) : null}
-            {entries.map((e, i) => (
-              <View key={e.id}>
-                <TouchableOpacity activeOpacity={0.85} onPress={() => setViewing(i)}>
-                  <GlassCard
-                    style={
-                      lastSavedId === e.id
-                        ? { ...styles.entryCard, borderColor: theme.accent, borderWidth: 1 }
-                        : styles.entryCard
-                    }
-                  >
-                    <View style={styles.entryHeader}>
-                      <Text style={[styles.cardTitle, { fontSize: 13 }]}>
-                        {new Date(e.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      </Text>
-                      <View style={styles.entryHeaderRight}>
-                        <Text style={styles.cardSub}>
-                          {e.mood.emoji} {e.mood.label}
-                        </Text>
-                        <TouchableOpacity onPress={() => deleteEntry(e.id)}>
-                          <Text style={styles.deleteGlyph}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                    <Text style={[styles.cardSub, { lineHeight: 18 }]} numberOfLines={2}>
-                      {e.text}
-                    </Text>
-                  </GlassCard>
-                </TouchableOpacity>
-                {lastSavedId === e.id ? (
-                  <TouchableOpacity
-                    style={[styles.askEmoBtn, { backgroundColor: theme.accent, marginTop: -4, marginBottom: 12 }]}
-                    activeOpacity={0.88}
-                    onPress={() => void askEmoAboutEntry(e)}
-                  >
-                    <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
-                    <Text style={styles.askEmoBtnText}>Ask Emo about this</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ))}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </TopChrome>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ *
  * Floating nav bar
  * ------------------------------------------------------------------ */
+
+function NavBarShell() {
+  const { immersiveChromeHidden } = useAppNav();
+  const fade = useRef(new Animated.Value(1)).current;
+  const slide = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fade, {
+        toValue: immersiveChromeHidden ? 0 : 1,
+        duration: 800,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        useNativeDriver: true,
+      }),
+      Animated.timing(slide, {
+        toValue: immersiveChromeHidden ? 20 : 0,
+        duration: 800,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fade, immersiveChromeHidden, slide]);
+
+  return (
+    <Animated.View
+      style={{ opacity: fade, transform: [{ translateY: slide }] }}
+      pointerEvents={immersiveChromeHidden ? 'none' : 'auto'}
+    >
+      <NavBar />
+    </Animated.View>
+  );
+}
 
 function NavBar() {
   const insets = useSafeAreaInsets();
@@ -2706,7 +2328,7 @@ function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'san
     checkin: <CheckInScreen onNav={navigate} />,
     talk: <ChatScreen userName={userName} />,
     voice: <TalkScreen userName={userName} />,
-    breathe: <BreatheScreen />,
+    breathe: <BreatheExperience />,
     journal: <JournalScreen onNav={navigate} />,
   };
 
@@ -2716,7 +2338,7 @@ function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'san
     <View style={styles.flex} {...swipe.panHandlers}>
       <StatusBar style={statusTheme} />
       <Animated.View style={[styles.flex, { opacity: screenFade }]}>{screens[screen]}</Animated.View>
-      <NavBar />
+      <NavBarShell />
       <AppMenuSheet
         visible={menuOpen}
         theme={theme}
@@ -3000,7 +2622,8 @@ const styles = StyleSheet.create({
   obMoodHeaderBlock: {
     width: '100%',
     alignItems: 'center',
-    marginBottom: 22,
+    marginBottom: 18,
+    marginTop: 4,
   },
   obMoodSectionTitle: {
     fontSize: 19,
@@ -3009,7 +2632,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     textAlign: 'center',
     alignSelf: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   obMoodSectionSub: {
     fontSize: 13,
@@ -3023,7 +2646,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 14,
     width: '100%',
-    marginBottom: 12,
+    marginBottom: 20,
   },
   obMoodCardPro: {
     width: (width - 56 - 14) / 2,
@@ -3463,22 +3086,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  askEmoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  askEmoBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   todayModalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -3549,6 +3156,12 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   ciBackLabel: { fontSize: 14, fontWeight: '600' },
+  ciHeroBlock: {
+    paddingHorizontal: 22,
+    paddingTop: 2,
+    paddingBottom: 20,
+    alignItems: 'center',
+  },
   ciTitleBlock: { alignItems: 'center', paddingHorizontal: 22, paddingBottom: 12 },
   ciCircleBtn: {
     width: 40,
@@ -3558,9 +3171,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ciTitle: { fontSize: 22, fontWeight: '700', fontFamily: SERIF, textAlign: 'center' },
-  ciSubtitle: { fontSize: 13, marginTop: 6, textAlign: 'center', lineHeight: 20 },
-  ciNoteCard: { paddingVertical: 18, paddingHorizontal: 18, marginTop: 8, marginBottom: 16 },
+  ciTitle: {
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '700',
+    fontFamily: SERIF,
+    textAlign: 'center',
+  },
+  ciSubtitle: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 21,
+    maxWidth: 300,
+  },
+  ciNoteCard: { paddingVertical: 18, paddingHorizontal: 18, marginTop: 4, marginBottom: 20 },
   ciNoteInput: {
     fontSize: 14,
     minHeight: 88,
@@ -3901,28 +3526,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
-  // Chat — legacy (journal entry view)
-  chatHeader: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: C.card,
-    borderBottomWidth: 0.5,
-    borderBottomColor: C.cardBorder,
-  },
-  chatHeaderCopy: { flex: 1, minWidth: 0 },
-  chatIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: C.card,
-    borderWidth: 0.5,
-    borderColor: C.cardBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   msgWrap: { maxWidth: '82%', marginBottom: 14 },
   msgWrapUser: { alignSelf: 'flex-end' },
   msgWrapBot: { alignSelf: 'flex-start' },
@@ -3979,60 +3582,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendGlyph: { color: C.white, fontSize: 18 },
-
-  // Breathe
-  breatheRoot: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 24,
-    width: '100%',
-  },
-  breatheStage: { alignItems: 'center', justifyContent: 'center', width: 200, height: 200 },
-  breatheGlow: { position: 'absolute', borderRadius: 100, backgroundColor: C.purpleGlow },
-  breatheCircle: {
-    borderRadius: 100,
-    backgroundColor: C.purpleLight,
-    borderWidth: 1,
-    borderColor: C.purple,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  breathePhase: { fontSize: 15, fontWeight: '500', color: C.white },
-  techRow: { flexDirection: 'row', gap: 8 },
-  techPill: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 22,
-    backgroundColor: C.card,
-    borderWidth: 0.5,
-    borderColor: C.cardBorder,
-  },
-  techPillActive: { backgroundColor: C.purple, borderColor: C.purple },
-  techPillText: { fontSize: 12, fontWeight: '500', color: C.purple },
-  techPillTextActive: { color: C.white },
-  breatheBtn: { backgroundColor: C.purple, borderRadius: 28, paddingVertical: 14, paddingHorizontal: 48 },
-
-  // Journal
-  journalInput: { paddingVertical: 16, paddingHorizontal: 16, fontSize: 13, color: C.white, minHeight: 140, lineHeight: 22 },
-  journalReadText: { fontSize: 14, color: C.white80, lineHeight: 26 },
-  promptChip: {
-    backgroundColor: C.card,
-    borderWidth: 0.5,
-    borderColor: C.cardBorder,
-    borderRadius: 22,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    marginRight: 8,
-  },
-  promptChipText: { fontSize: 11, color: C.white60 },
-  privacyCard: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 12, marginTop: 12, marginBottom: 20 },
-  entryCard: { paddingVertical: 14, paddingHorizontal: 14, marginBottom: 10 },
-  entryHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6, alignItems: 'center' },
-  entryHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  backGlyph: { fontSize: 20, color: C.purple },
-  deleteText: { color: '#F472B6', fontSize: 13 },
-  deleteGlyph: { color: '#F472B6', fontSize: 12 },
 
   // Nav
   navBar: {

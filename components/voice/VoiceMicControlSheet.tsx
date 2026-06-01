@@ -3,6 +3,7 @@ import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 import Constants from 'expo-constants';
 import { Pause, Play, Square, Volume2, VolumeX, type LucideIcon } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
 import { getVoiceVolume, setVoiceVolume } from '../../utils/voiceVolume';
 
 const MENU_SOLID = '#2A1848';
@@ -49,7 +50,7 @@ export function VoiceMicControlSheet({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
         <View style={styles.anchor}>
-          <View style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: theme.border }]}>
+          <View style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}>
             {items.map((item, index) => (
               <Pressable
                 key={item.label}
@@ -63,20 +64,20 @@ export function VoiceMicControlSheet({
                   pressed && styles.itemPressed,
                 ]}
               >
-                <item.Icon size={17} color={theme.secondaryText} strokeWidth={2.2} />
-                <Text style={[styles.itemText, { color: theme.text }]}>{item.label}</Text>
+                <item.Icon size={17} color={DARK_MENU_SURFACE.secondaryText} strokeWidth={2.2} />
+                <Text style={[styles.itemText, { color: DARK_MENU_SURFACE.text }]}>{item.label}</Text>
               </Pressable>
             ))}
             {showVolume ? (
               <View style={[styles.volumeBlock, { borderTopColor: 'rgba(255,255,255,0.12)' }]}>
-                <Text style={[styles.volumeLabel, { color: theme.mutedText }]}>Emo voice volume</Text>
+                <Text style={[styles.volumeLabel, { color: DARK_MENU_SURFACE.mutedText }]}>Emo voice volume</Text>
                 <View style={styles.volumeRow}>
                   <Pressable onPress={() => void bumpVolume(-0.1)} style={styles.volumeBtn}>
-                    <VolumeX size={16} color={theme.secondaryText} strokeWidth={2.2} />
+                    <VolumeX size={16} color={DARK_MENU_SURFACE.secondaryText} strokeWidth={2.2} />
                   </Pressable>
-                  <Text style={[styles.volumePct, { color: theme.text }]}>{Math.round(volume * 100)}%</Text>
+                  <Text style={[styles.volumePct, { color: DARK_MENU_SURFACE.text }]}>{Math.round(volume * 100)}%</Text>
                   <Pressable onPress={() => void bumpVolume(0.1)} style={styles.volumeBtn}>
-                    <Volume2 size={16} color={theme.secondaryText} strokeWidth={2.2} />
+                    <Volume2 size={16} color={DARK_MENU_SURFACE.secondaryText} strokeWidth={2.2} />
                   </Pressable>
                 </View>
                 <Text style={[styles.volumeHint, { color: theme.mutedText }]}>

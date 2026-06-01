@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import type { CircadianTheme } from '../theme/circadianTheme';
+import { DARK_MENU_SURFACE } from '../theme/circadianTheme';
 import { DEFAULT_MEMORY_ITEMS, loadMemoryLedger, saveMemoryLedger } from '../utils/memoryLedger';
 
 const MENU_SOLID = '#2A1848';
@@ -40,11 +41,11 @@ export function MemoryLedgerSheet({
       <Pressable style={styles.overlay} onPress={onClose}>
         <View style={styles.anchor}>
           <Pressable
-            style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: theme.border }]}
+            style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text style={[styles.title, { color: theme.text }]}>Memory Ledger</Text>
-            <Text style={[styles.subtitle, { color: theme.mutedText }]}>
+            <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>Memory Ledger</Text>
+            <Text style={[styles.subtitle, { color: DARK_MENU_SURFACE.mutedText }]}>
               Context Emo keeps on this device to support you better.
             </Text>
             {items.map((item, index) => {
@@ -55,12 +56,12 @@ export function MemoryLedgerSheet({
                   style={[
                     styles.row,
                     index < items.length - 1 && styles.rowBorder,
-                    { borderBottomColor: theme.border },
+                    { borderBottomColor: DARK_MENU_SURFACE.border },
                   ]}
                 >
                   <View style={styles.rowMain}>
-                    <Text style={[styles.rowLabel, { color: theme.text }]}>{item.label}</Text>
-                    <Text style={[styles.rowSummary, { color: theme.mutedText }]}>{item.summary}</Text>
+                    <Text style={[styles.rowLabel, { color: DARK_MENU_SURFACE.text }]}>{item.label}</Text>
+                    <Text style={[styles.rowSummary, { color: DARK_MENU_SURFACE.mutedText }]}>{item.summary}</Text>
                     <Pressable
                       onPress={() => toggleExpand(item.id)}
                       style={styles.howRow}
@@ -75,7 +76,7 @@ export function MemoryLedgerSheet({
                       )}
                     </Pressable>
                     {open ? (
-                      <Text style={[styles.usageBlock, { color: theme.secondaryText }]}>{item.usage}</Text>
+                      <Text style={[styles.usageBlock, { color: DARK_MENU_SURFACE.secondaryText }]}>{item.usage}</Text>
                     ) : null}
                   </View>
                 </View>

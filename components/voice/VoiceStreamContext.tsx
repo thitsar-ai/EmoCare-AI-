@@ -21,7 +21,7 @@ import {
 } from 'react-native-reanimated';
 import { classifyEmoIntent } from '../../utils/emoIntent';
 import { isElevenLabsConfigured } from '../../utils/elevenLabs';
-import { SANCTUARY_SPRING } from '../LivingCanvas';
+import { SANCTUARY_SPRING } from '../livingCanvasAmbient';
 import { useSanctuaryAmbient } from '../SanctuaryAmbientContext';
 import { VoiceStreamClient, type VoiceConnectionState } from './VoiceStreamClient';
 import { VoiceLocalConversation } from './VoiceLocalConversation';

@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
 
 export type MainScreenKey =
   | 'home'
@@ -58,6 +59,8 @@ type AppNavContextValue = {
   closeOnboardingReview: () => void;
   userName: string;
   setUserName: (name: string) => void;
+  immersiveChromeHidden: boolean;
+  setImmersiveChromeHidden: (hidden: boolean) => void;
 };
 
 const AppNavContext = createContext<AppNavContextValue | null>(null);
@@ -85,6 +88,7 @@ export function AppNavProvider({
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [onboardingReviewSlide, setOnboardingReviewSlide] = useState<number | null>(null);
+  const [immersiveChromeHidden, setImmersiveChromeHidden] = useState(false);
 
   const navigate = useCallback(
     (key: MainScreenKey) => {
@@ -143,6 +147,8 @@ export function AppNavProvider({
       closeOnboardingReview,
       userName,
       setUserName,
+      immersiveChromeHidden,
+      setImmersiveChromeHidden,
     }),
     [
       screen,
@@ -158,6 +164,7 @@ export function AppNavProvider({
       closeOnboardingReview,
       userName,
       setUserName,
+      immersiveChromeHidden,
     ],
   );
 
@@ -203,10 +210,10 @@ export function AppMenuSheet({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.menuOverlay} onPress={onClose}>
         <View style={styles.menuAnchor}>
-          <View style={[styles.menuSheet, { backgroundColor: MENU_SOLID, borderColor: theme.border }]}>
+          <View style={[styles.menuSheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}>
             <View style={styles.menuHeader}>
               <LayoutGrid size={16} color={theme.accent} strokeWidth={2.2} />
-              <Text style={[styles.menuHeaderText, { color: theme.text }]}>Go anywhere</Text>
+              <Text style={[styles.menuHeaderText, { color: DARK_MENU_SURFACE.text }]}>Go anywhere</Text>
             </View>
             {MENU_ITEMS.map((item, idx) => (
               <Pressable
@@ -229,8 +236,8 @@ export function AppMenuSheet({
                   pressed && styles.menuItemPressed,
                 ]}
               >
-                <item.Icon size={17} color={theme.secondaryText} strokeWidth={2.2} />
-                <Text style={[styles.menuItemText, { color: theme.text }]}>{item.label}</Text>
+                <item.Icon size={17} color={DARK_MENU_SURFACE.secondaryText} strokeWidth={2.2} />
+                <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]}>{item.label}</Text>
               </Pressable>
             ))}
           </View>
@@ -264,17 +271,24 @@ export function ProfileNameSheet({
       <Pressable style={styles.menuOverlay} onPress={onClose}>
         <View style={styles.profileAnchor}>
           <Pressable
-            style={[styles.profileSheet, { backgroundColor: MENU_SOLID, borderColor: theme.border }]}
+            style={[styles.profileSheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text style={[styles.profileTitle, { color: theme.text }]}>What should Emo call you?</Text>
-            <Text style={[styles.profileHint, { color: theme.mutedText }]}>
+            <Text style={[styles.profileTitle, { color: DARK_MENU_SURFACE.text }]}>What should Emo call you?</Text>
+            <Text style={[styles.profileHint, { color: DARK_MENU_SURFACE.mutedText }]}>
               Saved on this device only. Emo remembers your name across Talk and Voice Talk.
             </Text>
             <TextInput
-              style={[styles.profileInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+              style={[
+                styles.profileInput,
+                {
+                  color: DARK_MENU_SURFACE.text,
+                  borderColor: DARK_MENU_SURFACE.border,
+                  backgroundColor: DARK_MENU_SURFACE.card,
+                },
+              ]}
               placeholder="Your name (optional)"
-              placeholderTextColor={theme.mutedText}
+              placeholderTextColor={DARK_MENU_SURFACE.mutedText}
               value={draft}
               onChangeText={setDraft}
               maxLength={48}
@@ -282,7 +296,7 @@ export function ProfileNameSheet({
             />
             <View style={styles.profileActions}>
               <Pressable onPress={onClose} style={styles.profileBtnGhost}>
-                <Text style={{ color: theme.mutedText, fontWeight: '600' }}>Cancel</Text>
+                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -308,6 +322,7 @@ export function ScreenNavChrome({
   showForward = true,
   onMenu,
   extraRight,
+  compact = false,
 }: {
   theme: CircadianTheme;
   title?: string;
@@ -315,13 +330,14 @@ export function ScreenNavChrome({
   showForward?: boolean;
   onMenu?: () => void;
   extraRight?: React.ReactNode;
+  compact?: boolean;
 }) {
   const { goBack, goForward, canGoBack, canGoForward, setMenuOpen } = useAppNav();
   const btnStyle = { backgroundColor: theme.card, borderColor: theme.border };
   const actionsOnly = !showBack && !title;
 
   return (
-    <View style={[styles.chromeRow, actionsOnly && styles.chromeRowEnd]}>
+    <View style={[styles.chromeRow, compact && styles.chromeRowCompact, actionsOnly && styles.chromeRowEnd]}>
       {showBack ? (
         <Pressable
           onPress={goBack}
@@ -454,6 +470,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 8,
     gap: 8,
+  },
+  chromeRowCompact: {
+    paddingBottom: 2,
   },
   chromeRowEnd: { justifyContent: 'flex-end' },
   chromeBtnPlaceholder: { width: 38, height: 38 },
