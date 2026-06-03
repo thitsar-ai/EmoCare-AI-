@@ -441,7 +441,7 @@ export function describeElevenLabsError(message: string): string {
     return 'Emo voice credits are low — add credits at elevenlabs.io';
   }
   if (/invalid.*api|authentication|401|403/i.test(message)) {
-    return 'Emo voice key issue — check EXPO_PUBLIC_ELEVENLABS_API_KEY';
+    return 'Emo voice unavailable — check the sanctuary server and ElevenLabs config in server/.env';
   }
   return 'Emo voice unavailable — using device voice';
 }

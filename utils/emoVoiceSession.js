@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { callAnthropicMessages, getAnthropicApiKey } from './anthropic';
+import { callAnthropicMessages, isAnthropicConfigured } from './anthropic';
 import { getMeditationSystemPrompt, getStorySystemPrompt } from './emoEos';
 
 /** @typedef {'quick' | 'meditation' | 'story'} VoiceSessionType */
@@ -121,8 +121,7 @@ function buildSessionUserMessage({ sessionType, userText, userName, moodLabel })
 export async function generateVoiceSession({ sessionType, userText, userName }) {
   if (sessionType !== 'meditation' && sessionType !== 'story') return null;
 
-  const apiKey = getAnthropicApiKey();
-  if (!apiKey) return null;
+  if (!isAnthropicConfigured()) return null;
 
   const moodLabel = await readTodayMoodLabel();
   const system = sessionType === 'meditation' ? MEDITATION_PROMPT : STORY_PROMPT;

@@ -1,14 +1,14 @@
+import type { Icon, IconWeight } from 'phosphor-react-native';
 import {
   Bird,
-  CloudMoon,
   CloudRain,
-  CloudSun,
   Heart,
-  Sparkles,
-  Sprout,
-  WavesHorizontal,
-  type LucideIcon,
-} from 'lucide-react-native';
+  Plant,
+  SmileyMeh,
+  Sparkle,
+  Sun,
+  Waves,
+} from 'phosphor-react-native';
 
 export interface Mood {
   emoji: string;
@@ -16,10 +16,10 @@ export interface Mood {
   desc: string;
   iconBg?: string;
   iconColor?: string;
-  iconFill?: string;
   accentColor?: string;
   accentBg?: string;
-  Icon?: LucideIcon;
+  Icon?: Icon;
+  iconWeight?: IconWeight;
 }
 
 export const OB_MOODS: Mood[] = [
@@ -27,88 +27,88 @@ export const OB_MOODS: Mood[] = [
     emoji: '🌧️',
     label: 'Heavy',
     desc: 'Feeling burdened, exhausted, or low.',
-    iconBg: 'rgba(139,92,246,0.38)',
-    iconColor: '#EDE9FE',
-    iconFill: 'rgba(196,181,253,0.55)',
+    iconBg: 'rgba(139,92,246,0.42)',
+    iconColor: '#F5F3FF',
     accentColor: '#8B5CF6',
     accentBg: 'rgba(139,92,246,0.18)',
     Icon: CloudRain,
+    iconWeight: 'duotone',
   },
   {
     emoji: '🌊',
     label: 'Overwhelmed',
     desc: 'Too much happening at once.',
-    iconBg: 'rgba(59,130,246,0.36)',
-    iconColor: '#DBEAFE',
-    iconFill: 'rgba(147,197,253,0.5)',
+    iconBg: 'rgba(59,130,246,0.4)',
+    iconColor: '#EFF6FF',
     accentColor: '#3B82F6',
     accentBg: 'rgba(59,130,246,0.18)',
-    Icon: WavesHorizontal,
+    Icon: Waves,
+    iconWeight: 'duotone',
   },
   {
     emoji: '☁️',
     label: 'Neutral',
     desc: 'Just getting through the day.',
-    iconBg: 'rgba(167,139,250,0.32)',
-    iconColor: '#F5F3FF',
-    iconFill: 'rgba(221,214,254,0.45)',
+    iconBg: 'rgba(167,139,250,0.36)',
+    iconColor: '#FAF5FF',
     accentColor: '#A78BFA',
     accentBg: 'rgba(167,139,250,0.18)',
-    Icon: CloudMoon,
+    Icon: SmileyMeh,
+    iconWeight: 'duotone',
   },
   {
     emoji: '🌱',
     label: 'Hopeful',
     desc: 'A gentle optimism ahead.',
-    iconBg: 'rgba(52,211,153,0.36)',
-    iconColor: '#D1FAE5',
-    iconFill: 'rgba(110,231,183,0.5)',
+    iconBg: 'rgba(52,211,153,0.4)',
+    iconColor: '#ECFDF5',
     accentColor: '#34D399',
     accentBg: 'rgba(52,211,153,0.18)',
-    Icon: Sprout,
+    Icon: Plant,
+    iconWeight: 'duotone',
   },
   {
     emoji: '🌤️',
     label: 'Light',
     desc: 'Uplifted, brighter, or a little lighter.',
-    iconBg: 'rgba(251,191,36,0.38)',
-    iconColor: '#FEF9C3',
-    iconFill: 'rgba(253,224,71,0.55)',
+    iconBg: 'rgba(251,191,36,0.42)',
+    iconColor: '#FFFBEB',
     accentColor: '#FBBF24',
     accentBg: 'rgba(251,191,36,0.2)',
-    Icon: CloudSun,
+    Icon: Sun,
+    iconWeight: 'duotone',
   },
   {
     emoji: '🕊️',
     label: 'Peaceful',
     desc: 'Calm, grounded, and at ease.',
-    iconBg: 'rgba(56,189,248,0.36)',
-    iconColor: '#E0F2FE',
-    iconFill: 'rgba(125,211,252,0.5)',
+    iconBg: 'rgba(56,189,248,0.4)',
+    iconColor: '#F0F9FF',
     accentColor: '#38BDF8',
     accentBg: 'rgba(56,189,248,0.18)',
     Icon: Bird,
+    iconWeight: 'duotone',
   },
   {
     emoji: '💜',
     label: 'Grateful',
     desc: 'Noticing something good today.',
-    iconBg: 'rgba(192,132,252,0.36)',
-    iconColor: '#FAE8FF',
-    iconFill: 'rgba(233,213,255,0.5)',
+    iconBg: 'rgba(192,132,252,0.4)',
+    iconColor: '#FDF4FF',
     accentColor: '#C084FC',
     accentBg: 'rgba(192,132,252,0.18)',
     Icon: Heart,
+    iconWeight: 'fill',
   },
   {
     emoji: '✨',
     label: 'Joyful',
     desc: 'Light-hearted, energized, and alive.',
-    iconBg: 'rgba(251,146,60,0.38)',
-    iconColor: '#FFEDD5',
-    iconFill: 'rgba(253,186,116,0.55)',
+    iconBg: 'rgba(251,146,60,0.42)',
+    iconColor: '#FFF7ED',
     accentColor: '#FB923C',
     accentBg: 'rgba(251,146,60,0.2)',
-    Icon: Sparkles,
+    Icon: Sparkle,
+    iconWeight: 'fill',
   },
 ];

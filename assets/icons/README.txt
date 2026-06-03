@@ -1,15 +1,19 @@
-EmoCare AI — Icon System
+EmoCare — Icon System
 
 PRIMARY (App Store / home screen)
-  icons/primary/icon.png          — glowing face + leaf, no text
-  icons/primary/logo-with-wordmark.png — full logo for splash & onboarding
+  icons/primary/icon.png          — glowing orb + leaf on #1A0F2E (1024×1024, no text)
+  icons/primary/logo-with-wordmark.png — Emo orb mark (wordmark is rendered in-app as text)
 
 ACTIVE IN APP
   assets/icon.png                 — primary symbol (1024×1024)
   assets/adaptive-icon.png        — Android adaptive foreground
   assets/favicon.png              — web favicon
-  assets/logo.png                 — full wordmark for splash & onboarding
-  assets/splash-icon.png          — splash screen
+  assets/emo-face-lavender-transparent.png — canonical Emo orb (splash + in-app)
+  assets/logo.png                 — same orb mark (no “EmoCare AI” wordmark)
+  assets/splash-icon.png          — native launch splash (orb on #1A0F2E)
+
+DEPRECATED
+  assets/_deprecated/emocare-ai-wordmark-v1.png — old circle + leaf + “AI” wordmark (do not use)
 
 PLANNED VARIANTS (future)
   icons/variants/gold/            — premium / subscription theme

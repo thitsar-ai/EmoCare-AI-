@@ -13,20 +13,24 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { Mic, MicOff } from 'lucide-react-native';
-import { ScreenNavChrome } from '../navigation/AppNavigation';
+import { ScreenNavChrome, useAppNav } from '../navigation/AppNavigation';
+import { EmoMemoryChip } from '../shared/EmoMemoryChip';
 import {
   useCircadianTheme,
+  getCircadianIconColor,
   type CircadianTheme,
 } from '../../theme/circadianTheme';
 import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
 import { getSanctuaryEmoFace, getSanctuaryEmoOrbSize } from '../../theme/sanctuaryEmoFace';
 import { useVoiceStream } from './VoiceStreamContext';
 import { VoiceMicControlSheet } from './VoiceMicControlSheet';
+import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
 
 const VOICE_MENU_SOLID = '#2A1848';
-const NAV_CONTENT_HEIGHT = 60;
+const NAV_CONTENT_HEIGHT = 72;
 
 interface VoiceTalkScreenProps {
   userName?: string;
@@ -162,6 +166,7 @@ function VoiceMenuDropdown({
 export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
+  const { navigate } = useAppNav();
   const inputRef = React.useRef<TextInput>(null);
   const {
     statusLabel,
@@ -179,7 +184,14 @@ export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
   const [draft, setDraft] = React.useState('');
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [micMenuOpen, setMicMenuOpen] = React.useState(false);
+  const [memoryChipLabel, setMemoryChipLabel] = React.useState<string | null>(null);
   const sessionStarted = React.useRef(false);
+
+  React.useEffect(() => {
+    void loadEmoPersonalContext(userName).then(({ active, chipLabel }) => {
+      setMemoryChipLabel(active && chipLabel ? chipLabel : null);
+    });
+  }, [userName]);
 
   React.useEffect(() => {
     if (sessionStarted.current) return undefined;
@@ -232,37 +244,26 @@ export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
   return (
     <View style={styles.flex}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-      <SafeAreaView style={styles.flex} edges={['top', 'left', 'right']}>
+      <ScreenSafeArea extraTop={4}>
         <View style={styles.root}>
-          <ScreenNavChrome
-            theme={theme}
-            showBack={false}
-            showForward={false}
-            extraRight={
-              <Pressable
-                onPress={() => setMenuOpen(true)}
-                style={({ pressed }) => [
-                  styles.chromeBtn,
-                  chromeBtnStyle,
-                  pressed && styles.chromeBtnPressed,
-                ]}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Voice talk menu"
-              >
-                <Text style={[styles.menuDots, { color: theme.text }]}>⋯</Text>
-              </Pressable>
-            }
-          />
+          <View style={styles.chromeWrap}>
+            <ScreenNavChrome theme={theme} title="Voice Talk" titleFontSize={15} />
+          </View>
 
           <View style={styles.content}>
             <View style={styles.titleBlock}>
-              <Text style={[styles.eyebrow, { color: theme.secondaryText }]}>ACOUSTIC SANCTUARY</Text>
               <Text style={[styles.greetingLead, { color: theme.text }]}>
                 Good to hear you,
               </Text>
               <Text style={[styles.greetingName, { color: theme.text }]}>{displayName}</Text>
               <Text style={[styles.statusLine, { color: theme.mutedText }]}>{statusLine}</Text>
+              {memoryChipLabel ? (
+                <EmoMemoryChip
+                  theme={theme}
+                  label={memoryChipLabel}
+                  onPress={() => navigate('memoryledger')}
+                />
+              ) : null}
             </View>
 
             <View style={styles.centerStage}>
@@ -302,7 +303,7 @@ export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
                     accessibilityLabel="Voice controls"
                   >
                     {isMicMuted ? (
-                      <MicOff size={17} color={theme.mutedText} strokeWidth={2.4} />
+                      <MicOff size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.4} />
                     ) : (
                       <Mic size={17} color={theme.accent} strokeWidth={2.4} />
                     )}
@@ -312,7 +313,7 @@ export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
             </View>
           </KeyboardAvoidingView>
         </View>
-      </SafeAreaView>
+      </ScreenSafeArea>
 
       <VoiceMenuDropdown
         visible={menuOpen}
@@ -342,9 +343,10 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
+  chromeWrap: { paddingHorizontal: 8, paddingBottom: 4 },
   content: {
     flex: 1,
-    paddingHorizontal: 22,
+    paddingHorizontal: 28,
   },
   chromeBtn: {
     width: 38,
@@ -362,15 +364,9 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   titleBlock: {
-    paddingTop: 22,
-    paddingBottom: 12,
+    paddingTop: 4,
+    paddingBottom: 6,
     gap: 4,
-  },
-  eyebrow: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2.4,
-    marginBottom: 8,
   },
   greetingLead: {
     fontFamily: SERIF,
@@ -397,9 +393,10 @@ const styles = StyleSheet.create({
   centerStage: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 8,
-    paddingBottom: 16,
+    justifyContent: 'flex-start',
+    paddingTop: 20,
+    paddingBottom: 8,
+    marginTop: -8,
   },
   orbStage: {
     width: 240,

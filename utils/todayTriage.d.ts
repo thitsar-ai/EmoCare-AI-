@@ -1,13 +1,15 @@
-export type EnergyCategoryId = 'deep_focus' | 'low_admin' | 'restorative';
+export type EnergyCategoryId = 'work' | 'home' | 'movement' | 'connect' | 'care' | 'admin';
 
 export interface TriageTaskRecord {
   id: string;
   title: string;
   deadline: string | null;
   status: 'pending' | 'done';
-  energyCategory: EnergyCategoryId;
+  energyCategory: EnergyCategoryId | 'deep_focus' | 'low_admin' | 'restorative';
   dayKey: string;
   createdAt: string;
+  durationMin?: number;
+  emoScheduled?: boolean;
 }
 
 export interface EnergyCategoryMeta {
@@ -24,15 +26,19 @@ export const MORNING_BRIEFING_CACHE_KEY: string;
 export const ENERGY_CATEGORIES: Record<EnergyCategoryId, EnergyCategoryMeta>;
 export const ENERGY_CATEGORY_ORDER: EnergyCategoryId[];
 
+export function normalizeCategory(categoryId: string | undefined): EnergyCategoryId;
+export function inferTaskCategory(title: string): EnergyCategoryId;
 export function getTodayDayKey(date?: Date): string;
 export function loadAllTriageTasks(): Promise<TriageTaskRecord[]>;
 export function loadTodayTasks(dayKey?: string): Promise<TriageTaskRecord[]>;
 export function addTodayTask(input: {
   title: string;
-  energyCategory: EnergyCategoryId;
+  energyCategory?: EnergyCategoryId;
   deadline?: string | null;
+  autoCategory?: boolean;
 }): Promise<TriageTaskRecord | null>;
 export function setTaskStatus(taskId: string, status: string): Promise<TriageTaskRecord | null>;
+export function deleteTodayTask(taskId: string): Promise<boolean>;
 export function groupTasksByEnergy(tasks: TriageTaskRecord[]): Array<{
   category: EnergyCategoryMeta;
   tasks: TriageTaskRecord[];
@@ -41,6 +47,7 @@ export function summarizeTodayTasks(tasks: TriageTaskRecord[]): {
   total: number;
   pendingCount: number;
   doneCount: number;
+  byCategory: Record<EnergyCategoryId, number>;
   deepFocusPending: number;
   lowAdminPending: number;
   restorativePending: number;
@@ -56,3 +63,9 @@ export function formatBriefingContext(
   ambientProgress: number,
   userName?: string,
 ): string;
+export function buildEmoDailyNote(
+  tasks: TriageTaskRecord[],
+  moodLabel: string | null | undefined,
+): string;
+export function categorySubline(task: TriageTaskRecord): string;
+export function isBreathCareTask(task: TriageTaskRecord): boolean;

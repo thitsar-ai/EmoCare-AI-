@@ -36,6 +36,14 @@ export const BREATH_TECHNIQUES = {
       { phase: 'holdAfter', durationMs: 2000 },
     ],
   },
+  Resonance: {
+    label: '5-5',
+    subtitle: 'Inhale · 5  ·  Exhale · 5',
+    steps: [
+      { phase: 'inhale', durationMs: 5000 },
+      { phase: 'exhale', durationMs: 5000 },
+    ],
+  },
 };
 
 /** @type {Record<BreathPhaseKind | 'idle', string>} */
@@ -47,6 +55,14 @@ export const BREATH_COPY = {
   holdAfter: 'Rest in stillness...',
 };
 
+/** Short labels for countdown UI and voice cues. */
+export const BREATH_PHASE_LABELS = {
+  inhale: 'Breathe in',
+  hold: 'Hold',
+  exhale: 'Breathe out',
+  holdAfter: 'Rest',
+};
+
 /** Target scale multipliers for the morphing core. */
 export const BREATH_SCALE = {
   idle: 0.88,
@@ -56,35 +72,56 @@ export const BREATH_SCALE = {
   holdAfter: 0.7,
 };
 
-/** Curated presets for the breathe screen carousel. */
+/**
+ * Outcome-led session presets (intent over clinical labels).
+ * Patterns follow evidence-backed protocols: extended exhale (parasympathetic),
+ * box breathing (grounding/focus), 4-7-8 (Weil relaxation), 5-5 resonance (HRV).
+ */
 export const BREATH_PRESETS = [
   {
-    id: 'calm-reset',
-    title: 'Calm reset',
-    subtitle: 'Gentle rhythm to settle your nervous system',
+    id: 'settle',
+    title: 'Settle',
+    subtitle: 'Long exhale to soften tension',
+    patternLabel: '4 · 2 · 6 · 2',
+    durationLabel: '~4 min',
     techniqueKey: 'Calm',
-    gradient: ['#5B4B8A', '#3D6B7A'],
+    accent: '#9B8AE8',
   },
   {
-    id: 'anxiety-relief',
-    title: 'Anxiety relief',
-    subtitle: 'Extended exhale to quiet racing thoughts',
+    id: 'release',
+    title: 'Release',
+    subtitle: 'Slow the breath, quiet racing thoughts',
+    patternLabel: '4 · 7 · 8',
+    durationLabel: '~5 min',
     techniqueKey: '4-7-8',
-    gradient: ['#6B52A8', '#4A6FA5'],
+    accent: '#6ECFC0',
   },
   {
-    id: 'sleep',
-    title: 'Sleep',
-    subtitle: 'Slow breaths to drift toward rest',
+    id: 'drift',
+    title: 'Drift',
+    subtitle: 'Wind down toward restful sleep',
+    patternLabel: '4 · 7 · 8',
+    durationLabel: '~5 min',
     techniqueKey: '4-7-8',
-    gradient: ['#3D3560', '#2A4A6B'],
+    accent: '#7B9FD4',
   },
   {
-    id: 'panic-grounding',
-    title: 'Panic grounding',
-    subtitle: 'Steady box rhythm to anchor the moment',
+    id: 'anchor',
+    title: 'Anchor',
+    subtitle: 'Steady rhythm when you feel overwhelmed',
+    patternLabel: '4 · 4 · 4 · 4',
+    durationLabel: '~5 min',
     techniqueKey: 'Box',
-    gradient: ['#7A5C9E', '#4E5A8A'],
+    accent: '#B79DFF',
+  },
+  {
+    id: 'balance',
+    title: 'Balance',
+    subtitle: 'Even rhythm for focus and calm clarity',
+    patternLabel: '5 · 5',
+    durationLabel: '~4 min',
+    techniqueKey: 'Resonance',
+    accent: '#C4A8FF',
   },
 ];
 

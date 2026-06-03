@@ -32,6 +32,16 @@ export type CircadianTheme = {
   barFill: string;
 };
 
+/** Icon stroke on circadian surfaces — brighter than label mutedText when dark. */
+export function getCircadianIconColor(
+  theme: CircadianTheme,
+  role: 'accent' | 'secondary' | 'muted' = 'accent',
+): string {
+  if (role === 'accent') return theme.accent;
+  if (role === 'secondary') return theme.secondaryText;
+  return theme.isDark ? theme.secondaryText : theme.mutedText;
+}
+
 /** Text tokens for fixed dark overlay sheets (menu, profile) — readable in all circadian phases. */
 export const DARK_MENU_SURFACE = {
   text: '#FFFFFF',
@@ -41,8 +51,6 @@ export const DARK_MENU_SURFACE = {
   border: 'rgba(255,255,255,0.12)',
 } as const;
 
-const EMO_FACE_DAY: ImageSourcePropType = require('../assets/emo-face-day.png');
-const EMO_FACE_LAVENDER: ImageSourcePropType = require('../assets/emo-face-lavender.png');
 const EMO_FACE_LAVENDER_TRANSPARENT: ImageSourcePropType = require('../assets/emo-face-lavender-transparent.png');
 const EMO_FACE_NIGHT_KEYED: ImageSourcePropType = require('../assets/emo-face-night-keyed.png');
 
@@ -56,7 +64,7 @@ const LIGHT_LINGUISTIC = {
   mutedText: '#7A6B96',
   card: 'rgba(255,255,255,0.75)',
   border: 'rgba(45,27,74,0.12)',
-  navBar: 'rgba(255,255,255,0.75)',
+  navBar: 'rgba(255,255,255,0.96)',
   navBarBorder: 'rgba(45,27,74,0.10)',
   heroWash: ['rgba(232,228,245,0.55)', 'rgba(240,236,248,0)'] as const,
   barTrack: 'rgba(45,27,74,0.12)',
@@ -68,9 +76,9 @@ const DARK_LINGUISTIC = {
   text: '#FFFFFF',
   secondaryText: '#C4B7FF',
   mutedText: '#A99CCF',
-  card: 'rgba(255,255,255,0.07)',
-  border: 'rgba(255,255,255,0.10)',
-  navBar: 'rgba(26,15,46,0.88)',
+  card: 'rgba(255,255,255,0.11)',
+  border: 'rgba(255,255,255,0.18)',
+  navBar: 'rgba(18,10,38,0.98)',
   navBarBorder: 'rgba(255,255,255,0.10)',
   heroWash: ['rgba(45,27,74,0.55)', 'rgba(13,7,32,0)'] as const,
   barTrack: 'rgba(255,255,255,0.15)',
@@ -85,16 +93,10 @@ const PHASE_GRADIENT: Record<CircadianPhase, readonly [string, string]> = {
 };
 
 function getEmoFaceForPhase(phase: CircadianPhase): ImageSourcePropType {
-  switch (phase) {
-    case 'morning':
-      return EMO_FACE_LAVENDER;
-    case 'afternoon':
-      return EMO_FACE_DAY;
-    case 'evening':
-      return EMO_FACE_LAVENDER_TRANSPARENT;
-    default:
-      return EMO_FACE_NIGHT_KEYED;
+  if (phase === 'night' || phase === 'evening') {
+    return EMO_FACE_NIGHT_KEYED;
   }
+  return EMO_FACE_LAVENDER_TRANSPARENT;
 }
 
 /** Local device hour — never UTC. */
@@ -136,7 +138,7 @@ export function getCircadianTheme(date: Date = new Date()): CircadianTheme {
     night: {
       accent: '#C6B0FF',
       glow: 'rgba(198,176,255,0.35)',
-      presenceLine: 'Velvet obsidian · night sanctuary',
+      presenceLine: 'Velvet obsidian · night in the Sanctuary',
       ringGradient: ['#5E48A8', '#9B7BFF'],
     },
   };

@@ -19,14 +19,43 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Eye, Lock, Shield, Trash2, User, ChevronLeft, Sparkles, type LucideIcon } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScreenSafeArea } from '../shared/ScreenSafeArea';
+import { Eye, LockKeyhole, Shield, ShieldCheck, Trash2, User, Sparkles, Check, type LucideIcon } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from '../../constants/obMoods';
+import { SanctuarySplashContent, SplashStarField } from '../shared/SanctuarySplash';
+import { MoodIconBadge } from '../shared/MoodIcon';
+import {
+  getSanctuaryButtonGradient,
+  getSanctuaryButtonGradientDisabled,
+  getSanctuaryLavenderAccent,
+  getSanctuaryLavenderBorder,
+  getSanctuaryLavenderFieldBg,
+  getSanctuaryLavenderLabel,
+  getSanctuaryIconAccent,
+  getSanctuaryLabelAccent,
+} from '../../theme/sanctuaryBrand';
 import { hapticLight } from '../../utils/haptics';
 import {
+  getCircadianIconColor,
   useCircadianTheme,
   type CircadianTheme,
 } from '../../theme/circadianTheme';
+import { CircadianHeroGlow } from '../shared/CircadianHeroGlow';
+import {
+  ScreenNavChrome,
+  useAppNav,
+  WELCOME_ONBOARDING_SLIDE,
+  OB_AGE_GATE_SLIDE,
+  OB_PRIVACY_SLIDE,
+} from '../navigation/AppNavigation';
+import {
+  isAtLeast18,
+  parseBirthDate,
+  persistAgeVerified,
+  YOUTH_SUPPORT_RESOURCES,
+} from '../../utils/ageVerification';
+import { openCrisisCall, openCrisisText } from '../../utils/crisisLine';
 import {
   HOME_LANDING_MODE_KEY,
   INITIAL_CHECKIN_PAYLOAD_KEY,
@@ -37,23 +66,23 @@ import {
 const { width, height } = Dimensions.get('window');
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
-const SPLASH_PARTICLES = [
-  { left: 0.12, top: 0.16, size: 3, opacity: 0.45 },
-  { left: 0.82, top: 0.13, size: 2, opacity: 0.4 },
-  { left: 0.68, top: 0.27, size: 3, opacity: 0.5 },
-  { left: 0.22, top: 0.34, size: 2, opacity: 0.35 },
-  { left: 0.9, top: 0.4, size: 2, opacity: 0.45 },
-  { left: 0.08, top: 0.52, size: 3, opacity: 0.4 },
-  { left: 0.78, top: 0.6, size: 2, opacity: 0.5 },
-  { left: 0.55, top: 0.72, size: 3, opacity: 0.55 },
-] as const;
+const OB_CONTENT_SLIDES = [2, 3, 4, 5] as const;
+const OB_PROGRESS_SLIDES = [2, 3, 4, 5] as const;
+const OB_LAST_SLIDE = 5;
+
+const OB_SLIDE_TITLES: Record<number, string> = {
+  2: 'Welcome',
+  3: 'Age verification',
+  4: 'Privacy',
+  5: 'Tell Me About You',
+};
 
 const PRIVACY_CARDS: { icon: LucideIcon; title: string; desc: string; color: string }[] = [
   {
-    icon: Lock,
+    icon: LockKeyhole,
     title: 'Zero-knowledge storage',
-    desc: 'Your data is encrypted and only accessible by you.',
-    color: '#34D399',
+    desc: 'Journal entries and ledger logs are encrypted on your device — only accessible by you.',
+    color: '#9B7BFF',
   },
   {
     icon: Shield,
@@ -93,19 +122,6 @@ function useReduceMotion() {
   return reduceMotion;
 }
 
-function ObMoodIcon({ mood, size = 18 }: { mood: Mood; size?: number }) {
-  const Icon = mood.Icon;
-  if (!Icon) return <Text style={styles.moodEmoji}>{mood.emoji}</Text>;
-  return (
-    <Icon
-      size={size}
-      color={mood.iconColor ?? '#F5F3FF'}
-      strokeWidth={2.5}
-      fill={mood.iconFill ?? 'transparent'}
-    />
-  );
-}
-
 function ObCard({
   theme,
   children,
@@ -142,9 +158,9 @@ function LavenderButton({
     >
       <LinearGradient
         colors={
-          theme.isDark
-            ? (['#9473FF', '#6366F1'] as [string, string])
-            : ([theme.accent, '#7F77DD'] as [string, string])
+          disabled
+            ? getSanctuaryButtonGradientDisabled(theme.phase)
+            : getSanctuaryButtonGradient(theme.phase)
         }
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
@@ -186,20 +202,10 @@ function MoodGrid({
               onSelect(m);
             }}
           >
-            <View
-              style={[
-                styles.moodIconCircle,
-                {
-                  backgroundColor: m.iconBg ?? theme.card,
-                  borderColor: m.iconColor ? `${m.iconColor}55` : theme.border,
-                },
-              ]}
-            >
-              <ObMoodIcon mood={m} />
-            </View>
+            <MoodIconBadge mood={m} variant="full" active={isSelected} />
             <View style={styles.moodCardText}>
               <Text style={[styles.moodCardTitle, { color: theme.text }]}>{m.label}</Text>
-              <Text style={[styles.moodCardDesc, { color: theme.mutedText }]} numberOfLines={2}>
+              <Text style={[styles.moodCardDesc, { color: theme.mutedText }]}>
                 {m.desc}
               </Text>
             </View>
@@ -207,6 +213,238 @@ function MoodGrid({
         );
       })}
     </View>
+  );
+}
+
+function AgeGateSlide({
+  theme,
+  scrollPad,
+  onVerified,
+  onBack,
+  hideBack,
+}: {
+  theme: CircadianTheme;
+  scrollPad: { paddingBottom: number };
+  onVerified: () => void;
+  onBack: () => void;
+  hideBack?: boolean;
+}) {
+  const [month, setMonth] = useState('');
+  const [day, setDay] = useState('');
+  const [year, setYear] = useState('');
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+
+  const birthDate = parseBirthDate(month, day, year);
+  const fieldsComplete = month.length >= 1 && day.length >= 1 && year.length === 4;
+  const validDate = birthDate != null;
+  const eligible = validDate && isAtLeast18(birthDate);
+  const canContinue = ageConfirmed || (fieldsComplete && validDate);
+
+  const handleContinue = async () => {
+    setAttempted(true);
+    if (ageConfirmed && !validDate) {
+      await persistAgeVerified();
+      onVerified();
+      return;
+    }
+    if (!validDate) return;
+    if (!isAtLeast18(birthDate)) {
+      setBlocked(true);
+      return;
+    }
+    await persistAgeVerified();
+    onVerified();
+  };
+
+  const openResource = (type: 'phone' | 'sms' | 'info', value: string, smsBody?: string) => {
+    if (type === 'info' || !value) return;
+    if (type === 'phone') openCrisisCall(value);
+    else openCrisisText(value, smsBody);
+  };
+
+  if (blocked) {
+    return (
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={[styles.scrollPad, scrollPad, styles.ageBlockedPad]}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.headline, { color: theme.text }]}>EmoCare is for adults 18+</Text>
+        <Text style={[styles.body, { color: theme.mutedText }]}>
+          Thank you for being honest. EmoCare is designed for people 18 and older, so we cannot open
+          the full experience right now.
+        </Text>
+        <Text style={[styles.body, { color: theme.mutedText, marginTop: 8 }]}>
+          You deserve support that fits your age. These lines are free, private, and staffed by people
+          who listen:
+        </Text>
+        <View style={styles.youthResourceList}>
+          {YOUTH_SUPPORT_RESOURCES.US.map((item) => {
+            const tappable = item.type === 'phone' || item.type === 'sms';
+            return (
+              <Pressable
+                key={item.label}
+                disabled={!tappable}
+                onPress={() => {
+                  if (item.type === 'phone') openResource('phone', item.value);
+                  else if (item.type === 'sms') openResource('sms', item.value, item.smsBody);
+                }}
+                style={[styles.youthResourceRow, { borderColor: theme.border, backgroundColor: theme.card }]}
+              >
+                <Text style={[styles.youthResourceLabel, { color: theme.text }]}>{item.label}</Text>
+                {tappable ? (
+                  <Text style={[styles.youthResourceAction, { color: theme.accent }]}>Tap to connect</Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+        {!hideBack ? <LavenderButton label="← Go back" onPress={onBack} theme={theme} /> : null}
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={[styles.scrollPad, scrollPad]}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={[styles.eyebrow, { color: getSanctuaryLavenderLabel(theme.phase) }]}>
+        BEFORE WE CONTINUE
+      </Text>
+      <Text style={[styles.headline, { color: theme.text }]}>
+        EmoCare is for adults{'\n'}18 and older.
+      </Text>
+      <Text style={[styles.body, { color: getSanctuaryLavenderLabel(theme.phase), opacity: 0.85 }]}>
+        To protect younger users, please confirm your age before we continue. Your answer stays on
+        this device — it is not shared or sold.
+      </Text>
+
+      <Pressable
+        onPress={() => setAgeConfirmed((v) => !v)}
+        style={[
+          styles.ageConfirmRow,
+          {
+            borderColor: getSanctuaryLavenderBorder(theme.phase),
+            backgroundColor: getSanctuaryLavenderFieldBg(theme.phase),
+          },
+        ]}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: ageConfirmed }}
+      >
+        <View
+          style={[
+            styles.ageConfirmBox,
+            { borderColor: ageConfirmed ? getSanctuaryIconAccent(theme) : getSanctuaryLavenderBorder(theme.phase) },
+            ageConfirmed && { backgroundColor: `${getSanctuaryLavenderAccent(theme.phase)}28` },
+          ]}
+        >
+          {ageConfirmed ? (
+            <Check size={14} color={getSanctuaryIconAccent(theme)} strokeWidth={3} />
+          ) : null}
+        </View>
+        <Text style={[styles.ageConfirmText, { color: theme.text }]}>
+          I confirm I am 18 years of age or older.
+        </Text>
+      </Pressable>
+
+      <Text style={[styles.ageOrDivider, { color: getSanctuaryLavenderAccent(theme.phase) }]}>
+        or enter your date of birth
+      </Text>
+
+      <Text style={[styles.fieldLabel, { color: getSanctuaryLabelAccent(theme) }]}>
+        Date of birth
+      </Text>
+      <View style={styles.dobRow}>
+        <View
+          style={[
+            styles.dobField,
+            {
+              backgroundColor: getSanctuaryLavenderFieldBg(theme.phase),
+              borderColor: getSanctuaryLavenderBorder(theme.phase),
+            },
+          ]}
+        >
+          <TextInput
+            style={[styles.dobInput, { color: theme.text }]}
+            placeholder="MM"
+            placeholderTextColor={theme.mutedText}
+            value={month}
+            onChangeText={(t) => setMonth(t.replace(/\D/g, '').slice(0, 2))}
+            keyboardType="number-pad"
+            maxLength={2}
+            accessibilityLabel="Birth month"
+          />
+        </View>
+        <View
+          style={[
+            styles.dobField,
+            {
+              backgroundColor: getSanctuaryLavenderFieldBg(theme.phase),
+              borderColor: getSanctuaryLavenderBorder(theme.phase),
+            },
+          ]}
+        >
+          <TextInput
+            style={[styles.dobInput, { color: theme.text }]}
+            placeholder="DD"
+            placeholderTextColor={theme.mutedText}
+            value={day}
+            onChangeText={(t) => setDay(t.replace(/\D/g, '').slice(0, 2))}
+            keyboardType="number-pad"
+            maxLength={2}
+            accessibilityLabel="Birth day"
+          />
+        </View>
+        <View
+          style={[
+            styles.dobFieldYear,
+            {
+              backgroundColor: getSanctuaryLavenderFieldBg(theme.phase),
+              borderColor: getSanctuaryLavenderBorder(theme.phase),
+            },
+          ]}
+        >
+          <TextInput
+            style={[styles.dobInput, { color: theme.text }]}
+            placeholder="YYYY"
+            placeholderTextColor={theme.mutedText}
+            value={year}
+            onChangeText={(t) => setYear(t.replace(/\D/g, '').slice(0, 4))}
+            keyboardType="number-pad"
+            maxLength={4}
+            accessibilityLabel="Birth year"
+          />
+        </View>
+      </View>
+
+      {attempted && !validDate && fieldsComplete ? (
+        <Text style={[styles.ageHint, { color: theme.isDark ? '#F472B6' : '#D46BA8' }]}>
+          Please enter a valid date of birth.
+        </Text>
+      ) : null}
+
+      <LavenderButton
+        label="Continue"
+        onPress={() => void handleContinue()}
+        disabled={!canContinue}
+        theme={theme}
+      />
+      {!canContinue ? (
+        <Text style={[styles.ageHint, { color: theme.mutedText }]}>
+          Confirm you are 18+ or enter your full date of birth to continue.
+        </Text>
+      ) : null}
+      {fieldsComplete && validDate && !eligible ? (
+        <Text style={[styles.ageHint, { color: theme.mutedText }]}>
+          You must be 18 or older to use EmoCare.
+        </Text>
+      ) : null}
+    </ScrollView>
   );
 }
 
@@ -218,11 +456,8 @@ function SplashSlide({
   onContinue: () => void;
 }) {
   const reduceMotion = useReduceMotion();
-  const pulse = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
-  const [failed, setFailed] = useState(false);
-
   useEffect(() => {
     NativeSplash.hideAsync().catch(() => {});
 
@@ -233,25 +468,6 @@ function SplashSlide({
       useNativeDriver: true,
     }).start();
 
-    if (!reduceMotion) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulse, {
-            toValue: 1,
-            duration: 2800,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulse, {
-            toValue: 0,
-            duration: 2800,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-      ).start();
-    }
-
     Animated.timing(progress, {
       toValue: 1,
       duration: 2800,
@@ -260,76 +476,19 @@ function SplashSlide({
     }).start(({ finished }) => {
       if (finished) onContinue();
     });
-  }, [fadeIn, onContinue, progress, pulse, reduceMotion]);
-
-  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
-  const faceOpacity = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
-  const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['8%', '100%'] });
+  }, [fadeIn, onContinue, progress, reduceMotion]);
 
   return (
     <Pressable style={styles.splashSlide} onPress={onContinue}>
-      {SPLASH_PARTICLES.map((p, i) => (
-        <View
-          key={i}
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: width * p.left,
-            top: height * p.top,
-            width: p.size,
-            height: p.size,
-            borderRadius: p.size / 2,
-            backgroundColor: '#FFFFFF',
-            opacity: p.opacity,
-          }}
+      <SplashStarField theme={theme} variant="night" />
+      <View style={styles.splashBody}>
+        <SanctuarySplashContent
+          theme={theme}
+          fadeIn={fadeIn}
+          progress={progress}
+          reduceMotion={reduceMotion}
         />
-      ))}
-
-      <Animated.View style={[styles.splashInner, { opacity: fadeIn }]}>
-        <View style={styles.splashGlowOuter} pointerEvents="none">
-          <LinearGradient
-            colors={['rgba(123,92,255,0.55)', 'rgba(183,157,255,0.08)', 'transparent']}
-            style={styles.splashGlowRing}
-          />
-          <LinearGradient
-            colors={['rgba(198,176,255,0.35)', 'rgba(91,61,196,0.06)', 'transparent']}
-            style={styles.splashGlowRingInner}
-          />
-        </View>
-
-        <View style={styles.splashFaceWrap}>
-          {failed ? (
-            <Animated.View style={{ transform: [{ scale }], opacity: faceOpacity }}>
-              <Text style={{ fontSize: 84 }}>🌿</Text>
-            </Animated.View>
-          ) : (
-            <Animated.Image
-              source={theme.emoFace}
-              resizeMode="contain"
-              onError={() => setFailed(true)}
-              style={[styles.splashFace, { transform: [{ scale }], opacity: faceOpacity }]}
-            />
-          )}
-        </View>
-
-        <Text style={[styles.splashTitle, { color: theme.text }]}>EmoCare AI</Text>
-        <Text style={[styles.splashTagline, { color: theme.secondaryText }]}>
-          Intelligence with Soul.
-        </Text>
-
-        <View style={[styles.splashBarTrack, { backgroundColor: theme.barTrack }]}>
-          <Animated.View
-            style={[
-              styles.splashBarFill,
-              { width: barWidth, backgroundColor: theme.barFill, shadowColor: theme.barFill },
-            ]}
-          />
-        </View>
-
-        <Text style={[styles.splashFooter, { color: theme.mutedText }]}>
-          Your Emotional Sanctuary
-        </Text>
-      </Animated.View>
+      </View>
     </Pressable>
   );
 }
@@ -339,6 +498,8 @@ export function OnboardingFlow({
   reviewMode = false,
   initialSlide = 1,
   onExitReview,
+  ageVerificationOnly = false,
+  onAgeVerified,
 }: {
   onComplete: (args: {
     name: string;
@@ -348,9 +509,14 @@ export function OnboardingFlow({
   reviewMode?: boolean;
   initialSlide?: number;
   onExitReview?: () => void;
+  /** When true, completing the age gate calls onAgeVerified instead of advancing onboarding. */
+  ageVerificationOnly?: boolean;
+  onAgeVerified?: () => void;
 }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
+  const { onboardingReviewSlide, openOnboardingSlide, closeOnboardingReview, setOnboardingSplashActive } =
+    useAppNav();
   const [slide, setSlide] = useState(initialSlide);
   const [name, setName] = useState('');
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
@@ -358,6 +524,18 @@ export function OnboardingFlow({
   const [moodAckVisible, setMoodAckVisible] = useState('');
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (onboardingReviewSlide == null) return;
+    if (onboardingReviewSlide !== slide) {
+      setSlide(onboardingReviewSlide);
+    }
+  }, [onboardingReviewSlide, slide]);
+
+  useEffect(() => {
+    setOnboardingSplashActive(!reviewMode && slide === 1);
+    return () => setOnboardingSplashActive(false);
+  }, [reviewMode, slide, setOnboardingSplashActive]);
 
   const MOOD_ACKS: Record<string, string> = {
     Heavy: 'Thank you for trusting me with something heavy. We can hold it gently together.',
@@ -402,11 +580,23 @@ export function OnboardingFlow({
   }, []);
 
   const goTo = (next: number) => {
-    Animated.sequence([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
-    ]).start();
-    setTimeout(() => setSlide(next), 220);
+    if (next === 1) {
+      closeOnboardingReview();
+      Animated.sequence([
+        Animated.timing(fadeAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
+      ]).start();
+      setTimeout(() => setSlide(1), 220);
+      return;
+    }
+    if (next === OB_AGE_GATE_SLIDE && !reviewMode) {
+      setSlide(OB_AGE_GATE_SLIDE);
+      return;
+    }
+    if (([2, 4, 5] as readonly number[]).includes(next)) {
+      openOnboardingSlide(next as 2 | 4 | 5);
+      return;
+    }
   };
 
   const slideRef = useRef(slide);
@@ -419,17 +609,17 @@ export function OnboardingFlow({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, g) => {
         if (slideRef.current === 1) return false;
-        const threshold = slideRef.current >= 4 ? 24 : 12;
+        const threshold = slideRef.current >= OB_LAST_SLIDE ? 24 : 12;
         return Math.abs(g.dx) > threshold && Math.abs(g.dx) > Math.abs(g.dy) * 1.3;
       },
       onMoveShouldSetPanResponderCapture: (_, g) => {
         if (slideRef.current === 1) return false;
-        const threshold = slideRef.current >= 4 ? 24 : 12;
+        const threshold = slideRef.current >= OB_LAST_SLIDE ? 24 : 12;
         return Math.abs(g.dx) > threshold && Math.abs(g.dx) > Math.abs(g.dy) * 1.3;
       },
       onPanResponderRelease: (_, g) => {
         const s = slideRef.current;
-        if (g.dx < -45 && s < 4) goToRef.current(s + 1);
+        if (g.dx < -45 && s < OB_LAST_SLIDE && s !== OB_AGE_GATE_SLIDE) goToRef.current(s + 1);
         else if (g.dx > 45 && s > 1) goToRef.current(s - 1);
       },
     }),
@@ -442,6 +632,7 @@ export function OnboardingFlow({
       onExitReview?.();
       return;
     }
+    closeOnboardingReview();
     try {
       await AsyncStorage.setItem('onboarded', 'true');
       await AsyncStorage.setItem('userName', name.trim());
@@ -474,11 +665,20 @@ export function OnboardingFlow({
 
   const scrollPad = { paddingBottom: Math.max(insets.bottom, 20) + 16 };
 
+  const showSlideNav = (OB_CONTENT_SLIDES as readonly number[]).includes(slide);
+
+  if (slide === 1) {
+    return (
+      <View style={styles.flex}>
+        <CircadianHeroGlow theme={theme} />
+        <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+        <SplashSlide theme={theme} onContinue={() => goTo(WELCOME_ONBOARDING_SLIDE)} />
+      </View>
+    );
+  }
+
   const renderSlide = () => {
     switch (slide) {
-      case 1:
-        return <SplashSlide theme={theme} onContinue={() => goTo(2)} />;
-
       case 2:
         return (
           <ScrollView
@@ -502,7 +702,7 @@ export function OnboardingFlow({
               What should I call you? (Optional)
             </Text>
             <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <User size={17} color={theme.mutedText} strokeWidth={2} />
+              <User size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2} />
               <TextInput
                 style={[styles.nameInput, { color: theme.text }]}
                 placeholder="Your name..."
@@ -516,7 +716,7 @@ export function OnboardingFlow({
               />
             </View>
 
-            <Pressable onPress={() => goTo(3)} hitSlop={8} style={styles.skipLinkWrap}>
+            <Pressable onPress={() => goTo(OB_AGE_GATE_SLIDE)} hitSlop={8} style={styles.skipLinkWrap}>
               <Text style={[styles.skipLink, { color: theme.mutedText }]}>Skip for now</Text>
             </Pressable>
 
@@ -526,7 +726,7 @@ export function OnboardingFlow({
                 <Text style={[styles.noticeTitle, { color: theme.text }]}>Important Notice</Text>
               </View>
               <Text style={[styles.noticeBody, { color: theme.mutedText }]}>
-                EmoCare is an architectural life companion — a private space for reflection, clarity,
+                EmoCare is an emotional life companion — a private space for reflection, clarity,
                 and growth.{'\n\n'}
                 It is not a licensed therapist, medical provider, or crisis service. Emo holds clear
                 boundaries: no diagnosis, no prescription, no substitute for human relationships.{'\n\n'}
@@ -535,11 +735,29 @@ export function OnboardingFlow({
               </Text>
             </ObCard>
 
-            <LavenderButton label="Begin Gently →" onPress={() => goTo(3)} theme={theme} />
+            <LavenderButton label="Begin Gently →" onPress={() => goTo(OB_AGE_GATE_SLIDE)} theme={theme} />
           </ScrollView>
         );
 
       case 3:
+        if (reviewMode) return null;
+        return (
+          <AgeGateSlide
+            theme={theme}
+            scrollPad={scrollPad}
+            hideBack={ageVerificationOnly}
+            onVerified={() => {
+              if (ageVerificationOnly) {
+                onAgeVerified?.();
+              } else {
+                goTo(OB_PRIVACY_SLIDE);
+              }
+            }}
+            onBack={() => goTo(WELCOME_ONBOARDING_SLIDE)}
+          />
+        );
+
+      case 4:
         return (
           <ScrollView
             style={styles.flex}
@@ -552,10 +770,7 @@ export function OnboardingFlow({
                 style={styles.privacyHeroGlow}
               />
               <View style={[styles.privacyHeroIcon, { borderColor: `${theme.accent}55` }]}>
-                <Shield size={28} color={theme.accent} strokeWidth={2.2} />
-                <View style={styles.privacyHeroLock}>
-                  <Lock size={14} color="#FFFFFF" strokeWidth={2.5} />
-                </View>
+                <ShieldCheck size={32} color={theme.accent} strokeWidth={2.2} />
               </View>
             </View>
 
@@ -583,11 +798,17 @@ export function OnboardingFlow({
               })}
             </View>
 
-            <LavenderButton label="I Understand →" onPress={() => goTo(4)} theme={theme} />
+            <Text style={[styles.privacyClarify, { color: theme.mutedText }]}>
+              Journal entries and Memory Ledger data stay encrypted on your device. When you chat
+              with Emo, messages are processed securely by Anthropic's API for that conversation
+              and are not stored long-term on our servers.
+            </Text>
+
+            <LavenderButton label="I Understand →" onPress={() => goTo(5)} theme={theme} />
           </ScrollView>
         );
 
-      case 4:
+      case 5:
       default:
         return (
           <ScrollView
@@ -596,11 +817,11 @@ export function OnboardingFlow({
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={[styles.checkinTitle, { color: theme.text }]}>
-              How are you feeling right now?
-            </Text>
             <Text style={[styles.checkinSub, { color: theme.mutedText }]}>
-              Choose the feeling that feels closest.
+              So I can support you in a way that feels personal.
+            </Text>
+            <Text style={[styles.checkinSection, { color: theme.text }]}>
+              How are you feeling today?
             </Text>
 
             <MoodGrid theme={theme} selected={selectedMood} onSelect={handleMoodSelect} />
@@ -627,7 +848,7 @@ export function OnboardingFlow({
             </ObCard>
 
             <LavenderButton
-              label={reviewMode ? 'Done reviewing →' : 'Enter Your Sanctuary →'}
+              label={reviewMode ? 'Done reviewing →' : 'Enter the Sanctuary →'}
               onPress={enterSanctuary}
               disabled={!selectedMood}
               theme={theme}
@@ -642,18 +863,43 @@ export function OnboardingFlow({
   };
 
   return (
-    <View style={styles.flex} {...panResponder.panHandlers}>
+    <View style={styles.flex} {...(!reviewMode && !ageVerificationOnly ? panResponder.panHandlers : {})}>
+      <CircadianHeroGlow theme={theme} />
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-      <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
-        {slide > 1 ? (
+      <ScreenSafeArea edges={['top', 'left', 'right', 'bottom']} extraTop={4}>
+        {showSlideNav ? (
+          <View style={styles.reviewChrome}>
+            <ScreenNavChrome
+              theme={theme}
+              title={OB_SLIDE_TITLES[slide] ?? ''}
+              titleFontSize={15}
+              onBack={
+                slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
+                  ? () => goTo(WELCOME_ONBOARDING_SLIDE)
+                  : reviewMode && slide === WELCOME_ONBOARDING_SLIDE
+                    ? closeOnboardingReview
+                    : undefined
+              }
+              canGoBack={
+                slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
+                  ? true
+                  : reviewMode && slide === WELCOME_ONBOARDING_SLIDE
+                    ? true
+                    : undefined
+              }
+            />
+          </View>
+        ) : null}
+
+        {showSlideNav && !reviewMode && !ageVerificationOnly && slide >= WELCOME_ONBOARDING_SLIDE ? (
           <View style={styles.progressRow}>
-            {[2, 3, 4].map((i) => (
+            {OB_PROGRESS_SLIDES.map((i) => (
               <Pressable
                 key={i}
                 onPress={() => goTo(i)}
                 hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel={`Go to step ${i - 1} of 3`}
+                accessibilityLabel={`Go to step ${i - 1} of ${OB_PROGRESS_SLIDES.length}`}
               >
                 <View
                   style={[
@@ -669,25 +915,8 @@ export function OnboardingFlow({
           <View style={styles.progressSpacer} />
         )}
 
-        {slide > 1 ? (
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
-              if (reviewMode && slide === 2) {
-                onExitReview?.();
-                return;
-              }
-              goTo(slide - 1);
-            }}
-            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-            accessibilityLabel="Go back"
-          >
-            <ChevronLeft size={22} color={theme.text} strokeWidth={2.5} />
-          </TouchableOpacity>
-        ) : null}
-
         <Animated.View style={[styles.flex, { opacity: fadeAnim }]}>{renderSlide()}</Animated.View>
-      </SafeAreaView>
+      </ScreenSafeArea>
     </View>
   );
 }
@@ -697,7 +926,7 @@ const CARD_W = (width - 56 - 14) / 2;
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   scrollPad: { paddingHorizontal: 28, paddingTop: 8 },
-  checkinScroll: { paddingTop: 4 },
+  checkinScroll: { paddingTop: 0 },
   progressRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -706,6 +935,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   progressSpacer: { height: 14 },
+  reviewChrome: { paddingHorizontal: 8, paddingBottom: 2 },
   backBtn: {
     position: 'absolute',
     left: 16,
@@ -721,66 +951,7 @@ const styles = StyleSheet.create({
   dotActive: { width: 20, borderRadius: 4 },
 
   splashSlide: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  splashInner: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, width: '100%' },
-  splashGlowOuter: {
-    position: 'absolute',
-    width: 320,
-    height: 320,
-    alignItems: 'center',
-    justifyContent: 'center',
-    top: '22%',
-  },
-  splashGlowRing: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-  },
-  splashGlowRingInner: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-  },
-  splashFaceWrap: { width: 260, height: 260, alignItems: 'center', justifyContent: 'center', marginBottom: 16, zIndex: 2 },
-  splashFace: { width: 240, height: 240 },
-  splashTitle: {
-    fontSize: 40,
-    lineHeight: 46,
-    fontWeight: '400',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-    fontFamily: SERIF,
-  },
-  splashTagline: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '500',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    marginTop: 20,
-  },
-  splashBarTrack: {
-    width: '38%',
-    height: 5,
-    borderRadius: 999,
-    marginTop: 56,
-    overflow: 'hidden',
-  },
-  splashBarFill: {
-    height: 5,
-    borderRadius: 999,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 10,
-    shadowOpacity: 0.35,
-  },
-  splashFooter: {
-    fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 0.6,
-    textAlign: 'center',
-    marginTop: 20,
-  },
+  splashBody: { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' },
 
   eyebrow: {
     fontSize: 10,
@@ -857,17 +1028,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(123,92,255,0.22)',
     borderWidth: 1,
   },
-  privacyHeroLock: {
-    position: 'absolute',
-    bottom: 8,
-    right: 10,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(91,61,196,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   privacyList: { gap: 10, marginBottom: 24, marginTop: 8 },
   privacyCard: {
     flexDirection: 'row',
@@ -885,6 +1045,14 @@ const styles = StyleSheet.create({
   privacyCardText: { flex: 1 },
   privacyCardTitle: { fontSize: 14, fontWeight: '700', marginBottom: 4 },
   privacyCardDesc: { fontSize: 12, lineHeight: 18 },
+  privacyClarify: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 18,
+    paddingHorizontal: 4,
+  },
 
   checkinTitle: {
     fontSize: 22,
@@ -894,7 +1062,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  checkinSub: { fontSize: 13, textAlign: 'center', marginBottom: 18, lineHeight: 20 },
+  checkinSub: { fontSize: 13, textAlign: 'center', marginTop: 2, marginBottom: 14, lineHeight: 20 },
+  checkinSection: {
+    fontSize: 17,
+    fontWeight: '600',
+    fontFamily: SERIF,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
   moodGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -914,18 +1089,10 @@ const styles = StyleSheet.create({
     gap: 10,
     minHeight: 74,
   },
-  moodIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
   moodEmoji: { fontSize: 17 },
   moodCardText: { flex: 1, paddingTop: 3 },
   moodCardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 4, lineHeight: 16 },
-  moodCardDesc: { fontSize: 10, lineHeight: 15 },
+  moodCardDesc: { fontSize: 11, lineHeight: 16 },
 
   journalTitle: {
     fontSize: 17,
@@ -947,4 +1114,40 @@ const styles = StyleSheet.create({
   moodAckCard: { padding: 14, marginBottom: 16 },
   moodAckLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
   moodAckText: { fontSize: 14, lineHeight: 21, fontStyle: 'italic' },
+  dobRow: { flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 8 },
+  dobField: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 14 },
+  dobFieldYear: { flex: 1.4, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 14 },
+  dobInput: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
+  ageConfirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginTop: 20,
+  },
+  ageConfirmBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ageConfirmText: { flex: 1, fontSize: 15, lineHeight: 21 },
+  ageOrDivider: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 18,
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  ageHint: { fontSize: 13, lineHeight: 18, textAlign: 'center', marginTop: 10, marginBottom: 4 },
+  ageBlockedPad: { paddingTop: 12 },
+  youthResourceList: { marginTop: 16, marginBottom: 20, gap: 10 },
+  youthResourceRow: { borderWidth: 1, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16 },
+  youthResourceLabel: { fontSize: 15, fontWeight: '600', lineHeight: 21 },
+  youthResourceAction: { fontSize: 13, fontWeight: '600', marginTop: 6 },
 });

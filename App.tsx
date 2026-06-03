@@ -30,10 +30,11 @@ import * as DocumentPicker from 'expo-document-picker';
 import { speakAloud, stopSpeaking, describeElevenLabsError } from './components/voice/voiceTts';
 import {
   ChevronLeft,
+  ChevronRight,
+  Ellipsis,
   Heart,
-  LayoutGrid,
   Lock,
-  Menu,
+  Shield,
   MessageCircle,
   MessageSquarePlus,
   Mic,
@@ -46,27 +47,49 @@ import {
   Search,
   Sparkles,
   Trash2,
+  TrendingUp,
+  Brain,
+  Settings,
   Wind,
   X,
+  Home,
+  CalendarDays,
   Image as ImageIcon,
   type LucideIcon,
 } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from './constants/obMoods';
+import { CHAT_PRESENCE_TAGLINE } from './constants/brandCopy';
+import { SanctuarySplashContent, SplashStarField } from './components/shared/SanctuarySplash';
+import { DesktopSanctuaryFrame } from './components/shared/DesktopSanctuaryFrame';
+import { EmoMemoryChip } from './components/shared/EmoMemoryChip';
+import { WebInstallBanner } from './components/shared/WebInstallBanner';
+import { CircadianHeroGlow } from './components/shared/CircadianHeroGlow';
+import { MoodIconBadge } from './components/shared/MoodIcon';
+import { readAgeVerified } from './utils/ageVerification';
+import { CrisisFooter } from './components/shared/CrisisFooter';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { SanctuaryDashboard } from './components/home/SanctuaryDashboard';
+import { PrimaryActionButton } from './components/shared/PrimaryActionButton';
 import {
   AppMenuSheet,
   AppNavProvider,
+  NavChromeBtn,
   ProfileNameSheet,
   ScreenNavChrome,
+  ScreenSwipeEdgeOverlay,
+  TAB_BAR_SCREENS,
+  TAB_BAR_TAB_ORDER,
+  tabBarHighlightKey,
   useAppNav,
-  useScreenSwipeNav,
   type MainScreenKey,
   type NavTarget,
+  OB_AGE_GATE_SLIDE,
+  WELCOME_ONBOARDING_SLIDE,
 } from './components/navigation/AppNavigation';
 import { VoiceMicControlSheet } from './components/voice/VoiceMicControlSheet';
 
-// Keep the native launch screen up until our animated splash is mounted (no white flash).
+// Hold native launch canvas until JS splash paints (solid dark — no duplicate orb).
+NativeSplash.setOptions({ duration: 320, fade: true });
 NativeSplash.preventAutoHideAsync().catch(() => {});
 
 // Custom hook: true when the user has "Reduce Motion" enabled.
@@ -87,7 +110,6 @@ function useReduceMotion(): boolean {
 }
 import {
   SafeAreaProvider,
-  SafeAreaView,
   initialWindowMetrics,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
@@ -95,26 +117,36 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { callAnthropicMessages, describeAnthropicError } from './utils/anthropic';
 import { streamAnthropicMessages } from './utils/anthropicStream';
 import { hapticLight, hapticMedium } from './utils/haptics';
+import { pressCardStyle, pressTabStyle } from './utils/pressFeedback';
 import { buildAnthropicMessagesFromChat } from './utils/chatMedia';
 import { getChatSystemPrompt, getCrisisSafetyAppendix, getIntentModeAppendix } from './utils/emoEos';
 import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
 import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
 import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracleSearch';
+import { loadEmoPersonalContext } from './utils/emoPersonalContext';
+import { refreshEmocareConfig } from './utils/emocareApi';
 import { logOracleInquiry } from './utils/oracleTopicLog';
 import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { VoiceStreamProvider } from './components/voice/VoiceStreamContext';
 import { VoiceTalkScreen } from './components/voice/VoiceTalkScreen';
-import { MemoryLedgerSheet } from './components/MemoryLedgerSheet';
 import { BreatheExperience } from './components/breathe/BreatheExperience';
 import { JournalScreen } from './components/journal/JournalScreen';
+import { InsightsScreen } from './components/deep/InsightsScreen';
+import { MemoryLedgerScreen } from './components/deep/MemoryLedgerScreen';
+import { SettingsScreen } from './components/deep/SettingsScreen';
+import { OracleSearchScreen } from './components/deep/OracleSearchScreen';
+import { TodayDashboardScreen } from './components/deep/TodayDashboardScreen';
 import { PENDING_JOURNAL_CONTEXT_KEY } from './utils/journalStorage';
+import { useLayoutInsets } from './utils/safeAreaInsets';
+import { ScreenSafeArea } from './components/shared/ScreenSafeArea';
 import {
   CircadianThemeProvider,
   DARK_MENU_SURFACE,
   getCircadianPhase,
   getCircadianTheme,
+  getCircadianIconColor,
   useCircadianTheme,
   type CircadianPhase,
   type CircadianTheme,
@@ -149,23 +181,9 @@ const C = {
 } as const;
 
 /** Height of the floating tab bar content (excludes the bottom safe-area inset). */
-const NAV_CONTENT_HEIGHT = 60;
+const NAV_CONTENT_HEIGHT = 72;
 
-/** Minimum top inset for iPhone notch / Dynamic Island when hooks report 0. */
-const IOS_TOP_MIN = 59;
-
-function useTopInset(extra = 0): number {
-  const insets = useSafeAreaInsets();
-  const top = insets.top ?? 0;
-  const metricsTop = initialWindowMetrics?.insets.top ?? 0;
-  const rawTop =
-    Platform.OS === 'ios'
-      ? Math.max(top, metricsTop, IOS_TOP_MIN)
-      : Math.max(top, metricsTop, 28);
-  return rawTop + extra;
-}
-
-/** Pushes screen content below the notch using native safe-area layout (reliable on Simulator). */
+/** Pushes screen content below the notch — explicit inset padding (reliable in Expo Go). */
 function TopChrome({
   children,
   style,
@@ -174,9 +192,9 @@ function TopChrome({
   style?: ViewStyle;
 }) {
   return (
-    <SafeAreaView style={[styles.flex, style]} edges={['top', 'left', 'right']}>
+    <ScreenSafeArea style={[styles.flex, style]} extraTop={4}>
       {children}
-    </SafeAreaView>
+    </ScreenSafeArea>
   );
 }
 
@@ -205,21 +223,6 @@ const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
  * ------------------------------------------------------------------ */
 
 type ScreenKey = 'home' | 'talk' | 'voice' | 'chat' | 'breathe' | 'journal' | 'checkin';
-
-function ObMoodIcon({ mood, size = 20 }: { mood: Mood; size?: number }) {
-  const Icon = mood.Icon;
-  if (!Icon) {
-    return <Text style={styles.obMoodIconEmoji}>{mood.emoji}</Text>;
-  }
-  return (
-    <Icon
-      size={size}
-      color={mood.iconColor ?? '#F5F3FF'}
-      strokeWidth={2.5}
-      fill={mood.iconFill ?? 'transparent'}
-    />
-  );
-}
 
 interface ChatMessage {
   id: string;
@@ -326,17 +329,15 @@ interface ScreenProps {
 }
 
 /**
- * Standard screen frame:
- *  1. Absolute-fill gradient background
- *  2. SafeAreaView (top edge) from react-native-safe-area-context
- *  3. ScrollView whose contentContainer reserves room for the floating nav bar
+ * Standard screen frame with reliable top inset padding.
  */
 function Screen({ children, scroll = true, scrollRef, onContentSizeChange, contentStyle, theme: themeProp }: ScreenProps) {
   const insets = useSafeAreaInsets();
+  const { top: topInset } = useLayoutInsets();
   const liveTheme = useCircadianTheme();
   const theme = themeProp ?? liveTheme;
   const navOffset = NAV_CONTENT_HEIGHT + (insets.bottom ?? 0);
-  const topPad = useTopInset(4);
+  const topPad = topInset + 4;
 
   if (!scroll) {
     return (
@@ -394,7 +395,12 @@ function GlassCard({
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [styles.glass, themed, style, pressed && styles.glassPressed]}
+        style={({ pressed }) => [
+          styles.glass,
+          themed,
+          style,
+          theme && pressCardStyle(theme, pressed),
+        ]}
       >
         {children}
       </Pressable>
@@ -598,111 +604,26 @@ function EmoPresenceOrb({
   );
 }
 
-/**
- * Emo orb — the mascot face on the home screen with a gentle continuous pulse.
- */
-function EmoOrb({ theme: themeProp, compact = false }: { theme?: CircadianTheme; compact?: boolean }) {
-  const theme = themeProp ?? getCircadianTheme();
-  const faceSource = theme.emoFace;
-  const pulse = useRef(new Animated.Value(0)).current;
-  const [failed, setFailed] = useState(false);
-  const reduceMotion = useReduceMotion();
-  const orbSize = compact ? 88 : 116;
-  const glowSize = compact ? 98 : 130;
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 2600, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 2600, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, reduceMotion]);
-
-  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, compact ? 1.05 : 1.08] });
-  const glowOpacity = reduceMotion ? 0.4 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.55] });
-
-  return (
-    <View style={[styles.orbWrap, compact && styles.orbWrapCompact]}>
-      <Animated.View
-        style={[
-          styles.orbGlow,
-          compact && styles.orbGlowCompact,
-          {
-            opacity: glowOpacity,
-            transform: [{ scale }],
-            backgroundColor: theme.glow,
-            width: glowSize,
-            height: glowSize,
-            borderRadius: glowSize / 2,
-          },
-        ]}
-      />
-      {failed ? (
-        <Animated.View
-          style={[
-            styles.orbFallback,
-            compact && styles.orbFallbackCompact,
-            { transform: [{ scale }], backgroundColor: theme.card, width: orbSize, height: orbSize, borderRadius: orbSize / 2 },
-          ]}
-        >
-          <Text style={{ fontSize: compact ? 36 : 52 }}>🌿</Text>
-        </Animated.View>
-      ) : (
-        <Animated.Image
-          source={faceSource}
-          resizeMode="contain"
-          onError={() => setFailed(true)}
-          style={[
-            styles.orbImage,
-            compact && styles.orbImageCompact,
-            { transform: [{ scale }], width: orbSize, height: orbSize, borderRadius: orbSize / 2 },
-          ]}
-        />
-      )}
-    </View>
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * Page 1 — Splash / Launch Screen
  * ------------------------------------------------------------------ */
 
-// Faint floating particles (deterministic positions) for the night sky feel.
-const SPLASH_PARTICLES = [
-  { left: 0.12, top: 0.16, size: 3, opacity: 0.45 },
-  { left: 0.82, top: 0.13, size: 2, opacity: 0.4 },
-  { left: 0.68, top: 0.27, size: 3, opacity: 0.5 },
-  { left: 0.22, top: 0.34, size: 2, opacity: 0.35 },
-  { left: 0.9, top: 0.4, size: 2, opacity: 0.45 },
-  { left: 0.08, top: 0.52, size: 3, opacity: 0.4 },
-  { left: 0.78, top: 0.6, size: 2, opacity: 0.5 },
-  { left: 0.3, top: 0.64, size: 2, opacity: 0.35 },
-  { left: 0.55, top: 0.72, size: 3, opacity: 0.55 },
-  { left: 0.16, top: 0.78, size: 2, opacity: 0.45 },
-  { left: 0.86, top: 0.8, size: 3, opacity: 0.5 },
-  { left: 0.42, top: 0.86, size: 2, opacity: 0.4 },
-  { left: 0.64, top: 0.9, size: 2, opacity: 0.45 },
-  { left: 0.26, top: 0.92, size: 3, opacity: 0.5 },
-] as const;
-
 function SplashScreen({ onDone }: { onDone?: () => void }) {
-  const theme = getCircadianTheme();
+  const theme = useCircadianTheme();
   const reduceMotion = useReduceMotion();
-  const faceSource = theme.emoFace;
-  const pulse = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;
-  const [failed, setFailed] = useState(false);
+  const nativeHidden = useRef(false);
+
+  const revealNativeHandoff = () => {
+    if (nativeHidden.current) return;
+    nativeHidden.current = true;
+    NativeSplash.hideAsync().catch(() => {});
+  };
 
   useEffect(() => {
-    // Hand off from the native launch screen now that our splash is on screen.
-    NativeSplash.hideAsync().catch(() => {});
+    revealNativeHandoff();
 
-    // Gentle entrance
     Animated.timing(fadeIn, {
       toValue: 1,
       duration: reduceMotion ? 1 : 900,
@@ -710,117 +631,26 @@ function SplashScreen({ onDone }: { onDone?: () => void }) {
       useNativeDriver: true,
     }).start();
 
-    // Slow, calming breathing pulse — skipped when Reduce Motion is on
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 2800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 2800,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    if (!reduceMotion) loop.start();
-
-    // Soft loading bar fills once, then hands off
     Animated.timing(progress, {
       toValue: 1,
-      duration: 3000,
+      duration: 2800,
       easing: Easing.inOut(Easing.quad),
       useNativeDriver: false,
     }).start(({ finished }) => {
       if (finished && onDone) onDone();
     });
-
-    return () => loop.stop();
-  }, [pulse, progress, fadeIn, onDone, reduceMotion]);
-
-  // When Reduce Motion is on, the face rests still and fully visible.
-  const scale = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
-  const faceOpacity = reduceMotion ? 1 : pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
-  const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['8%', '100%'] });
+  }, [fadeIn, onDone, progress, reduceMotion]);
 
   return (
-    <View style={styles.flex}>
-      {/* Background from CircadianThemeProvider */}
-      {SPLASH_PARTICLES.map((p, i) => (
-        <View
-          key={i}
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            left: width * p.left,
-            top: height * p.top,
-            width: p.size,
-            height: p.size,
-            borderRadius: p.size / 2,
-            backgroundColor: theme.isDark ? '#FFFFFF' : theme.accent,
-            opacity: p.opacity * (theme.isDark ? 1 : 0.4),
-          }}
-        />
-      ))}
-
-      <Animated.View style={[styles.splashContent, { opacity: fadeIn }]}>
-        <View style={styles.splashFaceWrap}>
-          {failed ? (
-            <Animated.View style={[styles.splashFaceFallback, { transform: [{ scale }], opacity: faceOpacity }]}>
-              <Text style={{ fontSize: 84 }}>🌿</Text>
-            </Animated.View>
-          ) : (
-            <Animated.Image
-              source={faceSource}
-              resizeMode="contain"
-              onError={() => setFailed(true)}
-              style={[styles.splashFace, { transform: [{ scale }], opacity: faceOpacity }]}
-            />
-          )}
-        </View>
-
-        <Text
-          style={[styles.splashTitle, { color: theme.text }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
-          EmoCare AI
-        </Text>
-        <Text
-          style={[styles.splashTagline, { color: theme.secondaryText }]}
-          numberOfLines={1}
-        >
-          Intelligence with Soul.
-        </Text>
-
-        <View style={[styles.splashBarTrack, { backgroundColor: theme.barTrack }]}>
-          <Animated.View
-            style={[
-              styles.splashBarFill,
-              {
-                width: barWidth,
-                backgroundColor: theme.barFill,
-                shadowColor: theme.barFill,
-              },
-            ]}
-          />
-        </View>
-
-        <Text
-          style={[
-            styles.splashSubtitle,
-            { color: theme.mutedText, opacity: theme.isDark ? 0.75 : 0.8 },
-          ]}
-          numberOfLines={1}
-        >
-          The Emotional Operating System
-        </Text>
-      </Animated.View>
-
+    <View style={styles.launchSplashRoot} onLayout={revealNativeHandoff}>
+      <CircadianHeroGlow theme={theme} />
+      <SplashStarField theme={theme} variant="circadian" />
+      <SanctuarySplashContent
+        theme={theme}
+        fadeIn={fadeIn}
+        progress={progress}
+        reduceMotion={reduceMotion}
+      />
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
     </View>
   );
@@ -866,10 +696,6 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const [note, setNote] = useState('');
   const onClose = () => goBack();
 
-  const saveGradient = theme.isDark
-    ? (['#9473FF', '#6366F1'] as [string, string])
-    : ([theme.accent, '#7F77DD'] as [string, string]);
-
   const save = async () => {
     if (!selected) return;
     void hapticMedium();
@@ -890,42 +716,34 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
     <View style={styles.flex}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <TopChrome>
-        <ScreenNavChrome theme={theme} compact />
-
-        <View style={styles.ciHeroBlock}>
-          <Text style={[styles.ciTitle, { color: theme.text }]}>Check In ✦</Text>
-          <Text style={[styles.ciSubtitle, { color: theme.mutedText }]}>
-            Take a gentle moment to check in.
-          </Text>
+        <View style={styles.ciChromeWrap}>
+          <ScreenNavChrome theme={theme} title="Check In" titleFontSize={15} />
         </View>
 
         <ScrollView
           style={styles.flex}
           contentContainerStyle={{
-            paddingHorizontal: 22,
+            paddingHorizontal: 28,
             paddingTop: 4,
             paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24,
           }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.obMoodHeaderBlock}>
-            <Text style={[styles.obMoodSectionTitle, { color: theme.text }]}>
-              How are you feeling right now?
-            </Text>
-            <Text style={[styles.obMoodSectionSub, { color: theme.mutedText }]}>
-              Choose the feeling that feels closest.
-            </Text>
-          </View>
+          <Text style={[styles.ciCheckinTitle, { color: theme.text }]}>
+            How are you feeling right now?
+          </Text>
+          <Text style={[styles.ciCheckinSub, { color: theme.mutedText }]}>
+            Choose the feeling that feels closest.
+          </Text>
 
           <View style={styles.obMoodGridPro}>
             {OB_MOODS.map((m) => {
               const isSelected = selected?.label === m.label;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={m.label}
-                  activeOpacity={0.85}
-                  style={[
+                  style={({ pressed }) => [
                     styles.obMoodCardPro,
                     { backgroundColor: theme.card, borderColor: theme.border },
                     isSelected && {
@@ -936,34 +754,21 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
                       shadowRadius: 10,
                       shadowOffset: { width: 0, height: 0 },
                     },
+                    pressCardStyle(theme, pressed, m.accentColor ?? theme.accent),
                   ]}
                   onPress={() => {
                     void hapticLight();
                     setSelected(m);
                   }}
                 >
-                  <View
-                    style={[
-                      styles.obMoodIconCircle,
-                      {
-                        backgroundColor: m.iconBg ?? theme.card,
-                        borderColor: m.iconColor ? `${m.iconColor}55` : theme.border,
-                        shadowColor: m.accentColor ?? m.iconColor ?? theme.accent,
-                        shadowOpacity: isSelected ? 0.65 : 0.45,
-                        shadowRadius: isSelected ? 10 : 7,
-                        shadowOffset: { width: 0, height: 2 },
-                      },
-                    ]}
-                  >
-                    <ObMoodIcon mood={m} />
-                  </View>
+                  <MoodIconBadge mood={m} variant="full" active={isSelected} />
                   <View style={styles.obMoodCardText}>
                     <Text style={[styles.obMoodCardTitle, { color: theme.text }]}>{m.label}</Text>
-                    <Text style={[styles.obMoodCardDesc, { color: theme.mutedText }]} numberOfLines={2}>
+                    <Text style={[styles.obMoodCardDesc, { color: theme.mutedText }]}>
                       {m.desc}
                     </Text>
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
@@ -993,24 +798,24 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
             />
           </GlassCard>
 
-          <TouchableOpacity
-            activeOpacity={0.88}
-            style={[styles.ciSaveWrap, !selected && styles.btnDisabled]}
+          <PrimaryActionButton
+            label="Save Check-In"
+            prefix="✦"
+            theme={theme}
             onPress={save}
             disabled={!selected}
-          >
-            <LinearGradient colors={saveGradient} style={styles.ciSaveBtn}>
-              <Text style={styles.primaryBtnText}>✦  Save Check-In</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+            disabledHint="Choose a feeling to save your check-in."
+            style={styles.ciSaveWrap}
+          />
 
-          <Pressable onPress={onClose} style={styles.ciBackLink}>
-            <Text style={[styles.ciBackLinkText, { color: theme.accent }]}>← Back to Sanctuary</Text>
-          </Pressable>
+          <View style={styles.ciPrivacyRow}>
+            <Shield size={14} color={theme.accent} strokeWidth={2.2} />
+            <Text style={[styles.ciPrivacyNote, { color: theme.mutedText }]}>
+              Your check-in is private and secure
+            </Text>
+          </View>
 
-          <Text style={[styles.ciPrivacyNote, { color: theme.mutedText }]}>
-            🔒 Your check-in is private and secure
-          </Text>
+          <CrisisFooter theme={theme} style={styles.ciCrisisFooter} />
         </ScrollView>
       </TopChrome>
     </View>
@@ -1033,18 +838,11 @@ function HomeScreen({
   userName: string;
   onNav: (key: MainScreenKey) => void;
 }) {
-  const { setMenuOpen } = useAppNav();
-  return (
-    <SanctuaryDashboard
-      userName={userName}
-      onNav={onNav}
-      onOpenMenu={() => setMenuOpen(true)}
-    />
-  );
+  return <SanctuaryDashboard userName={userName} onNav={onNav} />;
 }
 
 /* ------------------------------------------------------------------ *
- * Talk (voice sanctuary — separate from text chat)
+ * Talk (Voice Talk — separate from text chat)
  * ------------------------------------------------------------------ */
 
 function TalkScreen({ userName }: { userName: string }) {
@@ -1332,7 +1130,7 @@ function ChatBubbleMenuSheet({
 
 function ChatScreen({ userName }: { userName: string }) {
   const theme = useCircadianTheme();
-  const { goBack, setMenuOpen: setAppMenuOpen } = useAppNav();
+  const { setMenuOpen: setAppMenuOpen, navigate } = useAppNav();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -1347,6 +1145,7 @@ function ChatScreen({ userName }: { userName: string }) {
   const [bubbleMenuMsg, setBubbleMenuMsg] = useState<ChatMessage | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [streamLevel, setStreamLevel] = useState(0);
+  const [memoryChipLabel, setMemoryChipLabel] = useState<string | null>(null);
   const streamDecayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
@@ -1401,6 +1200,15 @@ function ChatScreen({ userName }: { userName: string }) {
   useEffect(() => {
     loadChat();
   }, [userName]);
+
+  const refreshMemoryChip = React.useCallback(async () => {
+    const { active, chipLabel } = await loadEmoPersonalContext(userName);
+    setMemoryChipLabel(active && chipLabel ? chipLabel : null);
+  }, [userName]);
+
+  useEffect(() => {
+    void refreshMemoryChip();
+  }, [refreshMemoryChip]);
 
   useEffect(() => {
     AsyncStorage.getItem(PENDING_TALK_QUERY_KEY)
@@ -1656,8 +1464,12 @@ function ChatScreen({ userName }: { userName: string }) {
         }
       }
 
+      const personalContext = await loadEmoPersonalContext(userName);
+      setMemoryChipLabel(personalContext.active && personalContext.chipLabel ? personalContext.chipLabel : null);
+
       const system = [
         getChatSystemPrompt(userName),
+        personalContext.systemBlock,
         crisis.inCrisis ? getCrisisSafetyAppendix() : getIntentModeAppendix(intent.mode),
         researchBlock,
       ]
@@ -1818,9 +1630,7 @@ function ChatScreen({ userName }: { userName: string }) {
         ? streamLevel > 0.05
           ? 'Emo is writing…'
           : 'Thinking with you…'
-        : voiceAloudEnabled
-          ? 'Read aloud on'
-          : 'Always here with you';
+        : CHAT_PRESENCE_TAGLINE;
 
   return (
     <View style={styles.flex}>
@@ -1831,57 +1641,37 @@ function ChatScreen({ userName }: { userName: string }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <View style={styles.chatHeaderUnified}>
-            <Pressable
-              onPress={goBack}
-              style={({ pressed }) => [
-                styles.chatNavBtn,
-                navBtnStyle,
-                pressed && styles.chatNavBtnPressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-            >
-              <ChevronLeft size={22} color={theme.text} strokeWidth={2.5} />
-            </Pressable>
-
-            <View style={styles.chatHeaderBrand}>
-              <EmoAvatar size={44} theme={theme} plain streamLevel={streamLevel} />
-              <View style={styles.chatHeaderTextCol}>
-                <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>Emo</Text>
-                <Text style={[styles.chatHeroTaglineInline, { color: theme.secondaryText }]}>
-                  {chatStatusLine}
-                </Text>
+          <ScreenNavChrome
+            theme={theme}
+            centerContent={
+              <View style={styles.chatHeaderBrand}>
+                <EmoAvatar size={40} theme={theme} plain streamLevel={streamLevel} />
+                <View style={styles.chatHeaderTextCol}>
+                  <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>Emo</Text>
+                  <Text style={[styles.chatHeroTaglineInline, { color: theme.secondaryText }]}>
+                    {chatStatusLine}
+                  </Text>
+                  {memoryChipLabel ? (
+                    <EmoMemoryChip
+                      theme={theme}
+                      label={memoryChipLabel}
+                      onPress={() => navigate('memoryledger')}
+                    />
+                  ) : null}
+                </View>
               </View>
-            </View>
-
-            <View style={styles.chatClassicTopActions}>
-              <Pressable
-                onPress={() => setAppMenuOpen(true)}
-                style={({ pressed }) => [
-                  styles.chatNavBtn,
-                  navBtnStyle,
-                  pressed && styles.chatNavBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="App menu"
-              >
-                <LayoutGrid size={18} color={theme.text} strokeWidth={2.2} />
-              </Pressable>
-              <Pressable
+            }
+            onMenu={() => setAppMenuOpen(true)}
+            actionsBeforeNav={
+              <NavChromeBtn
+                theme={theme}
                 onPress={() => setMenuOpen(true)}
-                style={({ pressed }) => [
-                  styles.chatNavBtn,
-                  navBtnStyle,
-                  pressed && styles.chatNavBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Chat menu"
+                accessibilityLabel="Chat options"
               >
-                <Menu size={18} color={theme.text} strokeWidth={2.5} />
-              </Pressable>
-            </View>
-          </View>
+                <Ellipsis size={18} color={theme.text} strokeWidth={2.4} />
+              </NavChromeBtn>
+            }
+          />
 
           <ScrollView
             ref={scrollRef}
@@ -2009,7 +1799,7 @@ function ChatScreen({ userName }: { userName: string }) {
                 {voiceAloudEnabled ? (
                   <Mic size={17} color={theme.accent} strokeWidth={2.4} />
                 ) : (
-                  <MicOff size={17} color={theme.mutedText} strokeWidth={2.4} />
+                  <MicOff size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.4} />
                 )}
               </Pressable>
               <TouchableOpacity
@@ -2024,7 +1814,7 @@ function ChatScreen({ userName }: { userName: string }) {
               </TouchableOpacity>
             </View>
             <View style={styles.chatPrivacyRow}>
-              <Lock size={12} color={theme.mutedText} strokeWidth={2.2} />
+              <Lock size={13} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
               <Text style={[styles.chatPrivacy, { color: theme.mutedText }]}>
                 Your conversations are private and secure
               </Text>
@@ -2111,26 +1901,29 @@ function ChatScreen({ userName }: { userName: string }) {
  * ------------------------------------------------------------------ */
 
 function NavBarShell() {
-  const { immersiveChromeHidden } = useAppNav();
+  const { immersiveChromeHidden, screen } = useAppNav();
   const fade = useRef(new Animated.Value(1)).current;
   const slide = useRef(new Animated.Value(0)).current;
+  const showBar = TAB_BAR_SCREENS.includes(screen);
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fade, {
-        toValue: immersiveChromeHidden ? 0 : 1,
+        toValue: immersiveChromeHidden || !showBar ? 0 : 1,
         duration: 800,
         easing: Easing.bezier(0.4, 0, 0.2, 1),
         useNativeDriver: true,
       }),
       Animated.timing(slide, {
-        toValue: immersiveChromeHidden ? 20 : 0,
+        toValue: immersiveChromeHidden || !showBar ? 20 : 0,
         duration: 800,
         easing: Easing.bezier(0.4, 0, 0.2, 1),
         useNativeDriver: true,
       }),
     ]).start();
-  }, [fade, immersiveChromeHidden, slide]);
+  }, [fade, immersiveChromeHidden, showBar, slide]);
+
+  if (!showBar) return null;
 
   return (
     <Animated.View
@@ -2146,14 +1939,20 @@ function NavBar() {
   const insets = useSafeAreaInsets();
   const theme = useCircadianTheme();
   const { screen, navigate } = useAppNav();
-  const tabs: { key: MainScreenKey; icon: string; label: string; Icon?: LucideIcon }[] = [
-    { key: 'home', icon: '🏠', label: 'Home' },
-    { key: 'checkin', icon: '💜', label: 'Check In' },
-    { key: 'talk', icon: '💬', label: 'Talk' },
-    { key: 'voice', icon: '', label: 'Voice', Icon: AudioLines },
-    { key: 'breathe', icon: '🌬️', label: 'Breathe' },
-    { key: 'journal', icon: '📓', label: 'Journal' },
-  ];
+  const activeKey = tabBarHighlightKey(screen);
+  const tabMeta: Record<MainScreenKey, { label: string; Icon: LucideIcon }> = {
+    home: { label: 'Home', Icon: Home },
+    checkin: { label: 'Check In', Icon: Heart },
+    today: { label: 'Today', Icon: CalendarDays },
+    talk: { label: 'Talk', Icon: MessageCircle },
+    journal: { label: 'Journal', Icon: BookOpen },
+    voice: { label: 'Voice', Icon: AudioLines },
+    breathe: { label: 'Breathe', Icon: Wind },
+    insights: { label: 'Insights', Icon: TrendingUp },
+    memoryledger: { label: 'Memory', Icon: Brain },
+    settings: { label: 'Settings', Icon: Settings },
+    oracle: { label: 'Oracle', Icon: Sparkles },
+  };
   return (
     <View
       style={[
@@ -2165,32 +1964,45 @@ function NavBar() {
           bottom: 0,
           height: NAV_CONTENT_HEIGHT + insets.bottom,
           paddingBottom: insets.bottom,
-          backgroundColor: theme.navBar,
+          backgroundColor: theme.isDark ? '#0e0820' : '#ffffff',
           borderTopColor: theme.navBarBorder,
         },
       ]}
     >
-      {tabs.map((t) => {
-        const isActive = screen === t.key;
-        const iconColor = isActive ? theme.accent : theme.mutedText;
+      {TAB_BAR_TAB_ORDER.map((key) => {
+        const t = tabMeta[key];
+        const isActive = activeKey === key;
         return (
-          <TouchableOpacity key={t.key} style={styles.navItem} onPress={() => navigate(t.key)}>
-            {t.Icon ? (
-              <t.Icon size={20} color={iconColor} strokeWidth={isActive ? 2.4 : 2} />
-            ) : (
-              <Text style={{ fontSize: 20 }}>{t.icon}</Text>
+          <Pressable
+            key={key}
+            onPress={() => {
+              void hapticLight();
+              navigate(key);
+            }}
+            style={({ pressed }) => [styles.navItem, pressTabStyle(theme, pressed)]}
+          >
+            {({ pressed }) => (
+              <>
+                <t.Icon
+                  size={20}
+                  color={
+                    isActive || pressed ? theme.accent : getCircadianIconColor(theme, 'muted')
+                  }
+                  strokeWidth={isActive || pressed ? 2.4 : 2}
+                />
+                <Text
+                  style={[
+                    styles.navLabel,
+                    { color: theme.mutedText },
+                    (isActive || pressed) && [styles.navLabelActive, { color: theme.accent }],
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t.label}
+                </Text>
+              </>
             )}
-            <Text
-              style={[
-                styles.navLabel,
-                { color: theme.mutedText },
-                isActive && [styles.navLabelActive, { color: theme.accent }],
-              ]}
-              numberOfLines={1}
-            >
-              {t.label}
-            </Text>
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </View>
@@ -2203,40 +2015,70 @@ function NavBar() {
 
 function Root() {
   const [onboarded, setOnboarded] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [ageVerified, setAgeVerified] = useState(false);
+  const [bootReady, setBootReady] = useState(false);
+  const [launchSplashDone, setLaunchSplashDone] = useState(false);
   const [userName, setUserName] = useState('');
   const [homeLandingMode, setHomeLandingMode] = useState<'sanctuary' | 'oracle'>('sanctuary');
   const [screen, setScreen] = useState<MainScreenKey>('home');
 
   useEffect(() => {
     async function bootstrap() {
-      const v = await AsyncStorage.getItem('onboarded');
-      if (v === 'true') {
-        const n = await AsyncStorage.getItem('userName');
-        const mode = await AsyncStorage.getItem(HOME_LANDING_MODE_KEY);
-        setUserName(n || '');
-        setHomeLandingMode(mode === 'oracle' ? 'oracle' : 'sanctuary');
-        setOnboarded(true);
+      try {
+        await refreshEmocareConfig();
+        const v = await AsyncStorage.getItem('onboarded');
+        const ageOk = await readAgeVerified();
+        if (v === 'true') {
+          const n = await AsyncStorage.getItem('userName');
+          const mode = await AsyncStorage.getItem(HOME_LANDING_MODE_KEY);
+          setUserName(n || '');
+          setHomeLandingMode(mode === 'oracle' ? 'oracle' : 'sanctuary');
+          setOnboarded(true);
+        }
+        setAgeVerified(ageOk);
+      } finally {
+        setBootReady(true);
       }
-      setLoading(false);
-      NativeSplash.hideAsync().catch(() => {});
     }
     bootstrap();
   }, []);
 
-  if (loading) {
-    return null;
+  if (!launchSplashDone || !bootReady) {
+    return <SplashScreen onDone={() => setLaunchSplashDone(true)} />;
   }
 
   if (!onboarded) {
     return (
-      <OnboardingFlow
-        onComplete={({ name, landingMode }) => {
-          setUserName(name);
-          setHomeLandingMode(landingMode);
-          setOnboarded(true);
-        }}
-      />
+      <AppNavProvider
+        userName={userName}
+        setUserName={setUserName}
+        screen={screen}
+        setScreen={setScreen}
+      >
+        <FirstOnboardingShell
+          userName={userName}
+          setUserName={setUserName}
+          onComplete={({ name, landingMode }) => {
+            setUserName(name);
+            setHomeLandingMode(landingMode);
+            setAgeVerified(true);
+            setOnboarded(true);
+          }}
+        />
+      </AppNavProvider>
+    );
+  }
+
+  if (!ageVerified) {
+    return (
+      <AppNavProvider
+        userName={userName}
+        setUserName={setUserName}
+        screen={screen}
+        setScreen={setScreen}
+      >
+        <AgeGateShell onVerified={() => setAgeVerified(true)} />
+      </AppNavProvider>
     );
   }
 
@@ -2260,18 +2102,98 @@ export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <CircadianThemeProvider>
-        <Root />
+        <DesktopSanctuaryFrame>
+          <Root />
+        </DesktopSanctuaryFrame>
       </CircadianThemeProvider>
     </SafeAreaProvider>
   );
 }
 
+function AgeGateShell({ onVerified }: { onVerified: () => void }) {
+  const theme = useCircadianTheme();
+
+  return (
+    <>
+      <OnboardingFlow
+        initialSlide={OB_AGE_GATE_SLIDE}
+        ageVerificationOnly
+        onAgeVerified={onVerified}
+        onComplete={() => {}}
+      />
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+    </>
+  );
+}
+
+function FirstOnboardingShell({
+  userName,
+  setUserName,
+  onComplete,
+}: {
+  userName: string;
+  setUserName: (name: string) => void;
+  onComplete: (args: {
+    name: string;
+    landingMode: 'sanctuary' | 'oracle';
+    intentMode: 'sanctuary' | 'oracle';
+  }) => void;
+}) {
+  const theme = useCircadianTheme();
+  const {
+    menuOpen,
+    setMenuOpen,
+    profileOpen,
+    setProfileOpen,
+    navigate,
+    openOnboardingSlide,
+    closeOnboardingReview,
+  } = useAppNav();
+
+  const handleMenuSelect = (target: NavTarget) => {
+    if (target.kind === 'screen') navigate(target.key);
+    else openOnboardingSlide(target.slide);
+  };
+
+  const saveProfileName = async (name: string) => {
+    try {
+      await AsyncStorage.setItem('userName', name);
+    } catch {}
+    setUserName(name);
+  };
+
+  return (
+    <>
+      <OnboardingFlow
+        initialSlide={WELCOME_ONBOARDING_SLIDE}
+        onComplete={(args) => {
+          closeOnboardingReview();
+          onComplete(args);
+        }}
+      />
+      <ScreenSwipeEdgeOverlay enabled={!menuOpen && !profileOpen} />
+      <AppMenuSheet
+        visible={menuOpen}
+        theme={theme}
+        onClose={() => setMenuOpen(false)}
+        onSelect={handleMenuSelect}
+        onOpenProfile={() => setProfileOpen(true)}
+      />
+      <ProfileNameSheet
+        visible={profileOpen}
+        theme={theme}
+        userName={userName}
+        onClose={() => setProfileOpen(false)}
+        onSave={(name) => void saveProfileName(name)}
+      />
+    </>
+  );
+}
+
 function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
   const theme = useCircadianTheme();
-  const swipe = useScreenSwipeNav();
   const screenFade = useRef(new Animated.Value(1)).current;
   const screenFirstMount = useRef(true);
-  const [memoryLedgerOpen, setMemoryLedgerOpen] = useState(false);
   const {
     userName,
     setUserName,
@@ -2314,12 +2236,29 @@ function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'san
 
   if (onboardingReviewSlide) {
     return (
-      <OnboardingFlow
-        reviewMode
-        initialSlide={onboardingReviewSlide}
-        onExitReview={closeOnboardingReview}
-        onComplete={() => closeOnboardingReview()}
-      />
+      <>
+        <OnboardingFlow
+          reviewMode
+          initialSlide={onboardingReviewSlide}
+          onExitReview={closeOnboardingReview}
+          onComplete={() => closeOnboardingReview()}
+        />
+        <ScreenSwipeEdgeOverlay enabled={!menuOpen && !profileOpen} />
+        <AppMenuSheet
+          visible={menuOpen}
+          theme={theme}
+          onClose={() => setMenuOpen(false)}
+          onSelect={handleMenuSelect}
+          onOpenProfile={() => setProfileOpen(true)}
+        />
+        <ProfileNameSheet
+          visible={profileOpen}
+          theme={theme}
+          userName={userName}
+          onClose={() => setProfileOpen(false)}
+          onSave={(name) => void saveProfileName(name)}
+        />
+      </>
     );
   }
 
@@ -2330,25 +2269,28 @@ function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'san
     voice: <TalkScreen userName={userName} />,
     breathe: <BreatheExperience />,
     journal: <JournalScreen onNav={navigate} />,
+    insights: <InsightsScreen onNav={navigate} />,
+    memoryledger: <MemoryLedgerScreen />,
+    settings: <SettingsScreen onNav={navigate} />,
+    oracle: <OracleSearchScreen onNav={navigate} />,
+    today: <TodayDashboardScreen onNav={navigate} />,
   };
 
   const statusTheme = theme.isDark ? 'light' : 'dark';
 
   return (
-    <View style={styles.flex} {...swipe.panHandlers}>
+    <View style={styles.flex}>
       <StatusBar style={statusTheme} />
       <Animated.View style={[styles.flex, { opacity: screenFade }]}>{screens[screen]}</Animated.View>
       <NavBarShell />
+      <WebInstallBanner />
+      <ScreenSwipeEdgeOverlay enabled={!menuOpen && !profileOpen} />
       <AppMenuSheet
         visible={menuOpen}
         theme={theme}
         onClose={() => setMenuOpen(false)}
         onSelect={handleMenuSelect}
         onOpenProfile={() => setProfileOpen(true)}
-        onOpenMemoryLedger={() => {
-          setMenuOpen(false);
-          setMemoryLedgerOpen(true);
-        }}
       />
       <ProfileNameSheet
         visible={profileOpen}
@@ -2356,11 +2298,6 @@ function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'san
         userName={userName}
         onClose={() => setProfileOpen(false)}
         onSave={(name) => void saveProfileName(name)}
-      />
-      <MemoryLedgerSheet
-        visible={memoryLedgerOpen}
-        theme={theme}
-        onClose={() => setMemoryLedgerOpen(false)}
       />
     </View>
   );
@@ -2382,7 +2319,6 @@ const styles = StyleSheet.create({
     borderColor: C.cardBorder,
     overflow: 'hidden',
   },
-  glassPressed: { opacity: 0.88 },
   cardPad: { paddingVertical: 16, paddingHorizontal: 16, marginBottom: 16 },
   cardPadLg: { paddingVertical: 18, paddingHorizontal: 18, marginBottom: 16 },
 
@@ -2465,62 +2401,13 @@ const styles = StyleSheet.create({
   },
   orbFallbackCompact: {},
 
-  // Splash / Launch (Page 1)
-  splashContent: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  splashFaceWrap: {
-    width: 300,
-    height: 300,
-    alignItems: 'center',
+  launchSplashRoot: {
+    flex: 1,
     justifyContent: 'center',
-    marginBottom: 24,
-  },
-  splashFace: { width: 296, height: 296, borderRadius: 148 },
-  splashFaceFallback: {
-    width: 264,
-    height: 264,
-    borderRadius: 132,
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#0D0720',
   },
-  splashTitle: {
-    fontSize: 44,
-    lineHeight: 50,
-    fontWeight: '400',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-  },
-  splashTagline: {
-    fontSize: 17,
-    lineHeight: 24,
-    fontWeight: '500',
-    letterSpacing: 2, // luxury spacing
-    textAlign: 'center',
-    marginTop: 26, // ~2 spaces below the title
-  },
-  splashBarTrack: {
-    width: '35%',
-    height: 6,
-    borderRadius: 999,
-    marginTop: 72, // pushed down, sitting just above the subtitle
-    overflow: 'hidden',
-  },
-  splashBarFill: {
-    height: 6,
-    borderRadius: 999,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 10,
-    shadowOpacity: 0.35,
-    elevation: 4,
-  },
-  splashSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '500',
-    letterSpacing: 0.8,
-    textAlign: 'center',
-    marginTop: 22, // sits just below the bar, near the lower particles
-  },
+
   auroraClip: {
     position: 'absolute',
     left: 0,
@@ -2662,19 +2549,10 @@ const styles = StyleSheet.create({
     gap: 10,
     minHeight: 74,
   },
-  obMoodIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
   obMoodIconEmoji: { fontSize: 17 },
   obMoodCardText: { flex: 1, paddingTop: 3 },
   obMoodCardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 5, lineHeight: 16 },
-  obMoodCardDesc: { fontSize: 10, lineHeight: 15 },
+  obMoodCardDesc: { fontSize: 11, lineHeight: 16 },
   obSanctuaryBtnWrap: {
     width: '100%',
     borderRadius: 18,
@@ -3156,6 +3034,15 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   ciBackLabel: { fontSize: 14, fontWeight: '600' },
+  ciChromeWrap: { paddingHorizontal: 8, paddingBottom: 4 },
+  ciCheckinTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  ciCheckinSub: { fontSize: 12, textAlign: 'center', marginBottom: 18, lineHeight: 18 },
   ciHeroBlock: {
     paddingHorizontal: 22,
     paddingTop: 2,
@@ -3197,9 +3084,16 @@ const styles = StyleSheet.create({
   },
   ciSaveWrap: { borderRadius: 18, overflow: 'hidden', marginBottom: 12 },
   ciSaveBtn: { paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center', borderRadius: 18 },
-  ciBackLink: { alignItems: 'center', marginBottom: 12 },
-  ciBackLinkText: { fontSize: 14, fontWeight: '600' },
-  ciPrivacyNote: { fontSize: 12, textAlign: 'center', marginBottom: 8 },
+  ciPrivacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  ciPrivacyNote: { fontSize: 12, textAlign: 'center' },
+  ciCrisisFooter: { marginTop: 16 },
 
   // Buttons
   primaryBtn: { borderRadius: 18, paddingVertical: 18, paddingHorizontal: 18, alignItems: 'center' },
@@ -3216,11 +3110,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chatHeaderBrand: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     minWidth: 0,
+    flex: 1,
   },
   chatHeaderTextCol: {
     flex: 1,
@@ -3298,6 +3192,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chatNavBtnPressed: { opacity: 0.82 },
+  chatNavBtnDisabled: { opacity: 0.45 },
   chatVoiceBtnActive: {
     backgroundColor: 'rgba(148, 115, 255, 0.14)',
   },
@@ -3587,10 +3482,18 @@ const styles = StyleSheet.create({
   navBar: {
     flexDirection: 'row',
     borderTopWidth: 0.5,
-    paddingTop: 10,
+    paddingTop: 8,
     zIndex: 10,
   },
-  navItem: { flex: 1, alignItems: 'center', gap: 4 },
-  navLabel: { fontSize: 9 },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minHeight: 44,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  navLabel: { fontSize: 10 },
   navLabelActive: { fontWeight: '600' },
 });

@@ -32,7 +32,7 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'intent', mode: 'sanctuary' }));
         ws.send(JSON.stringify({
           type: 'transcript',
-          text: 'Emo is listening in the acoustic sanctuary.',
+          text: 'Emo is listening.',
           isFinal: false,
         }));
       }

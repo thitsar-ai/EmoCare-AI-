@@ -10,7 +10,7 @@ export async function hapticBreathTransition() {
 }
 
 /**
- * Continuous ramp — intensity builds on inhale, decays on exhale.
+ * Gentle breath-synced pulses — a few soft taps per phase, not continuous vibration.
  * @param {'inhale' | 'exhale' | 'hold' | 'holdAfter'} phase
  * @param {number} durationMs
  * @returns {() => void} cleanup
@@ -18,37 +18,34 @@ export async function hapticBreathTransition() {
 export function runBreathHapticRamp(phase, durationMs) {
   if (phase !== 'inhale' && phase !== 'exhale') return () => {};
 
-  const started = Date.now();
-  const tick = () => {
-    const t = Math.min(1, (Date.now() - started) / durationMs);
-    if (phase === 'inhale') {
-      if (t < 0.35) void Haptics.selectionAsync().catch(() => {});
-      else if (t < 0.7) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
-      else void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    } else {
-      if (t < 0.35) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      else if (t < 0.7) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
-      else void Haptics.selectionAsync().catch(() => {});
-    }
+  const timeouts = [];
+  const marks = phase === 'inhale' ? [0.12, 0.5, 0.88] : [0.12, 0.55, 0.9];
+
+  for (const fraction of marks) {
+    timeouts.push(
+      setTimeout(() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
+      }, durationMs * fraction),
+    );
+  }
+
+  return () => {
+    for (const id of timeouts) clearTimeout(id);
   };
-
-  tick();
-  const id = setInterval(tick, 320);
-  return () => clearInterval(id);
 }
 
-/** Low-frequency ripple during post-exhale hold. */
+/** Occasional soft pulse during post-exhale rest. */
 export function runBreathHoldRipple() {
-  const id = setInterval(() => {
+  let id = setInterval(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
-  }, 1400);
+  }, 2800);
   return () => clearInterval(id);
 }
 
-/** Ambient wavy pulse while holding at peak expansion. */
+/** Light ambient pulse while holding at peak expansion. */
 export function runBreathHoldAmbient() {
-  const id = setInterval(() => {
-    void Haptics.selectionAsync().catch(() => {});
-  }, 900);
+  let id = setInterval(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
+  }, 3200);
   return () => clearInterval(id);
 }

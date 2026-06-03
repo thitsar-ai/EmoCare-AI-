@@ -1,21 +1,8 @@
-import Constants from 'expo-constants';
-import { cleanEnvKey } from './anthropic';
+import { emocareFetch, isTavilyConfigured } from './emocareApi';
 
-function readExpoExtra() {
-  return (
-    Constants.expoConfig?.extra
-    ?? Constants.manifest2?.extra
-    ?? Constants.manifest?.extra
-    ?? {}
-  );
-}
-
+/** @deprecated Keys live on the server. */
 export function getTavilyApiKey() {
-  const candidates = [
-    cleanEnvKey(process.env.EXPO_PUBLIC_TAVILY_API_KEY),
-    cleanEnvKey(readExpoExtra().tavilyApiKey),
-  ].filter((key) => key.length >= 8);
-  return candidates[0] || '';
+  return isTavilyConfigured() ? 'proxy' : '';
 }
 
 function normalizeQuery(text) {
@@ -28,59 +15,19 @@ function normalizeQuery(text) {
 
 /** @returns {Promise<{ title: string, url: string, snippet: string }[]>} */
 async function searchTavily(query) {
-  const apiKey = getTavilyApiKey();
-  if (!apiKey) return [];
+  if (!isTavilyConfigured()) return [];
 
-  const body = {
-    query,
-    max_results: 5,
-    search_depth: 'advanced',
-    include_answer: 'basic',
-  };
-
-  const attempts = [
-    () =>
-      fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      }),
-    () =>
-      fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...body, api_key: apiKey }),
-      }),
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const res = await attempt();
-      if (!res.ok) continue;
-      const data = await res.json();
-      const rows = [];
-      if (data.answer) {
-        rows.push({
-          title: 'Research summary',
-          url: '',
-          snippet: String(data.answer).trim(),
-        });
-      }
-      for (const r of data.results || []) {
-        if (!r.content && !r.title) continue;
-        rows.push({
-          title: r.title || 'Source',
-          url: r.url || '',
-          snippet: String(r.content || '').trim().slice(0, 420),
-        });
-      }
-      if (rows.length) return rows;
-    } catch {}
+  try {
+    const res = await emocareFetch('/v1/oracle/search', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.rows) ? data.rows : [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 /** @returns {Promise<{ title: string, url: string, snippet: string } | null>} */

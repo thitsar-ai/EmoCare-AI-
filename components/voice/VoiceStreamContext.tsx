@@ -100,7 +100,7 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
   const [connectionState, setConnectionState] = React.useState<VoiceConnectionState>('idle');
   const [pipelineMode, setPipelineMode] = React.useState<VoicePipelineMode>('local');
   const [isListening, setIsListening] = React.useState(false);
-  const [statusLabel, setStatusLabel] = React.useState('Acoustic sanctuary');
+  const [statusLabel, setStatusLabel] = React.useState('Voice Talk');
   const [requiresTextInput, setRequiresTextInput] = React.useState(false);
   const [isMicMuted, setIsMicMuted] = React.useState(false);
   const [isEmoSpeaking, setIsEmoSpeaking] = React.useState(false);
@@ -256,7 +256,7 @@ export function VoiceStreamProvider({ children }: { children: React.ReactNode })
     setIsEmoSpeaking(false);
     setIsListening(false);
     setIsMicMuted(false);
-    setStatusLabel('Acoustic sanctuary');
+    setStatusLabel('Voice Talk');
     setPipelineMode('local');
 
     stopLocalConversation();

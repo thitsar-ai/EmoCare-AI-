@@ -34,6 +34,7 @@ export function BreathMorphOrb({
   onPress,
   disabled,
   instruction,
+  backgroundColor = '#e8e2f5',
 }: {
   scale: SharedValue<number>;
   progress: SharedValue<number>;
@@ -41,6 +42,7 @@ export function BreathMorphOrb({
   onPress?: () => void;
   disabled?: boolean;
   instruction?: React.ReactNode;
+  backgroundColor?: string;
 }) {
   const clock = useClock();
   const shader = useMemo(() => getBreathOrbShader(), []);
@@ -83,10 +85,11 @@ export function BreathMorphOrb({
           />
         </Svg>
 
-        <View style={styles.orbWrap}>
+        <View style={[styles.orbWrap, { backgroundColor }]}>
           <Canvas style={{ width: ORB_SIZE, height: ORB_SIZE }}>
+            <Fill color={backgroundColor} />
             {shader ? (
-              <Fill>
+              <Fill blendMode="srcOver">
                 <Shader source={shader} uniforms={uniforms} />
               </Fill>
             ) : (
@@ -126,6 +129,8 @@ const styles = StyleSheet.create({
     height: ORB_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: ORB_SIZE / 2,
+    overflow: 'hidden',
   },
   instructionOverlay: {
     ...StyleSheet.absoluteFillObject,

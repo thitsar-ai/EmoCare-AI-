@@ -1,0 +1,43 @@
+# EmoCare sanctuary API — Fly.io
+#
+# First-time setup (requires flyctl: https://fly.io/docs/flyctl/install/):
+#   fly auth login
+#   fly launch --no-deploy --copy-config --name emocare-api
+#   fly secrets set ANTHROPIC_API_KEY=... TAVILY_API_KEY=... ELEVENLABS_API_KEY=... \
+#     ELEVENLABS_VOICE_ID=... EMOCARE_API_SECRET=...
+#   fly deploy
+#   fly certs add api.yourdomain.com   # optional custom domain
+#
+# Client .env:
+#   EXPO_PUBLIC_EMOCARE_API_URL=https://emocare-api.fly.dev
+#   EXPO_PUBLIC_EMOCARE_API_SECRET=<same as EMOCARE_API_SECRET>
+
+app = "emocare-api"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+  context = "server"
+
+[env]
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

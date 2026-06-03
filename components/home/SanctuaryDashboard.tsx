@@ -1,51 +1,110 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Animated,
-  Easing,
-  Image,
+  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  BarChart3,
   Bell,
   BookOpen,
   ChevronRight,
   Heart,
-  Lock,
-  Menu,
   RefreshCw,
-  Search,
   Sparkles,
+  Sun,
   Wind,
 } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { EmoOrb } from '../shared/EmoOrb';
+import { MoodIconBadge } from '../shared/MoodIcon';
+import { CrisisFooter } from '../shared/CrisisFooter';
+import { OB_MOODS } from '../../constants/obMoods';
+import { ScreenSafeArea } from '../shared/ScreenSafeArea';
+import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import type { MainScreenKey } from '../navigation/AppNavigation';
+import { NavChromeBtn, ScreenNavChrome } from '../navigation/AppNavigation';
 import { useCircadianTheme, type CircadianTheme } from '../../theme/circadianTheme';
+import {
+  getSanctuaryTalkGradient,
+  isSanctuaryDayArt,
+} from '../../theme/sanctuaryHeroArt';
+import { getSanctuaryIconAccent, getSanctuaryIconLink, getSanctuaryLabelAccent } from '../../theme/sanctuaryBrand';
+import { hapticLight } from '../../utils/haptics';
+import {
+  pressCardStyle,
+  pressChipStyle,
+  pressHeroCardStyle,
+  pressLinkStyle,
+} from '../../utils/pressFeedback';
 import {
   buildWeekMoodStrip,
   countWeekCheckIns,
-  getTodayCheckIn,
-  greetingForHour,
+  greetingForCircadianTimezone,
+  resolveTimezoneId,
   SANCTUARY_REMINDERS,
 } from '../../utils/sanctuaryHome';
+import { NotificationSheet } from './NotificationSheet';
+import { loadSettings } from '../../utils/settingsStorage';
+import { SanctuaryScenicBackdrop } from './SanctuaryScenicBackdrop';
 
-const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
 const SERIF = 'Georgia';
-const PEACH_A = '#F6B27E';
-const PEACH_B = '#E97D6A';
 const NAV_CONTENT_HEIGHT = 72;
 
 type CheckInRow = {
   date: string;
   mood?: { emoji?: string; label?: string };
 };
+
+function resolveWeekMood(day: { moodLabel: string | null; moodEmoji: string | null }) {
+  if (day.moodLabel) {
+    const byLabel = OB_MOODS.find((m) => m.label === day.moodLabel);
+    if (byLabel) return byLabel;
+  }
+  if (day.moodEmoji) {
+    return OB_MOODS.find((m) => m.emoji === day.moodEmoji) ?? null;
+  }
+  return null;
+}
+
+function WeekMoodDot({
+  day,
+  theme,
+}: {
+  day: {
+    isToday: boolean;
+    checked: boolean;
+    moodLabel: string | null;
+    moodEmoji: string | null;
+  };
+  theme: CircadianTheme;
+}) {
+  const mood = day.checked ? resolveWeekMood(day) : null;
+  const active = day.isToday;
+
+  if (day.checked && mood) {
+    return <MoodIconBadge mood={mood} variant="week" active={active} />;
+  }
+
+  return (
+    <View
+      style={[
+        styles.moodDot,
+        {
+          borderColor: active ? theme.accent : `${theme.accent}40`,
+          backgroundColor: active ? `${theme.accent}10` : theme.card,
+          borderWidth: active ? 1.5 : 1,
+        },
+      ]}
+    >
+      <Text style={[styles.moodPlus, { color: active ? theme.accent : getSanctuaryIconLink(theme) }]}>+</Text>
+    </View>
+  );
+}
 
 function SanctuaryGlassCard({
   theme,
@@ -69,97 +128,277 @@ function SanctuaryGlassCard({
   );
 }
 
-function SanctuaryOrb({ theme, size = 132 }: { theme: CircadianTheme; size?: number }) {
-  const pulse = useRef(new Animated.Value(0)).current;
-  const [failed, setFailed] = useState(false);
-  const ringSize = size + 10;
+const HERO_H_PAD = 18;
+const SCREEN_W = Dimensions.get('window').width;
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
-  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.75] });
+function SanctuaryHero({
+  theme,
+  greeting,
+  displayName,
+}: {
+  theme: CircadianTheme;
+  greeting: string;
+  displayName: string;
+}) {
+  const dayArt = isSanctuaryDayArt(theme.phase);
+  const scrimStrong = dayArt ? 'rgba(237,229,245,0.82)' : 'rgba(10,5,32,0.88)';
+  const scrimMid = dayArt ? 'rgba(237,229,245,0.38)' : 'rgba(10,5,32,0.42)';
+  const scrimClear = dayArt ? 'rgba(237,229,245,0)' : 'rgba(10,5,32,0)';
 
   return (
-    <View style={{ width: ringSize, height: ringSize, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View
+    <View style={styles.heroSection}>
+      <LinearGradient
+        colors={
+          dayArt
+            ? ['rgba(237,229,245,0.55)', 'rgba(237,229,245,0.18)', 'transparent']
+            : ['rgba(10,5,32,0.72)', 'rgba(10,5,32,0.24)', 'transparent']
+        }
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
         pointerEvents="none"
-        style={{
-          position: 'absolute',
-          width: size * 1.35,
-          height: size * 1.35,
-          borderRadius: size * 0.675,
-          backgroundColor: theme.glow,
-          opacity: glowOpacity,
-          transform: [{ scale: glowScale }],
-        }}
       />
       <LinearGradient
-        colors={[...theme.ringGradient]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{ width: ringSize, height: ringSize, borderRadius: ringSize / 2, position: 'absolute' }}
+        colors={[scrimStrong, scrimMid, scrimClear]}
+        start={{ x: 0, y: 0.35 }}
+        end={{ x: 0.75, y: 0.65 }}
+        style={styles.heroVignette}
+        pointerEvents="none"
       />
-      <View
-        style={{
-          width: ringSize - 4,
-          height: ringSize - 4,
-          borderRadius: (ringSize - 4) / 2,
-          backgroundColor: theme.card,
-          borderWidth: 1,
-          borderColor: theme.border,
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-        }}
-      >
-        {failed ? (
-          <Text style={{ fontSize: size * 0.42 }}>🌿</Text>
-        ) : (
-          <Image
-            source={theme.emoFace}
-            onError={() => setFailed(true)}
-            resizeMode="contain"
-            style={{ width: size, height: size }}
-          />
-        )}
+      <LinearGradient
+        colors={['transparent', dayArt ? 'rgba(237,229,245,0.2)' : 'rgba(10,5,32,0.22)']}
+        start={{ x: 0.5, y: 0.65 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.heroBottomFade}
+        pointerEvents="none"
+      />
+
+      <View style={styles.heroInner}>
+        <View style={styles.heroBrandHeader}>
+          <Text style={[styles.sanctuaryEyebrow, { color: theme.accent }]}>SANCTUARY</Text>
+          <Text style={[styles.sanctuaryTaglineOnHero, { color: theme.mutedText }]}>
+            Intelligence with Soul.
+          </Text>
+        </View>
+
+        <View style={styles.heroMainRow}>
+          <View style={styles.heroGreetingCol}>
+            <Text style={[styles.greetingTitle, { color: theme.text }]}>
+              {greeting},{'\n'}
+              {displayName} 💜
+            </Text>
+            <Text style={[styles.greetingSub, { color: theme.secondaryText }]}>
+              This is your sanctuary. ♡
+            </Text>
+          </View>
+          <View style={styles.heroOrbCol} pointerEvents="none">
+            <EmoOrb theme={theme} scale={0.91} faceScale={1.22} />
+          </View>
+        </View>
       </View>
+
+      <LinearGradient
+        colors={
+          dayArt
+            ? ['rgba(237,229,245,0.35)', 'rgba(237,229,245,0)']
+            : ['rgba(26,16,53,0.3)', 'rgba(26,16,53,0)']
+        }
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.heroFeather}
+        pointerEvents="none"
+      />
     </View>
   );
 }
 
-function SectionLabel({ children, color }: { children: string; color: string }) {
-  return <Text style={[styles.sectionLabel, { color }]}>{children}</Text>;
+function SanctuaryTalkCard({
+  theme,
+  onPress,
+}: {
+  theme: CircadianTheme;
+  onPress: () => void;
+}) {
+  const dayArt = isSanctuaryDayArt(theme.phase);
+  const talkGradient = getSanctuaryTalkGradient(theme.phase);
+  const scrimLeft = dayArt
+    ? (['rgba(110,88,196,0.95)', 'rgba(110,88,196,0.68)', 'rgba(110,88,196,0)'] as const)
+    : (['rgba(46,32,88,0.95)', 'rgba(46,32,88,0.68)', 'rgba(46,32,88,0)'] as const);
+
+  return (
+    <Pressable
+      onPress={() => {
+        void hapticLight();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.talkHeroWrap, pressHeroCardStyle(pressed)]}
+    >
+      <LinearGradient
+        colors={talkGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.talkHero}
+      >
+        <View style={styles.talkOrbWrap} pointerEvents="none">
+          <View style={[styles.talkOrbPlate, { backgroundColor: `${theme.accent}18` }]}>
+            <EmoOrb theme={theme} scale={0.52} pulse={false} />
+          </View>
+        </View>
+        <LinearGradient
+          colors={scrimLeft}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 0.6, y: 0.5 }}
+          style={styles.heroVignette}
+          pointerEvents="none"
+        />
+        <LinearGradient
+          colors={
+            dayArt
+              ? ['transparent', 'rgba(139,110,212,0.28)']
+              : ['transparent', 'rgba(69,53,117,0.28)']
+          }
+          start={{ x: 0.5, y: 0.68 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.talkHeroBottomFade}
+          pointerEvents="none"
+        />
+        <View style={styles.talkHeroCopy}>
+          <Text style={styles.talkHeroTitle}>Talk to Emo 💜</Text>
+          <Text style={styles.talkHeroBody}>
+            Your private companion who listens, understands, and supports you — always. Whatever is on
+            your heart, we can begin there.
+          </Text>
+          <View style={styles.talkHeroBtn}>
+            <Text style={styles.talkHeroBtnText}>Start Conversation</Text>
+            <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} />
+          </View>
+        </View>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+function QuickActionCard({
+  theme,
+  icon: Icon,
+  iconColor,
+  title,
+  subtitle,
+  onPress,
+}: {
+  theme: CircadianTheme;
+  icon: typeof Heart;
+  iconColor: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => {
+        void hapticLight();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.quickCard,
+        { backgroundColor: theme.card, borderColor: theme.border },
+        pressCardStyle(theme, pressed, iconColor),
+      ]}
+    >
+      <View style={[styles.quickIconWrap, { backgroundColor: `${iconColor}18` }]}>
+        <Icon size={18} color={iconColor} strokeWidth={2.2} />
+      </View>
+      <Text style={[styles.quickTitle, { color: theme.text }]}>{title}</Text>
+      <Text style={[styles.quickSub, { color: theme.mutedText }]} numberOfLines={2}>
+        {subtitle}
+      </Text>
+    </Pressable>
+  );
+}
+
+function SanctuaryListRow({
+  theme,
+  icon: Icon,
+  iconColor,
+  title,
+  body,
+  linkLabel,
+  badge,
+  onPress,
+  linkColor,
+}: {
+  theme: CircadianTheme;
+  icon: typeof Sparkles;
+  iconColor: string;
+  title: string;
+  body: string;
+  linkLabel: string;
+  badge?: string;
+  onPress: () => void;
+  linkColor: string;
+}) {
+  return (
+    <Pressable
+      onPress={() => {
+        void hapticLight();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.listRow,
+        { backgroundColor: theme.card, borderColor: theme.border },
+        pressCardStyle(theme, pressed, iconColor),
+      ]}
+    >
+      <View style={[styles.listIconWrap, { backgroundColor: `${iconColor}16` }]}>
+        <Icon size={18} color={iconColor} strokeWidth={2.2} />
+      </View>
+      <View style={styles.listBody}>
+        <View style={styles.listTitleRow}>
+          <Text style={[styles.listTitle, { color: theme.text }]}>{title}</Text>
+          {badge ? (
+            <View style={[styles.listBadge, { backgroundColor: `${linkColor}22` }]}>
+              <Text style={[styles.listBadgeText, { color: linkColor }]}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={[styles.listCopy, { color: theme.mutedText }]}>{body}</Text>
+      </View>
+      <View style={styles.listLinkCol}>
+        <Text style={[styles.listLink, { color: linkColor }]}>{linkLabel}</Text>
+        <ChevronRight size={14} color={linkColor} strokeWidth={2.4} />
+      </View>
+    </Pressable>
+  );
 }
 
 export function SanctuaryDashboard({
   userName,
   onNav,
-  onOpenMenu,
 }: {
   userName: string;
   onNav: (key: MainScreenKey) => void;
-  onOpenMenu: () => void;
 }) {
   const theme = useCircadianTheme();
-  const insets = useSafeAreaInsets();
+  const { bottom: bottomInset } = useLayoutInsets();
   const displayName = userName.trim() || 'friend';
-  const [oracleQuery, setOracleQuery] = useState('');
   const [checkIns, setCheckIns] = useState<CheckInRow[]>([]);
   const [reminderIdx, setReminderIdx] = useState(0);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsOn, setNotificationsOn] = useState(true);
+  const [timezoneId, setTimezoneId] = useState('America/New_York');
+  const [localHour, setLocalHour] = useState(new Date().getHours());
 
-  const greeting = useMemo(() => greetingForHour(new Date().getHours()), []);
+  const greeting = useMemo(
+    () => greetingForCircadianTimezone(timezoneId),
+    [timezoneId, localHour],
+  );
+
   const weekStrip = useMemo(() => buildWeekMoodStrip(checkIns), [checkIns]);
-  const todayEntry = useMemo(() => getTodayCheckIn(checkIns), [checkIns]);
   const weekCount = useMemo(() => countWeekCheckIns(checkIns), [checkIns]);
+  const showEveningReflection = localHour >= 17;
+  const iconAccent = getSanctuaryIconAccent(theme);
+  const iconLink = getSanctuaryIconLink(theme);
+  const labelAccent = getSanctuaryLabelAccent(theme);
 
   useEffect(() => {
     AsyncStorage.getItem('checkIns')
@@ -167,476 +406,463 @@ export function SanctuaryDashboard({
         if (raw) setCheckIns(JSON.parse(raw));
       })
       .catch(() => {});
+    void loadSettings().then((s) => {
+      setNotificationsOn(s.notificationsEnabled !== false);
+      const tz = resolveTimezoneId(s.timezone);
+      setTimezoneId(tz);
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          hour12: false,
+        }).formatToParts(new Date());
+        const hourPart = parts.find((p) => p.type === 'hour');
+        if (hourPart) setLocalHour(Number.parseInt(hourPart.value, 10) % 24);
+      } catch {
+        setLocalHour(new Date().getHours());
+      }
+    });
   }, []);
 
-  const submitOracleQuery = async () => {
-    const trimmed = oracleQuery.trim();
-    if (trimmed) {
+  useEffect(() => {
+    const tick = () => {
       try {
-        await AsyncStorage.setItem(PENDING_TALK_QUERY_KEY, trimmed);
-      } catch {}
-    }
-    onNav('talk');
-  };
-
-  const emoNotice = todayEntry
-    ? `Emo noticed you checked in today, ${displayName}. I'm here whenever you're ready.`
-    : `${displayName}, this is your sanctuary — take your time. I'm here when you're ready.`;
-
-  const moodInsight = todayEntry?.mood?.label
-    ? `You checked in as ${todayEntry.mood.label} today. What you write stays private here — but it helps this space feel truly yours.`
-    : 'When you check in, this space learns your rhythm — gently, privately, on your device only.';
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezoneId,
+          hour: 'numeric',
+          hour12: false,
+        }).formatToParts(new Date());
+        const hourPart = parts.find((p) => p.type === 'hour');
+        if (hourPart) setLocalHour(Number.parseInt(hourPart.value, 10) % 24);
+      } catch {
+        setLocalHour(new Date().getHours());
+      }
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [timezoneId]);
 
   return (
-    <ScrollView
-      style={styles.flex}
-      contentContainerStyle={{
-        paddingTop: insets.top + 8,
-        paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 28,
-        paddingHorizontal: 18,
-      }}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.topRow}>
-        <Pressable onPress={onOpenMenu} style={[styles.iconBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Menu size={18} color={theme.secondaryText} strokeWidth={2.2} />
-        </Pressable>
-        <Pressable style={[styles.iconBtn, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Bell size={18} color={theme.secondaryText} strokeWidth={2.2} />
-        </Pressable>
-      </View>
-
-      <Text style={[styles.sanctuaryEyebrow, { color: theme.accent }]}>SANCTUARY</Text>
-      <Text style={[styles.sanctuaryTagline, { color: theme.mutedText }]}>Intelligence with Soul.</Text>
-
-      <Text style={[styles.greetingTitle, { color: theme.text }]}>
-        {greeting},{'\n'}
-        {displayName} 💜
-      </Text>
-      <Text style={[styles.greetingSub, { color: theme.secondaryText }]}>This is your sanctuary. ♡</Text>
-
-      <View style={styles.orbWrap}>
-        <SanctuaryOrb theme={theme} size={132} />
-      </View>
-
-      <View style={[styles.emoBubble, { backgroundColor: `${theme.accent}18`, borderColor: `${theme.accent}30` }]}>
-        <Sparkles size={16} color={theme.accent} strokeWidth={2.2} style={{ marginTop: 2 }} />
-        <Text style={[styles.emoBubbleText, { color: theme.secondaryText }]}>{emoNotice}</Text>
-      </View>
-
-      <SanctuaryGlassCard theme={theme} style={styles.block}>
-        <Text style={[styles.cardTitleSerif, { color: theme.text }]}>How are you feeling today?</Text>
-        <Text style={[styles.cardSubItalic, { color: theme.mutedText }]}>
-          Has your heart been feeling steadier lately?
-        </Text>
-        <View style={styles.moodRow}>
-          {weekStrip.map((day, i) => {
-            const active = day.isToday;
-            return (
-              <TouchableOpacity
-                key={`${day.label}-${i}`}
-                activeOpacity={0.85}
-                onPress={() => onNav('checkin')}
-                style={styles.moodCol}
-              >
-                {active ? (
-                  <LinearGradient
-                    colors={[PEACH_A, PEACH_B]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.moodDotActive}
-                  >
-                    <Text style={styles.moodEmoji}>{day.moodEmoji ?? '🙂'}</Text>
-                  </LinearGradient>
-                ) : (
-                  <View style={[styles.moodDot, { borderColor: `${theme.accent}40`, backgroundColor: theme.card }]}>
-                    <Text style={styles.moodEmoji}>{day.checked ? day.moodEmoji ?? '✓' : '+'}</Text>
-                  </View>
-                )}
-                <Text style={[styles.moodDayLabel, { color: active ? PEACH_B : theme.mutedText }]}>{day.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </SanctuaryGlassCard>
-
-      <View style={styles.actionGrid}>
-        <TouchableOpacity activeOpacity={0.88} onPress={() => onNav('checkin')} style={styles.actionFlex}>
-          <LinearGradient colors={[PEACH_A, PEACH_B]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.actionPrimary}>
-            <Heart size={20} color="#fff" fill="#fff" strokeWidth={2} />
-            <Text style={styles.actionPrimaryText}>Check In</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => onNav('journal')}
-          style={[styles.actionSecondary, { backgroundColor: theme.card, borderColor: theme.border }]}
+    <View style={styles.flex}>
+      <SanctuaryScenicBackdrop theme={theme} />
+      <ScreenSafeArea extraTop={0}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={{
+            paddingBottom: NAV_CONTENT_HEIGHT + bottomInset + 64,
+            paddingHorizontal: 18,
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <BookOpen size={20} color={theme.accent} strokeWidth={2.2} />
-          <Text style={[styles.actionSecondaryText, { color: theme.text }]}>Journal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => onNav('breathe')}
-          style={[styles.actionSecondary, { backgroundColor: theme.card, borderColor: theme.border }]}
-        >
-          <Wind size={20} color={theme.accent} strokeWidth={2.2} />
-          <Text style={[styles.actionSecondaryText, { color: theme.text }]}>Breathe</Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={() => onNav('talk')}
-        style={[styles.talkRow, { backgroundColor: theme.card, borderColor: theme.border }]}
-      >
-        <View style={[styles.talkOrbMini, { borderColor: `${theme.accent}55` }]}>
-          <SanctuaryOrb theme={theme} size={28} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={[styles.talkTitle, { color: theme.text }]}>Talk to Emo</Text>
-          <Text style={[styles.talkSub, { color: theme.mutedText }]}>Search, analyze, plan — or just be heard.</Text>
-        </View>
-        <ChevronRight size={20} color={theme.mutedText} strokeWidth={2.2} />
-      </TouchableOpacity>
-
-      <View style={[styles.searchRow, { backgroundColor: theme.card, borderColor: `${theme.accent}35` }]}>
-        <Search size={16} color={theme.accent} strokeWidth={2.2} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Ask Emo anything… search knowledge or reflect"
-          placeholderTextColor={theme.mutedText}
-          value={oracleQuery}
-          onChangeText={setOracleQuery}
-          onSubmitEditing={() => void submitOracleQuery()}
-          returnKeyType="search"
-        />
-      </View>
-
-      <SanctuaryGlassCard theme={theme} style={styles.block}>
-        <View style={styles.briefHeader}>
-          <Text style={[styles.briefTitle, { color: theme.text }]}>Daily executive briefing</Text>
-          <View style={[styles.lifeOsBadge, { backgroundColor: `${theme.accent}22` }]}>
-            <Text style={[styles.lifeOsBadgeText, { color: theme.accent }]}>LIFE OS</Text>
+          <View style={styles.chromeWrap}>
+            <ScreenNavChrome
+              theme={theme}
+              title=""
+              compact
+              actionsBeforeNav={
+                <NavChromeBtn
+                  theme={theme}
+                  onPress={() => setNotificationsOpen(true)}
+                  accessibilityLabel="Notification settings"
+                >
+                  <Bell size={17} color={theme.secondaryText} strokeWidth={2.2} />
+                  {notificationsOn ? (
+                    <View
+                      style={[styles.notifDot, { backgroundColor: theme.accent, borderColor: theme.card }]}
+                    />
+                  ) : null}
+                </NavChromeBtn>
+              }
+            />
           </View>
-        </View>
-        {[
-          'Market trend analysis for Project X complete',
-          'Calendar optimized for deep-focus work blocks',
-          'Personal resilience milestone reached last week',
-        ].map((line, i) => (
-          <View key={line} style={[styles.briefLine, i < 2 && styles.briefLineGap]}>
-            <Text style={[styles.briefNum, { color: theme.accent }]}>{String(i + 1).padStart(2, '0')}</Text>
-            <Text style={[styles.briefCopy, { color: theme.secondaryText }]}>{line}</Text>
-          </View>
-        ))}
-      </SanctuaryGlassCard>
 
-      <SanctuaryGlassCard theme={theme} style={styles.block}>
-        <SectionLabel color={theme.accent}>Evening wind-down</SectionLabel>
-        <Text style={[styles.windDownTitle, { color: theme.text }]}>
-          Let the day settle. What still needs a little gentleness?
-        </Text>
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => onNav('journal')}
-          style={[styles.windDownBtn, { backgroundColor: `${theme.accent}22` }]}
-        >
-          <Text style={[styles.windDownBtnText, { color: theme.accent }]}>Reflect in journal →</Text>
-        </TouchableOpacity>
-      </SanctuaryGlassCard>
+          <SanctuaryHero theme={theme} greeting={greeting} displayName={displayName} />
 
-      <SanctuaryGlassCard theme={theme} style={styles.block}>
-        <SectionLabel color={theme.accent}>Emotional insight</SectionLabel>
-        <Text style={[styles.insightTitle, { color: theme.text }]}>Emo is holding your words</Text>
-        <Text style={[styles.insightBody, { color: theme.secondaryText }]}>{moodInsight}</Text>
-        <View style={[styles.streakDivider, { borderTopColor: `${theme.accent}25` }]}>
-          <View style={styles.streakHeader}>
-            <View>
-              <Text style={[styles.streakEyebrow, { color: theme.mutedText }]}>THIS WEEK</Text>
-              <Text style={[styles.streakSub, { color: theme.secondaryText }]}>
-                {weekCount} of 7 days checked in
+          <SanctuaryGlassCard theme={theme} style={styles.moodCard}>
+            <View style={styles.moodHeader}>
+              <Text style={[styles.cardTitleSerif, { color: theme.text }]}>
+                How are you feeling today?
               </Text>
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  onNav('checkin');
+                }}
+                hitSlop={8}
+                style={({ pressed }) => pressLinkStyle(theme, pressed)}
+              >
+                <Text style={[styles.editLink, { color: theme.accent }]}>Edit</Text>
+              </Pressable>
             </View>
-            <TouchableOpacity onPress={() => onNav('checkin')}>
-              <Text style={[styles.streakLink, { color: theme.accent }]}>See all →</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.streakRow}>
-            {weekStrip.map((day, i) => (
-              <View key={`streak-${i}`} style={styles.streakCol}>
-                {day.checked ? (
-                  <LinearGradient
-                    colors={[theme.accent, theme.ringGradient[1]]}
-                    style={styles.streakDotDone}
+            <View style={styles.moodRow}>
+              {weekStrip.map((day, i) => {
+                const active = day.isToday;
+                return (
+                  <Pressable
+                    key={`${day.label}-${i}`}
+                    onPress={() => {
+                      void hapticLight();
+                      onNav('checkin');
+                    }}
+                    style={({ pressed }) => [styles.moodCol, pressChipStyle(theme.accent, pressed)]}
                   >
-                    <Text style={styles.streakCheck}>✓</Text>
-                  </LinearGradient>
-                ) : (
-                  <View style={[styles.streakDotEmpty, { borderColor: `${theme.accent}40` }]} />
-                )}
-                <Text style={[styles.streakDay, { color: theme.mutedText }]}>{day.label}</Text>
-              </View>
-            ))}
+                    <WeekMoodDot day={day} theme={theme} />
+                    <Text style={[styles.moodDayLabel, { color: active ? theme.accent : iconLink }]}>
+                      {day.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </SanctuaryGlassCard>
+
+          <SanctuaryTalkCard theme={theme} onPress={() => onNav('talk')} />
+
+          <Text style={[styles.sectionEyebrow, { color: labelAccent }]}>QUICK ACTIONS</Text>
+          <View style={styles.quickRow}>
+            <QuickActionCard
+              theme={theme}
+              icon={Heart}
+              iconColor="#E97D6A"
+              title="Check In"
+              subtitle="How are you feeling now?"
+              onPress={() => onNav('checkin')}
+            />
+            <QuickActionCard
+              theme={theme}
+              icon={BookOpen}
+              iconColor={iconAccent}
+              title="Journal"
+              subtitle="Write your thoughts and reflect"
+              onPress={() => onNav('journal')}
+            />
+            <QuickActionCard
+              theme={theme}
+              icon={Wind}
+              iconColor="#6B7FD7"
+              title="Breathe"
+              subtitle="Reset your mind and body"
+              onPress={() => onNav('breathe')}
+            />
           </View>
-        </View>
-      </SanctuaryGlassCard>
 
-      <SanctuaryGlassCard theme={theme} style={[styles.block, styles.lockedCard]}>
-        <View style={styles.lockedHeader}>
-          <Lock size={14} color={theme.mutedText} strokeWidth={2.2} />
-          <Text style={[styles.lockedEyebrow, { color: theme.secondaryText }]}>PHASE 3 · LIFE OS</Text>
-        </View>
-        <Text style={[styles.lockedTitle, { color: theme.text }]}>Today Dashboard coming soon</Text>
-        <Text style={[styles.lockedSub, { color: theme.mutedText }]}>
-          Deep Focus, Low-Energy Admin, and Restorative triage — arriving in a future release.
-        </Text>
-      </SanctuaryGlassCard>
+          <View style={styles.listSection}>
+            <SanctuaryListRow
+              theme={theme}
+              icon={BarChart3}
+              iconColor={iconAccent}
+              title="Emotional Insights"
+              body="Discover patterns and rhythms in your emotional journey."
+              linkLabel="View Insights"
+              linkColor={iconLink}
+              badge={weekCount > 0 ? 'New' : undefined}
+              onPress={() => onNav('insights')}
+            />
+            {showEveningReflection ? (
+              <SanctuaryListRow
+                theme={theme}
+                icon={Sun}
+                iconColor="#E89B5C"
+                title="Evening Reflection"
+                body="As the day comes to a close… What still needs a little kindness today?"
+                linkLabel="Reflect in Journal"
+                linkColor={iconLink}
+                onPress={() => onNav('journal')}
+              />
+            ) : null}
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setReminderIdx((i) => (i + 1) % SANCTUARY_REMINDERS.length);
+              }}
+              style={({ pressed }) => [
+                styles.listRow,
+                { backgroundColor: theme.card, borderColor: theme.border },
+                pressCardStyle(theme, pressed, iconAccent),
+              ]}
+            >
+              <View style={[styles.listIconWrap, { backgroundColor: `${iconAccent}16` }]}>
+                <Sparkles size={18} color={iconAccent} strokeWidth={2.2} />
+              </View>
+              <View style={styles.listBody}>
+                <Text style={[styles.listTitle, { color: theme.text }]}>Daily Reflection</Text>
+                <Text style={[styles.listCopy, { color: theme.mutedText }]}>
+                  A gentle reminder for today — {SANCTUARY_REMINDERS[reminderIdx]}
+                </Text>
+              </View>
+              <View style={styles.listLinkCol}>
+                <RefreshCw size={14} color={iconLink} strokeWidth={2.2} />
+                <Text style={[styles.listLink, { color: iconLink }]}>Another Reminder</Text>
+              </View>
+            </Pressable>
+          </View>
 
-      <LinearGradient
-        colors={
-          theme.isDark
-            ? (['#1d1136', '#120a26'] as [string, string])
-            : ([`${theme.accent}22`, `${theme.accent}10`] as [string, string])
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.reflectionCard, { borderColor: `${theme.accent}30` }]}
-      >
-        <View style={styles.reflectionHeader}>
-          <Sparkles size={13} color={theme.accent} strokeWidth={2.2} />
-          <Text style={[styles.reflectionEyebrow, { color: theme.secondaryText }]}>DAILY REFLECTION</Text>
-        </View>
-        <Text style={[styles.reflectionQuote, { color: theme.text }]}>“{SANCTUARY_REMINDERS[reminderIdx]}”</Text>
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={() => setReminderIdx((i) => (i + 1) % SANCTUARY_REMINDERS.length)}
-          style={styles.reflectionBtn}
-        >
-          <RefreshCw size={13} color={theme.accent} strokeWidth={2.2} />
-          <Text style={[styles.reflectionBtnText, { color: theme.accent }]}>Another reminder</Text>
-        </TouchableOpacity>
-      </LinearGradient>
+          {weekCount > 0 ? (
+            <Text style={[styles.weekQuiet, { color: theme.mutedText }]}>
+              {weekCount} of 7 days checked in this week
+            </Text>
+          ) : null}
 
-      <Text style={[styles.crisisFooter, { color: theme.mutedText }]}>
-        If you are in crisis or may hurt yourself, please contact local emergency services or a crisis
-        helpline immediately. In the US: call or text 988. Sanctuary is a companion — not emergency care.
-      </Text>
-    </ScrollView>
+          <Pressable
+            onPress={() => {
+              void hapticLight();
+              onNav('today');
+            }}
+            hitSlop={10}
+            style={({ pressed }) => [styles.todayLinkWrap, pressLinkStyle(theme, pressed)]}
+          >
+            <Text style={[styles.todayLinkHint, { color: theme.mutedText }]}>
+              Tasks & planning live on{' '}
+              <Text style={[styles.todayLinkAccent, { color: iconLink }]}>Today →</Text>
+            </Text>
+          </Pressable>
+
+          <CrisisFooter theme={theme} style={styles.crisisFooterWrap} />
+          <View style={{ height: bottomInset > 0 ? 8 : 16 }} />
+        </ScrollView>
+      </ScreenSafeArea>
+
+      <NotificationSheet
+        visible={notificationsOpen}
+        theme={theme}
+        onClose={() => setNotificationsOpen(false)}
+        onSaved={(enabled) => setNotificationsOn(enabled)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 0.5,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chromeWrap: { paddingHorizontal: 8, marginBottom: 6 },
+  notifDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    borderWidth: 1.5,
   },
   sanctuaryEyebrow: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 3,
+    letterSpacing: 2.4,
     marginBottom: 4,
+    textAlign: 'center',
   },
-  sanctuaryTagline: {
+  sanctuaryTaglineOnHero: {
     fontFamily: SERIF,
     fontStyle: 'italic',
     fontSize: 13,
-    marginBottom: 8,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  heroSection: {
+    marginHorizontal: -HERO_H_PAD,
+    marginBottom: 12,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  heroInner: {
+    paddingHorizontal: HERO_H_PAD + 6,
+    paddingTop: 0,
+    paddingBottom: 10,
+    zIndex: 2,
+  },
+  heroBrandHeader: {
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  heroMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: -4,
+  },
+  heroGreetingCol: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  heroOrbCol: {
+    flexShrink: 0,
+    marginTop: -8,
+    marginRight: -6,
+  },
+  heroBottomFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 56,
+  },
+  heroFeather: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 24,
+    zIndex: 1,
   },
   greetingTitle: {
     fontFamily: SERIF,
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: '500',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '400',
   },
   greetingSub: {
     fontFamily: SERIF,
     fontStyle: 'italic',
-    fontSize: 15,
-    marginTop: 6,
-    marginBottom: 4,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '400',
+    marginTop: 16,
   },
-  orbWrap: { alignItems: 'center', marginVertical: 14 },
-  emoBubble: {
-    flexDirection: 'row',
-    gap: 10,
-    borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
+  heroVignette: {
+    ...StyleSheet.absoluteFillObject,
   },
-  emoBubbleText: { flex: 1, fontSize: 13.5, lineHeight: 20 },
   glassCard: {
     borderRadius: 22,
     borderWidth: 0.5,
     padding: 16,
+  },
+  moodCard: { marginTop: -6, marginBottom: 12, paddingVertical: 18 },
+  moodHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 14,
   },
-  block: { marginBottom: 14 },
-  cardTitleSerif: { fontFamily: SERIF, fontSize: 19, fontWeight: '500' },
-  cardSubItalic: {
-    fontFamily: SERIF,
-    fontStyle: 'italic',
-    fontSize: 13,
-    marginTop: 2,
-    marginBottom: 14,
-  },
-  moodRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  moodCol: { alignItems: 'center', gap: 6 },
+  cardTitleSerif: { fontFamily: SERIF, fontSize: 17, fontWeight: '500', flex: 1 },
+  editLink: { fontSize: 13, fontWeight: '700' },
+  moodRow: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: -2 },
+  moodCol: { alignItems: 'center', gap: 6, minWidth: 40 },
   moodDot: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  moodDotActive: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  moodEmoji: { fontSize: 18 },
+  moodPlus: { fontSize: 16, fontWeight: '600' },
   moodDayLabel: { fontSize: 11, fontWeight: '600' },
-  actionGrid: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  actionFlex: { flex: 1.1 },
-  actionPrimary: {
-    height: 84,
-    borderRadius: 18,
+  talkHeroWrap: { marginBottom: 12, borderRadius: 22, overflow: 'hidden' },
+  talkHero: {
+    minHeight: 176,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  talkOrbWrap: {
+    position: 'absolute',
+    right: 10,
+    top: 12,
+    zIndex: 1,
+  },
+  talkOrbPlate: {
+    borderRadius: 999,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
   },
-  actionPrimaryText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  actionSecondary: {
-    flex: 1,
-    height: 84,
-    borderRadius: 18,
-    borderWidth: 0.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+  talkHeroBottomFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 64,
   },
-  actionSecondaryText: { fontSize: 14, fontWeight: '700' },
-  talkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 0.5,
-    borderRadius: 20,
-    padding: 14,
+  talkHeroCopy: {
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    maxWidth: '64%',
+    zIndex: 2,
+  },
+  talkHeroTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    fontFamily: SERIF,
+    marginBottom: 8,
+  },
+  talkHeroBody: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 13,
+    lineHeight: 19,
     marginBottom: 14,
   },
-  talkOrbMini: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  talkTitle: { fontSize: 16, fontWeight: '700' },
-  talkSub: { fontSize: 13, marginTop: 1 },
-  searchRow: {
+  talkHeroBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderWidth: 0.5,
-    borderRadius: 14,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    marginBottom: 16,
-  },
-  searchInput: { flex: 1, fontSize: 13, padding: 0 },
-  briefHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  briefTitle: { fontSize: 15, fontWeight: '700' },
-  lifeOsBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 9 },
-  lifeOsBadgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  briefLine: { flexDirection: 'row', gap: 9 },
-  briefLineGap: { marginBottom: 8 },
-  briefNum: { fontSize: 12, fontWeight: '700', minWidth: 16 },
-  briefCopy: { flex: 1, fontSize: 13, lineHeight: 19 },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    marginBottom: 10,
-  },
-  windDownTitle: { fontFamily: SERIF, fontSize: 19, lineHeight: 25, marginBottom: 14 },
-  windDownBtn: { alignSelf: 'flex-start', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  windDownBtnText: { fontSize: 14, fontWeight: '700' },
-  insightTitle: { fontFamily: SERIF, fontSize: 21, fontWeight: '500', marginBottom: 8 },
-  insightBody: { fontSize: 14, lineHeight: 22 },
-  streakDivider: { borderTopWidth: 1, marginTop: 14, paddingTop: 14 },
-  streakHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  streakEyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  streakSub: { fontSize: 13, marginTop: 2 },
-  streakLink: { fontSize: 13, fontWeight: '700' },
-  streakRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  streakCol: { alignItems: 'center', gap: 6 },
-  streakDotDone: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streakDotEmpty: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 1.5,
-  },
-  streakCheck: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  streakDay: { fontSize: 11 },
-  lockedCard: { opacity: 0.92 },
-  lockedHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  lockedEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2 },
-  lockedTitle: { fontFamily: SERIF, fontSize: 18, fontWeight: '700', marginBottom: 6 },
-  lockedSub: { fontSize: 13, lineHeight: 20 },
-  reflectionCard: { borderRadius: 22, padding: 18, marginBottom: 14, borderWidth: 1 },
-  reflectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  reflectionEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.4 },
-  reflectionQuote: {
-    fontFamily: SERIF,
-    fontStyle: 'italic',
-    fontSize: 17,
-    lineHeight: 24,
-  },
-  reflectionBtn: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(157,122,230,0.18)',
-    borderRadius: 10,
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  reflectionBtnText: { fontSize: 13, fontWeight: '600' },
-  crisisFooter: {
-    fontSize: 11.5,
-    lineHeight: 17,
-    textAlign: 'center',
+  talkHeroBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  sectionEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginBottom: 8,
+  },
+  quickRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  quickCard: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    paddingHorizontal: 9,
+    paddingVertical: 11,
+    minHeight: 108,
+  },
+  quickIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  quickTitle: { fontSize: 12, fontWeight: '700', marginBottom: 3 },
+  quickSub: { fontSize: 9, lineHeight: 12 },
+  listSection: { gap: 10, marginBottom: 20 },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderWidth: 0.5,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  listIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listBody: { flex: 1, minWidth: 0 },
+  listTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  listTitle: { fontSize: 14, fontWeight: '700' },
+  listBadge: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
+  listBadgeText: { fontSize: 10, fontWeight: '700' },
+  listCopy: { fontSize: 12, lineHeight: 18 },
+  listLinkCol: { alignItems: 'flex-end', gap: 2, maxWidth: 96, flexShrink: 0 },
+  listLink: { fontSize: 11, fontWeight: '700', textAlign: 'right' },
+  weekQuiet: { fontSize: 12, textAlign: 'center', marginBottom: 8 },
+  todayLinkWrap: { marginBottom: 16 },
+  todayLinkHint: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  todayLinkAccent: { fontWeight: '600' },
+  crisisFooterWrap: {
+    marginTop: 8,
     paddingHorizontal: 6,
-    paddingTop: 4,
   },
 });

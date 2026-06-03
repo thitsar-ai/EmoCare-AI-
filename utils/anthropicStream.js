@@ -1,11 +1,10 @@
 import { fetch } from 'expo/fetch';
 import {
   ANTHROPIC_MODEL,
-  ANTHROPIC_VERSION,
   callAnthropicMessages,
   describeAnthropicError,
-  getAnthropicApiKey,
 } from './anthropic';
+import { emocareFetch, isAnthropicConfigured, isEmocareApiConfigured } from './emocareApi';
 
 async function deliverFallbackReply(text, signal, onStart, onTextDelta, onDone) {
   onStart?.();
@@ -22,8 +21,7 @@ async function deliverFallbackReply(text, signal, onStart, onTextDelta, onDone) 
 }
 
 /**
- * Stream Anthropic Messages API (SSE) — token deltas via ReadableStream.
- * Uses expo/fetch for RN-compatible streaming; falls back to buffered reply if needed.
+ * Stream Anthropic Messages API (SSE) via sanctuary server proxy.
  */
 export async function streamAnthropicMessages({
   system,
@@ -36,27 +34,22 @@ export async function streamAnthropicMessages({
   onDone,
   onError,
 }) {
-  const apiKey = getAnthropicApiKey();
-  if (!apiKey) {
-    const err = { type: 'authentication_error', message: 'Missing EXPO_PUBLIC_ANTHROPIC_KEY' };
+  if (!isEmocareApiConfigured() || !isAnthropicConfigured()) {
+    const err = {
+      type: 'authentication_error',
+      message: 'Missing EXPO_PUBLIC_EMOCARE_API_URL or Anthropic on server',
+    };
     onError?.(describeAnthropicError({ error: err }), err);
     return { ok: false, error: err };
   }
 
   let response;
   try {
-    response = await fetch('https://api.anthropic.com/v1/messages', {
+    response = await emocareFetch('/v1/anthropic/messages/stream', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        stream: true,
         ...(system ? { system } : {}),
         messages,
       }),

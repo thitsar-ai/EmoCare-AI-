@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "EmoCare AI",
+    "name": "EmoCare",
     "slug": "emocare-ai",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,9 +8,8 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1A0F2E"
+      "backgroundColor": "#0D0720"
     },
     "ios": {
       "supportsTablet": true,
@@ -23,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#1A0F2E"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -33,16 +32,23 @@
       "package": "com.anonymous.emocareai"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "backgroundColor": "#070312",
+      "name": "EmoCare — Your Sanctuary",
+      "shortName": "EmoCare",
+      "description": "A private sanctuary for check-ins, journal, and conversations with Emo.",
+      "themeColor": "#0D0720",
+      "display": "standalone",
+      "startUrl": "/",
+      "scope": "/",
+      "orientation": "portrait",
+      "lang": "en"
     },
     "plugins": [
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#1A0F2E",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain"
+          "backgroundColor": "#0D0720"
         }
       ],
       [
@@ -54,7 +60,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow EmoCare to listen during Voice Talk — your acoustic sanctuary stays private on this device."
+          "microphonePermission": "Allow EmoCare to listen during Voice Talk — your conversations stay private on this device."
         }
       ],
       [

@@ -2,12 +2,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   callAnthropicMessages,
   describeAnthropicError,
-  getAnthropicApiKey,
+  isAnthropicConfigured,
 } from './anthropic';
 import { classifyEmoIntent } from './emoIntent';
 import { getVoiceSystemPrompt, getCrisisSafetyAppendix } from './emoEos';
 import { detectCrisisSignals } from './emoCrisis';
 import { generateEmoOpening, getSyncFallbackOpening, stripGenericGreetingPrefix } from './emoOpening';
+import { buildEmoPersonalContextBlock } from './emoPersonalContext';
+
+async function composeVoiceSystem({ userName, userText, crisis, mode }) {
+  const name = userName?.trim() || 'friend';
+  const personalContext = await buildEmoPersonalContextBlock(userName);
+  const base = crisis.inCrisis
+    ? getVoiceSystemPrompt('sanctuary', name)
+    : getVoiceSystemPrompt(mode, name);
+  return [base, personalContext, crisis.inCrisis ? getCrisisSafetyAppendix() : '']
+    .filter(Boolean)
+    .join('\n\n');
+}
 
 function buildFallbackVoiceReply(userText, userName) {
   const name = userName?.trim() || 'friend';
@@ -43,18 +55,15 @@ export async function generateVoiceReply({ userText, userName } = {}) {
 
   const moodLabel = await readTodayMoodLabel();
   const name = userName?.trim() || 'friend';
-  const apiKey = getAnthropicApiKey();
   const { mode } = classifyEmoIntent(text);
   const crisis = detectCrisisSignals(text);
-  const voiceSystem = crisis.inCrisis
-    ? `${getVoiceSystemPrompt('sanctuary', name)}\n\n${getCrisisSafetyAppendix()}`
-    : getVoiceSystemPrompt(mode, name);
+  const voiceSystem = await composeVoiceSystem({ userName, userText: text, crisis, mode });
 
   const context = moodLabel
     ? `User name: ${name}\nToday's check-in mood: ${moodLabel}\nUser said aloud: "${text}"`
     : `User name: ${name}\nUser said aloud: "${text}"`;
 
-  if (!apiKey) {
+  if (!isAnthropicConfigured()) {
     return buildFallbackVoiceReply(text, userName);
   }
 
@@ -87,7 +96,13 @@ export async function generateVoiceReply({ userText, userName } = {}) {
 
 export async function generateVoiceGreeting(userName) {
   const moodLabel = await readTodayMoodLabel();
-  const emotionalContext = moodLabel ? `Today's check-in mood: ${moodLabel}` : '';
+  const { chipLabel, active } = await import('./emoPersonalContext').then((m) =>
+    m.loadEmoPersonalContext(userName),
+  );
+  const memoryHint = active && chipLabel ? `Emo holds gentle context: ${chipLabel}.` : '';
+  const emotionalContext = [moodLabel ? `Today's check-in mood: ${moodLabel}` : '', memoryHint]
+    .filter(Boolean)
+    .join(' ');
   try {
     return await generateEmoOpening({
       userName,

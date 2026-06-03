@@ -1,4 +1,4 @@
-import { callAnthropicMessages, getAnthropicApiKey } from './anthropic';
+import { callAnthropicMessages, isAnthropicConfigured } from './anthropic';
 import { getOpeningSystemPrompt } from './emoEos';
 
 const VOICE_FALLBACKS = [
@@ -32,9 +32,7 @@ export async function generateEmoOpening({
   emotionalContext = '',
 } = {}) {
   const name = userName?.trim() || 'friend';
-  const apiKey = getAnthropicApiKey();
-
-  if (!apiKey) {
+  if (!isAnthropicConfigured()) {
     return getSyncFallbackOpening(name, channel);
   }
 

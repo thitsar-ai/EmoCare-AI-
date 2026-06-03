@@ -11,15 +11,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 
 function loadDotenv() {
-  try {
-    const raw = readFileSync(join(root, '.env'), 'utf8');
-    for (const line of raw.split('\n')) {
-      const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m && !process.env[m[1]]) {
-        process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  for (const rel of ['server/.env', '.env']) {
+    try {
+      const raw = readFileSync(join(root, rel), 'utf8');
+      for (const line of raw.split('\n')) {
+        const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+        if (m && !process.env[m[1]]) {
+          process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 }
 
 loadDotenv();
@@ -133,7 +135,7 @@ function scoreReply(scenario, text) {
 }
 
 async function callAnthropicDirect({ system, user, maxTokens = 400 }) {
-  const key = process.env.EXPO_PUBLIC_ANTHROPIC_KEY;
+  const key = process.env.ANTHROPIC_API_KEY;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -156,9 +158,9 @@ async function callAnthropicDirect({ system, user, maxTokens = 400 }) {
 }
 
 async function runLiveProbes() {
-  const key = process.env.EXPO_PUBLIC_ANTHROPIC_KEY;
+  const key = process.env.ANTHROPIC_API_KEY;
   if (!key?.startsWith('sk-ant-')) {
-    console.log('=== Live EOS probes (skipped — no EXPO_PUBLIC_ANTHROPIC_KEY) ===\n');
+    console.log('=== Live EOS probes (skipped — no ANTHROPIC_API_KEY in server/.env) ===\n');
     return true;
   }
 
