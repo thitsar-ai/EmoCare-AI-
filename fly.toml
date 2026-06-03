@@ -16,8 +16,7 @@ app = "emocare-api"
 primary_region = "sjc"
 
 [build]
-  dockerfile = "Dockerfile"
-  context = "server"
+  dockerfile = "server/Dockerfile"
 
 [env]
   NODE_ENV = "production"

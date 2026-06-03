@@ -1,16 +1,14 @@
-# EmoCare sanctuary API — production container (Railway / Fly / any host)
+# EmoCare sanctuary API — production container (Railway / Fly)
 #
-# Build context: server/ (see railway.toml dockerContext)
-# Only index.mjs is copied — zero npm dependencies.
+# Build from repo root (dockerContext = ".") so COPY paths are unambiguous.
 FROM node:22-alpine
 
 WORKDIR /app
 
-COPY ./index.mjs ./index.mjs
+COPY server/index.mjs ./index.mjs
 
 ENV NODE_ENV=production
 
-# Railway and Fly inject PORT at runtime
 EXPOSE 8080
 
 USER node

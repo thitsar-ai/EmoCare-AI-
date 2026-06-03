@@ -3,15 +3,14 @@
 #
 # Setup:
 #   1. railway.app → New Project → Deploy from GitHub → select emocare-ai
-#   2. This file is picked up automatically (railway.toml at repo root)
+#   2. Source → Root Directory must be blank (repo root, NOT /server)
 #   3. Variables → add keys from server/.env.example
-#   4. Settings → Networking → Generate Domain → copy HTTPS URL
+#   4. Settings → Networking → Generate Domain
 #   5. Client .env: EXPO_PUBLIC_EMOCARE_API_URL=https://your-app.up.railway.app
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-dockerContext = "server"
+dockerfilePath = "server/Dockerfile"
 watchPatterns = ["server/**"]
 
 [deploy]
