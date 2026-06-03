@@ -5,18 +5,37 @@ import {
   isAnthropicConfigured,
 } from './anthropic';
 import { classifyEmoIntent } from './emoIntent';
-import { getVoiceSystemPrompt, getCrisisSafetyAppendix } from './emoEos';
+import {
+  getChatSystemPrompt,
+  getCrisisSafetyAppendix,
+  getIntentModeAppendix,
+} from './emoEos';
 import { detectCrisisSignals } from './emoCrisis';
 import { generateEmoOpening, getSyncFallbackOpening, stripGenericGreetingPrefix } from './emoOpening';
 import { buildEmoPersonalContextBlock } from './emoPersonalContext';
 
-async function composeVoiceSystem({ userName, userText, crisis, mode }) {
-  const name = userName?.trim() || 'friend';
+const VOICE_REPLY_TIMEOUT_MS = 45000;
+
+function withTimeout(promise, ms, label = 'Request') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    }),
+  ]);
+}
+
+/** Lighter system stack — mirrors Talk (which works on device) + spoken-output rules. */
+async function composeVoiceSystem({ userName, crisis, mode }) {
   const personalContext = await buildEmoPersonalContextBlock(userName);
-  const base = crisis.inCrisis
-    ? getVoiceSystemPrompt('sanctuary', name)
-    : getVoiceSystemPrompt(mode, name);
-  return [base, personalContext, crisis.inCrisis ? getCrisisSafetyAppendix() : '']
+  return [
+    getChatSystemPrompt(userName),
+    personalContext,
+    crisis.inCrisis ? getCrisisSafetyAppendix() : getIntentModeAppendix(mode),
+    `## VOICE OUTPUT
+Reply in 1–3 short sentences for spoken aloud delivery. Warm, unhurried, conversational.
+No markdown, bullets, emoji, or stage directions. Stay under ~280 characters.`,
+  ]
     .filter(Boolean)
     .join('\n\n');
 }
@@ -68,16 +87,20 @@ export async function generateVoiceReply({ userText, userName } = {}) {
   }
 
   try {
-    const result = await callAnthropicMessages({
-      maxTokens: 120,
-      system: voiceSystem,
-      messages: [{ role: 'user', content: `${context}\n\nReply for voice (spoken aloud only):` }],
-    });
+    const result = await withTimeout(
+      callAnthropicMessages({
+        maxTokens: 120,
+        system: voiceSystem,
+        messages: [{ role: 'user', content: `${context}\n\nReply for voice (spoken aloud only):` }],
+      }),
+      VOICE_REPLY_TIMEOUT_MS,
+      'Voice reply',
+    );
 
     if (!result.ok) {
-      if (__DEV__) console.warn('Voice Anthropic error', result.status, result.error);
+      if (__DEV__) console.warn('[Emo voice] Anthropic error', result.status, result.error);
       if (result.error?.type === 'authentication_error') {
-        return describeAnthropicError(result.data);
+        return describeAnthropicError(result.data ?? { error: result.error });
       }
       throw new Error(result.error?.message || 'Voice reply failed');
     }
@@ -89,7 +112,8 @@ export async function generateVoiceReply({ userText, userName } = {}) {
       return buildFallbackVoiceReply(text, userName);
     }
     return reply;
-  } catch {
+  } catch (err) {
+    if (__DEV__) console.warn('[Emo voice] generateVoiceReply failed:', err);
     return buildFallbackVoiceReply(text, userName);
   }
 }

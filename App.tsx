@@ -125,7 +125,7 @@ import { classifyEmoIntent } from './utils/emoIntent';
 import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
 import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracleSearch';
 import { loadEmoPersonalContext } from './utils/emoPersonalContext';
-import { refreshEmocareConfig } from './utils/emocareApi';
+import { refreshEmocareConfig, logEmocareApiDebug } from './utils/emocareApi';
 import { logOracleInquiry } from './utils/oracleTopicLog';
 import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
@@ -2026,6 +2026,7 @@ function Root() {
     async function bootstrap() {
       try {
         await refreshEmocareConfig();
+        logEmocareApiDebug();
         const v = await AsyncStorage.getItem('onboarded');
         const ageOk = await readAgeVerified();
         if (v === 'true') {

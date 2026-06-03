@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { fetch } from 'expo/fetch';
-import { cleanEnvKey } from './anthropic';
+import { cleanEnvKey } from './envKey';
 
 /** @typedef {{ loaded: boolean; anthropic: boolean; elevenLabs: boolean; tavily: boolean; voiceId: string; elevenLabsModel: string }} EmocareConfig */
 
@@ -51,17 +51,20 @@ export function getEmocareConfigSnapshot() {
 
 export function isAnthropicConfigured() {
   if (!isEmocareApiConfigured()) return false;
-  return cachedConfig.loaded ? cachedConfig.anthropic : true;
+  if (!cachedConfig.loaded) return true;
+  return cachedConfig.anthropic;
 }
 
 export function isElevenLabsConfigured() {
   if (!isEmocareApiConfigured()) return false;
-  return cachedConfig.loaded ? cachedConfig.elevenLabs : false;
+  if (!cachedConfig.loaded) return true;
+  return cachedConfig.elevenLabs;
 }
 
 export function isTavilyConfigured() {
   if (!isEmocareApiConfigured()) return false;
-  return cachedConfig.loaded ? cachedConfig.tavily : false;
+  if (!cachedConfig.loaded) return true;
+  return cachedConfig.tavily;
 }
 
 export function getElevenLabsVoiceIdFromConfig() {
@@ -95,14 +98,19 @@ export async function refreshEmocareConfig() {
         voiceId: String(data.voiceId || ''),
         elevenLabsModel: String(data.elevenLabsModel || ''),
       };
-    } else {
-      cachedConfig = { ...cachedConfig, loaded: true };
     }
+    // On HTTP error, keep prior cache — don't mark loaded with stale false flags.
   } catch {
-    cachedConfig = { ...cachedConfig, loaded: true };
+    // Network blip at boot — leave loaded false so optimistic checks still allow requests.
   }
 
   return cachedConfig;
+}
+
+/** Refresh config once before Talk/Voice if we haven't loaded yet. */
+export async function ensureEmocareConfig() {
+  if (cachedConfig.loaded || !isEmocareApiConfigured()) return cachedConfig;
+  return refreshEmocareConfig();
 }
 
 /** @param {string} path @param {RequestInit} [options] */
@@ -140,4 +148,18 @@ export async function checkEmocareApiHealth() {
   } catch {
     return false;
   }
+}
+
+/** Dev-only: log whether the app can reach the sanctuary API. */
+export function logEmocareApiDebug() {
+  if (!__DEV__) return;
+  const url = getEmocareApiUrl();
+  const secret = getEmocareApiSecret();
+  console.log('[Emo API]', {
+    url: url || '(missing)',
+    secretSet: Boolean(secret),
+    configLoaded: cachedConfig.loaded,
+    anthropic: isAnthropicConfigured(),
+    elevenLabs: isElevenLabsConfigured(),
+  });
 }

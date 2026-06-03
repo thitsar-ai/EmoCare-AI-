@@ -4,7 +4,7 @@ import {
   callAnthropicMessages,
   describeAnthropicError,
 } from './anthropic';
-import { emocareFetch, isAnthropicConfigured, isEmocareApiConfigured } from './emocareApi';
+import { emocareFetch, ensureEmocareConfig, isAnthropicConfigured, isEmocareApiConfigured } from './emocareApi';
 
 async function deliverFallbackReply(text, signal, onStart, onTextDelta, onDone) {
   onStart?.();
@@ -34,10 +34,21 @@ export async function streamAnthropicMessages({
   onDone,
   onError,
 }) {
-  if (!isEmocareApiConfigured() || !isAnthropicConfigured()) {
+  await ensureEmocareConfig();
+
+  if (!isEmocareApiConfigured()) {
     const err = {
       type: 'authentication_error',
-      message: 'Missing EXPO_PUBLIC_EMOCARE_API_URL or Anthropic on server',
+      message: 'Missing EXPO_PUBLIC_EMOCARE_API_URL',
+    };
+    onError?.(describeAnthropicError({ error: err }), err);
+    return { ok: false, error: err };
+  }
+
+  if (!isAnthropicConfigured()) {
+    const err = {
+      type: 'authentication_error',
+      message: 'Anthropic not configured on sanctuary server',
     };
     onError?.(describeAnthropicError({ error: err }), err);
     return { ok: false, error: err };
@@ -135,6 +146,12 @@ export async function streamAnthropicMessages({
     if (buffer.trim()) processLine(buffer.trim());
 
     if (!fullText.trim()) {
+      if (__DEV__) console.warn('[Emo chat] Empty stream — using buffered fallback');
+      const fallback = await callAnthropicMessages({ system, messages, maxTokens, model });
+      if (fallback.ok) {
+        const text = fallback.data?.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
+        if (text) return deliverFallbackReply(text, signal, onStart, onTextDelta, onDone);
+      }
       onError?.('Emo returned an empty reply', null);
       return { ok: false, error: { message: 'Empty stream reply' } };
     }

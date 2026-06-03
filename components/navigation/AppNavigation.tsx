@@ -419,13 +419,13 @@ export function AppMenuSheet({
               {MAIN_APP_MENU.map((item, idx) =>
                 renderMenuItem(item, idx < MAIN_APP_MENU.length - 1),
               )}
+              <View style={styles.menuDivider} />
+              {renderMenuItem(SETTINGS_MENU_ITEM, true)}
+              {renderMenuItem(
+                { ...PROFILE_MENU_ITEM, onPress: onOpenProfile },
+                false,
+              )}
             </ScrollView>
-            <View style={styles.menuDivider} />
-            {renderMenuItem(SETTINGS_MENU_ITEM, true)}
-            {renderMenuItem(
-              { ...PROFILE_MENU_ITEM, onPress: onOpenProfile },
-              false,
-            )}
           </Pressable>
         </View>
       </Pressable>
@@ -776,9 +776,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 12,
+    flexDirection: 'column',
   },
   menuScroll: { flexGrow: 0, flexShrink: 1 },
-  menuScrollContent: { flexGrow: 0 },
+  menuScrollContent: { flexGrow: 0, paddingBottom: 4 },
   menuHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -814,6 +815,7 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(255,255,255,0.12)',
     marginHorizontal: 18,
+    marginVertical: 4,
   },
   profileAnchor: { flex: 1, justifyContent: 'center', paddingHorizontal: 28 },
   profileSheet: { borderRadius: 18, borderWidth: 1, padding: 20, gap: 10 },

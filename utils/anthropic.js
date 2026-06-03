@@ -1,20 +1,16 @@
 import {
   emocareFetch,
+  ensureEmocareConfig,
   isAnthropicConfigured,
   isEmocareApiConfigured,
 } from './emocareApi';
+import { cleanEnvKey } from './envKey';
+
+export { cleanEnvKey, isAnthropicConfigured, isEmocareApiConfigured };
 
 /** User-requested model id (see utils/anthropic.js). */
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 export const ANTHROPIC_VERSION = '2023-06-01';
-
-export function cleanEnvKey(value) {
-  if (value == null) return '';
-  return String(value)
-    .trim()
-    .replace(/^["']|["']$/g, '')
-    .replace(/[\r\n\uFEFF]/g, '');
-}
 
 /** @deprecated Keys live on the server — use isAnthropicConfigured() instead. */
 export function getAnthropicApiKey() {
@@ -27,7 +23,13 @@ export function describeAnthropicError(data) {
   const message = error?.message || 'Anthropic request failed';
 
   if (type === 'authentication_error') {
-    return 'Emo could not reach the sanctuary server. Check EXPO_PUBLIC_EMOCARE_API_URL and that npm run api-server is running.';
+    if (/x-api-key|invalid authentication/i.test(message)) {
+      return 'Emo\'s brain key needs updating on the sanctuary server. In Railway Variables, set ANTHROPIC_API_KEY to your latest sk-ant- key from console.anthropic.com, then redeploy.';
+    }
+    if (/unauthorized/i.test(message)) {
+      return 'Sanctuary server auth failed. Check EXPO_PUBLIC_EMOCARE_API_SECRET matches EMOCARE_API_SECRET on Railway.';
+    }
+    return 'Emo could not reach the sanctuary server. Check EXPO_PUBLIC_EMOCARE_API_URL and that the API is running.';
   }
   if (type === 'not_found_error' && /model/i.test(message)) {
     return message;
@@ -41,6 +43,8 @@ export async function callAnthropicMessages({
   maxTokens = 700,
   model = ANTHROPIC_MODEL,
 }) {
+  await ensureEmocareConfig();
+
   if (!isEmocareApiConfigured()) {
     return {
       ok: false,

@@ -31,6 +31,8 @@ export interface VoiceLocalConversationOptions {
 }
 
 const RESPONSE_COOLDOWN_MS = 2800;
+/** Ignore mic input briefly after Emo speaks — prevents speaker→mic echo loops. */
+const POST_SPEAK_MUTE_MS = 5000;
 
 /**
  * On-device voice loop: speech recognition → Anthropic → TTS.
@@ -61,6 +63,14 @@ export class VoiceLocalConversation {
 
   private lastResponseAt = 0;
 
+  /** Last text Emo spoke — used to reject echo transcripts. */
+  private lastSpokenText = '';
+
+  private postSpeakMuteUntil = 0;
+
+  /** Continuous STT off by default; Voice Talk is type-first (tap Emo / type). */
+  private continuousListen = false;
+
   constructor(options: VoiceLocalConversationOptions = {}) {
     this.options = options;
   }
@@ -85,16 +95,13 @@ export class VoiceLocalConversation {
     if (sttReady && speechModule) {
       const perms = await speechModule.requestPermissionsAsync();
       if (perms.granted) {
-        this.fallbackMode = false;
-        this.options.onFallbackMode?.(false);
         this.attachListeners(speechModule);
-        this.beginListening(speechModule);
-        this.options.onStatus?.('Tap Emo when you\'re ready');
-        return true;
       }
     }
 
+    // Type-first: do not leave the mic open — speaker output was re-triggering replies.
     this.fallbackMode = true;
+    this.continuousListen = false;
     this.options.onFallbackMode?.(true);
     this.options.onStatus?.('Tap Emo or type a message');
     return true;
@@ -134,7 +141,13 @@ export class VoiceLocalConversation {
     }
 
     this.hasGreeted = true;
-    await this.speak(greeting.trim() || getSyncFallbackOpening(this.userName, 'voice'));
+    try {
+      await this.speak(greeting.trim() || getSyncFallbackOpening(this.userName, 'voice'));
+    } finally {
+      if (!this.speaking) {
+        this.processing = false;
+      }
+    }
   }
 
   submitMessage(text: string): void {
@@ -218,6 +231,8 @@ export class VoiceLocalConversation {
       };
       const transcript = payload.results?.[0]?.transcript?.trim() || '';
       if (!transcript) return;
+      if (Date.now() < this.postSpeakMuteUntil) return;
+      if (this.isEchoOfLastReply(transcript)) return;
       this.lastInterim = transcript;
       this.options.onInputAmplitude?.(0.25 + Math.min(0.65, transcript.length / 80));
 
@@ -227,7 +242,9 @@ export class VoiceLocalConversation {
     };
 
     const onEnd = () => {
-      if (!this.active || this.speaking || this.processing || this.fallbackMode) return;
+      if (!this.active || this.speaking || this.processing || this.fallbackMode || !this.continuousListen) {
+        return;
+      }
       this.options.onStatus?.('Listening…');
       setTimeout(() => {
         if (this.active && !this.speaking && !this.processing && !this.fallbackMode) {
@@ -237,7 +254,7 @@ export class VoiceLocalConversation {
     };
 
     const onError = () => {
-      if (!this.active || this.speaking || this.fallbackMode) return;
+      if (!this.active || this.speaking || this.fallbackMode || !this.continuousListen) return;
       setTimeout(() => {
         if (this.active && !this.speaking && !this.processing && !this.fallbackMode) {
           this.beginListening(speechModule);
@@ -267,7 +284,40 @@ export class VoiceLocalConversation {
     }
   }
 
+  private isEchoOfLastReply(text: string): boolean {
+    const t = text.trim().toLowerCase();
+    const last = this.lastSpokenText;
+    if (!t || !last) return false;
+    if (t === last) return true;
+    const snippet = last.slice(0, Math.min(48, last.length));
+    if (snippet.length >= 16 && t.includes(snippet)) return true;
+    if (t.length >= 16 && last.includes(t.slice(0, Math.min(48, t.length)))) return true;
+    return false;
+  }
+
+  private markSpoken(text: string): void {
+    this.lastSpokenText = text.trim().toLowerCase();
+    this.postSpeakMuteUntil = Date.now() + POST_SPEAK_MUTE_MS;
+  }
+
+  private async resumeListeningIfNeeded(): Promise<void> {
+    if (!this.active || this.fallbackMode || !this.continuousListen) {
+      this.options.onStatus?.('Tap Emo or type a message');
+      return;
+    }
+    const speechModule = getSpeechRecognitionModule();
+    if (speechModule) {
+      await new Promise((resolve) => setTimeout(resolve, POST_SPEAK_MUTE_MS));
+      if (this.active && !this.speaking && !this.processing && !this.fallbackMode) {
+        this.beginListening(speechModule);
+      }
+    }
+  }
+
   private async releaseListeningForPlayback(): Promise<void> {
+    if (this.speaking) {
+      this.interruptSpeaking();
+    }
     const speechModule = getSpeechRecognitionModule();
     try {
       speechModule?.abort();
@@ -285,6 +335,9 @@ export class VoiceLocalConversation {
   ): Promise<void> {
     const text = transcript.trim();
     if (!text || this.processing || this.speaking || !this.active) return;
+
+    if (Date.now() < this.postSpeakMuteUntil) return;
+    if (this.isEchoOfLastReply(text)) return;
 
     const now = Date.now();
     if (now - this.lastResponseAt < RESPONSE_COOLDOWN_MS) return;
@@ -311,8 +364,23 @@ export class VoiceLocalConversation {
     const { mode } = classifyEmoIntent(text);
     this.options.onIntent?.(mode);
 
-    const reply = await generateVoiceReply({ userText: text, userName: this.userName });
-    await this.speak(reply);
+    try {
+      const reply = await generateVoiceReply({ userText: text, userName: this.userName });
+      if (!this.active) {
+        this.processing = false;
+        return;
+      }
+      await this.speak(reply);
+    } catch (err) {
+      if (__DEV__) console.warn('[Emo voice] handleUtterance failed:', err);
+      if (this.active) {
+        await this.speak("I'm right here with you. Could you say that once more?");
+      }
+    } finally {
+      if (!this.speaking) {
+        this.processing = false;
+      }
+    }
   }
 
   private async speakSession(sessionType: VoiceSessionType, userText: string): Promise<void> {
@@ -334,6 +402,8 @@ export class VoiceLocalConversation {
         await this.speak('Close your eyes if you like. Breathe in slowly... and let a soft exhale carry the day away.');
         return;
       }
+
+      this.markSpoken(session.segments.join(' '));
 
       if (this.outputMuted) {
         this.processing = false;
@@ -383,18 +453,17 @@ export class VoiceLocalConversation {
     if (!this.active) return;
 
     if (this.fallbackMode) {
-      this.options.onStatus?.('Type your message · Emo speaks back');
+      this.options.onStatus?.('Tap Emo or type a message');
       return;
     }
 
-    const speechModule = getSpeechRecognitionModule();
-    if (speechModule) {
-      this.beginListening(speechModule);
-    }
+    await this.resumeListeningIfNeeded();
   }
 
   private async speak(text: string): Promise<void> {
     if (!this.active || !text.trim()) return;
+
+    this.markSpoken(text);
 
     if (this.outputMuted) {
       this.processing = false;
@@ -439,14 +508,11 @@ export class VoiceLocalConversation {
     if (!this.active) return;
 
     if (this.fallbackMode) {
-      this.options.onStatus?.('Type your message · Emo speaks back');
+      this.options.onStatus?.('Tap Emo or type a message');
       return;
     }
 
-    const speechModule = getSpeechRecognitionModule();
-    if (speechModule) {
-      this.beginListening(speechModule);
-    }
+    await this.resumeListeningIfNeeded();
   }
 
   private finishSpeaking(): void {
