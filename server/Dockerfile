@@ -1,10 +1,12 @@
 # EmoCare sanctuary API — production container (Railway / Fly / any host)
+#
+# Build context: server/ (see railway.toml dockerContext)
+# Only index.mjs is copied — zero npm dependencies.
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Zero npm dependencies — Node 22 native fetch proxy
-COPY index.mjs ./
+COPY ./index.mjs ./index.mjs
 
 ENV NODE_ENV=production
 
