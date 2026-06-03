@@ -10,7 +10,7 @@
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "server/Dockerfile"
 dockerContext = "server"
 watchPatterns = ["server/**"]
 
