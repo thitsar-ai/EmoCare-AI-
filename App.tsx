@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import Constants from 'expo-constants';
 import * as NativeSplash from 'expo-splash-screen';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -65,7 +66,9 @@ import { EmoMemoryChip } from './components/shared/EmoMemoryChip';
 import { WebInstallBanner } from './components/shared/WebInstallBanner';
 import { CircadianHeroGlow } from './components/shared/CircadianHeroGlow';
 import { MoodIconBadge } from './components/shared/MoodIcon';
+import { getTodayCheckIn, saveTodayCheckIn, deleteTodayCheckIn } from './utils/sanctuaryHome';
 import { readAgeVerified } from './utils/ageVerification';
+import { setAppResetHandler } from './utils/appReset';
 import { CrisisFooter } from './components/shared/CrisisFooter';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { SanctuaryDashboard } from './components/home/SanctuaryDashboard';
@@ -88,9 +91,7 @@ import {
 } from './components/navigation/AppNavigation';
 import { VoiceMicControlSheet } from './components/voice/VoiceMicControlSheet';
 
-// Hold native launch canvas until JS splash paints (solid dark — no duplicate orb).
-NativeSplash.setOptions({ duration: 320, fade: true });
-NativeSplash.preventAutoHideAsync().catch(() => {});
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
 // Custom hook: true when the user has "Reduce Motion" enabled.
 function useReduceMotion(): boolean {
@@ -147,6 +148,7 @@ import {
   getCircadianPhase,
   getCircadianTheme,
   getCircadianIconColor,
+  SANCTUARY_SPLASH,
   useCircadianTheme,
   type CircadianPhase,
   type CircadianTheme,
@@ -608,28 +610,42 @@ function EmoPresenceOrb({
  * Page 1 — Splash / Launch Screen
  * ------------------------------------------------------------------ */
 
+/** Velvet obsidian palette on launch — not morning circadian white behind the handoff. */
+const SPLASH_VISUAL_THEME = getCircadianTheme(new Date(new Date().setHours(23, 0, 0, 0)));
+
 function SplashScreen({ onDone }: { onDone?: () => void }) {
-  const theme = useCircadianTheme();
   const reduceMotion = useReduceMotion();
   const progress = useRef(new Animated.Value(0)).current;
-  const fadeIn = useRef(new Animated.Value(0)).current;
+  const fadeIn = useRef(new Animated.Value(1)).current;
   const nativeHidden = useRef(false);
 
-  const revealNativeHandoff = () => {
+  const hideNativeSplash = () => {
     if (nativeHidden.current) return;
     nativeHidden.current = true;
-    NativeSplash.hideAsync().catch(() => {});
+    requestAnimationFrame(() => {
+      NativeSplash.hideAsync().catch(() => {});
+    });
   };
 
   useEffect(() => {
-    revealNativeHandoff();
+    if (IS_EXPO_GO) {
+      hideNativeSplash();
+    } else {
+      const fallback = setTimeout(hideNativeSplash, 1500);
+      return () => clearTimeout(fallback);
+    }
+  }, []);
 
-    Animated.timing(fadeIn, {
-      toValue: 1,
-      duration: reduceMotion ? 1 : 900,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+  useEffect(() => {
+    if (!reduceMotion) {
+      fadeIn.setValue(0.94);
+      Animated.timing(fadeIn, {
+        toValue: 1,
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
 
     Animated.timing(progress, {
       toValue: 1,
@@ -642,16 +658,22 @@ function SplashScreen({ onDone }: { onDone?: () => void }) {
   }, [fadeIn, onDone, progress, reduceMotion]);
 
   return (
-    <View style={styles.launchSplashRoot} onLayout={revealNativeHandoff}>
-      <CircadianHeroGlow theme={theme} />
-      <SplashStarField theme={theme} variant="circadian" />
-      <SanctuarySplashContent
-        theme={theme}
-        fadeIn={fadeIn}
-        progress={progress}
-        reduceMotion={reduceMotion}
+    <View style={styles.launchSplashRoot}>
+      <LinearGradient
+        colors={[SANCTUARY_SPLASH[0], SANCTUARY_SPLASH[1]]}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
       />
-      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+      <SplashStarField theme={SPLASH_VISUAL_THEME} variant="night" />
+      <View style={styles.launchSplashContent} onLayout={hideNativeSplash}>
+        <SanctuarySplashContent
+          theme={SPLASH_VISUAL_THEME}
+          fadeIn={fadeIn}
+          progress={progress}
+          reduceMotion={reduceMotion}
+        />
+      </View>
+      <StatusBar style="light" />
     </View>
   );
 }
@@ -688,28 +710,80 @@ function MoodWave() {
  * Check-in screen
  * ------------------------------------------------------------------ */
 
-function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
+function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
-  const { goBack } = useAppNav();
+  const { goBack, canGoBack, navigate, screen, consumeCheckInPrefill } = useAppNav();
   const [selected, setSelected] = useState<Mood | null>(null);
   const [note, setNote] = useState('');
-  const onClose = () => goBack();
+  const [editTodayMode, setEditTodayMode] = useState(false);
+
+  const resetForm = useCallback(() => {
+    setSelected(null);
+    setNote('');
+    setEditTodayMode(false);
+  }, []);
+
+  const loadTodayCheckIn = useCallback(() => {
+    AsyncStorage.getItem('checkIns')
+      .then((saved) => {
+        if (!saved) {
+          resetForm();
+          return;
+        }
+        const all = JSON.parse(saved);
+        const today = getTodayCheckIn(all);
+        if (today?.mood?.label) {
+          const mood =
+            OB_MOODS.find((m) => m.label === today.mood?.label) ||
+            OB_MOODS.find((m) => m.emoji === today.mood?.emoji) ||
+            null;
+          if (mood) setSelected(mood);
+          setNote(typeof today.note === 'string' ? today.note : '');
+          setEditTodayMode(true);
+          return;
+        }
+        resetForm();
+      })
+      .catch(() => {});
+  }, [resetForm]);
+
+  useEffect(() => {
+    if (screen !== 'checkin') return;
+    if (consumeCheckInPrefill()) {
+      loadTodayCheckIn();
+    } else {
+      resetForm();
+    }
+  }, [screen, consumeCheckInPrefill, loadTodayCheckIn, resetForm]);
+
+  const deleteToday = () => {
+    Alert.alert('Delete today\'s check-in?', 'Your mood and note for today will be removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            try {
+              await deleteTodayCheckIn();
+              resetForm();
+              void hapticLight();
+            } catch {}
+          })();
+        },
+      },
+    ]);
+  };
 
   const save = async () => {
     if (!selected) return;
     void hapticMedium();
     try {
-      const saved = await AsyncStorage.getItem('checkIns');
-      const all = saved ? JSON.parse(saved) : [];
-      await AsyncStorage.setItem(
-        'checkIns',
-        JSON.stringify([{ id: Date.now(), date: new Date().toISOString(), mood: selected, note }, ...all]),
-      );
+      await saveTodayCheckIn({ mood: selected, note });
+      if (canGoBack) goBack();
+      else navigate('home');
     } catch {}
-    setSelected(null);
-    setNote('');
-    onClose();
   };
 
   return (
@@ -736,6 +810,14 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
           <Text style={[styles.ciCheckinSub, { color: theme.mutedText }]}>
             Choose the feeling that feels closest.
           </Text>
+
+          {editTodayMode ? (
+            <View style={[styles.ciEditBanner, { backgroundColor: `${theme.accent}14`, borderColor: `${theme.accent}44` }]}>
+              <Text style={[styles.ciEditBannerText, { color: theme.secondaryText }]}>
+                You already checked in today — update your mood or note, or delete below.
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.obMoodGridPro}>
             {OB_MOODS.map((m) => {
@@ -775,10 +857,10 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
 
           <GlassCard theme={theme} style={styles.ciNoteCard}>
             <Text style={[styles.cardTitle, { marginBottom: 6, color: theme.text }]}>
-              What's on your heart?
+              What's on your heart? <Text style={{ color: theme.mutedText, fontWeight: '400' }}>(Optional)</Text>
             </Text>
             <Text style={[styles.cardSub, { marginBottom: 12, color: theme.mutedText }]}>
-              You can write anything. We're here to hold it.
+              You can skip this — a mood alone is enough.
             </Text>
             <TextInput
               style={[
@@ -799,7 +881,7 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
           </GlassCard>
 
           <PrimaryActionButton
-            label="Save Check-In"
+            label={editTodayMode ? 'Update Check-In' : 'Save Check-In'}
             prefix="✦"
             theme={theme}
             onPress={save}
@@ -807,6 +889,18 @@ function CheckInScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
             disabledHint="Choose a feeling to save your check-in."
             style={styles.ciSaveWrap}
           />
+
+          {editTodayMode ? (
+            <Pressable
+              onPress={deleteToday}
+              style={({ pressed }) => [styles.ciDeleteBtn, pressed && { opacity: 0.75 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Delete today's check-in"
+            >
+              <Trash2 size={15} color="#E97D6A" strokeWidth={2.2} />
+              <Text style={styles.ciDeleteText}>Delete today's check-in</Text>
+            </Pressable>
+          ) : null}
 
           <View style={styles.ciPrivacyRow}>
             <Shield size={14} color={theme.accent} strokeWidth={2.2} />
@@ -1634,44 +1728,60 @@ function ChatScreen({ userName }: { userName: string }) {
 
   return (
     <View style={styles.flex}>
-      <StatusBar style="light" />
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <TopChrome>
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <ScreenNavChrome
-            theme={theme}
-            centerContent={
-              <View style={styles.chatHeaderBrand}>
-                <EmoAvatar size={40} theme={theme} plain streamLevel={streamLevel} />
-                <View style={styles.chatHeaderTextCol}>
-                  <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>Emo</Text>
-                  <Text style={[styles.chatHeroTaglineInline, { color: theme.secondaryText }]}>
-                    {chatStatusLine}
-                  </Text>
+          <View style={styles.chatHeaderWrap}>
+            <ScreenNavChrome
+              theme={theme}
+              centerAlign="start"
+              centerContent={
+                <View style={styles.chatHeaderBrand}>
+                  <EmoAvatar size={40} theme={theme} plain streamLevel={streamLevel} />
                   {memoryChipLabel ? (
-                    <EmoMemoryChip
-                      theme={theme}
-                      label={memoryChipLabel}
-                      onPress={() => navigate('memoryledger')}
-                    />
+                    <View style={styles.chatHeaderChipWrap}>
+                      <EmoMemoryChip
+                        theme={theme}
+                        label={memoryChipLabel}
+                        onPress={() => navigate('memoryledger')}
+                      />
+                    </View>
                   ) : null}
                 </View>
-              </View>
-            }
-            onMenu={() => setAppMenuOpen(true)}
-            actionsBeforeNav={
-              <NavChromeBtn
-                theme={theme}
-                onPress={() => setMenuOpen(true)}
-                accessibilityLabel="Chat options"
+              }
+              onMenu={() => setAppMenuOpen(true)}
+              actionsBeforeNav={
+                <NavChromeBtn
+                  theme={theme}
+                  onPress={() => setMenuOpen(true)}
+                  accessibilityLabel="Chat options"
+                >
+                  <Ellipsis size={18} color={theme.text} strokeWidth={2.4} />
+                </NavChromeBtn>
+              }
+            />
+            <View style={styles.chatPresenceRow}>
+              <View style={styles.chatPresenceSpacer} />
+              <Text
+                style={[
+                  styles.chatHeaderPresence,
+                  {
+                    color:
+                      chatStatusLine === CHAT_PRESENCE_TAGLINE
+                        ? theme.secondaryText
+                        : theme.text,
+                  },
+                ]}
+                numberOfLines={2}
               >
-                <Ellipsis size={18} color={theme.text} strokeWidth={2.4} />
-              </NavChromeBtn>
-            }
-          />
+                {chatStatusLine}
+              </Text>
+            </View>
+          </View>
 
           <ScrollView
             ref={scrollRef}
@@ -1753,7 +1863,10 @@ function ChatScreen({ userName }: { userName: string }) {
           <View
             style={[
               styles.chatComposerWrap,
-              { paddingBottom: NAV_CONTENT_HEIGHT + (insets.bottom ?? 0) + 6 },
+              {
+                paddingBottom: NAV_CONTENT_HEIGHT + (insets.bottom ?? 0) + 6,
+                borderTopColor: theme.border,
+              },
             ]}
           >
             <View
@@ -2044,6 +2157,16 @@ function Root() {
     bootstrap();
   }, []);
 
+  useEffect(() => {
+    setAppResetHandler(() => {
+      setOnboarded(false);
+      setAgeVerified(false);
+      setUserName('');
+      setScreen('home');
+    });
+    return () => setAppResetHandler(null);
+  }, []);
+
   if (!launchSplashDone || !bootReady) {
     return <SplashScreen onDone={() => setLaunchSplashDone(true)} />;
   }
@@ -2059,7 +2182,9 @@ function Root() {
         <FirstOnboardingShell
           userName={userName}
           setUserName={setUserName}
-          onComplete={({ name, landingMode }) => {
+          onComplete={async ({ name, landingMode }) => {
+            const ageOk = await readAgeVerified();
+            if (!ageOk) return;
             setUserName(name);
             setHomeLandingMode(landingMode);
             setAgeVerified(true);
@@ -2152,8 +2277,7 @@ function FirstOnboardingShell({
   } = useAppNav();
 
   const handleMenuSelect = (target: NavTarget) => {
-    if (target.kind === 'screen') navigate(target.key);
-    else openOnboardingSlide(target.slide);
+    if (target.kind === 'onboarding') openOnboardingSlide(target.slide);
   };
 
   const saveProfileName = async (name: string) => {
@@ -2172,7 +2296,7 @@ function FirstOnboardingShell({
           onComplete(args);
         }}
       />
-      <ScreenSwipeEdgeOverlay enabled={!menuOpen && !profileOpen} />
+      <ScreenSwipeEdgeOverlay enabled={false} />
       <AppMenuSheet
         visible={menuOpen}
         theme={theme}
@@ -2191,10 +2315,11 @@ function FirstOnboardingShell({
   );
 }
 
-function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
+function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
   const theme = useCircadianTheme();
   const screenFade = useRef(new Animated.Value(1)).current;
   const screenFirstMount = useRef(true);
+  const landingHandled = useRef(false);
   const {
     userName,
     setUserName,
@@ -2208,6 +2333,14 @@ function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'san
     openOnboardingSlide,
     closeOnboardingReview,
   } = useAppNav();
+
+  useEffect(() => {
+    if (landingHandled.current) return;
+    landingHandled.current = true;
+    if (homeLandingMode === 'oracle') {
+      navigate('oracle');
+    }
+  }, [homeLandingMode, navigate]);
 
   useEffect(() => {
     if (screenFirstMount.current) {
@@ -2407,6 +2540,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#0D0720',
+  },
+  launchSplashContent: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   auroraClip: {
@@ -3084,6 +3223,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   ciSaveWrap: { borderRadius: 18, overflow: 'hidden', marginBottom: 12 },
+  ciEditBanner: {
+    borderWidth: 0.5,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  ciEditBannerText: { fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  ciDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  ciDeleteText: { color: '#E97D6A', fontSize: 14, fontWeight: '600' },
   ciSaveBtn: { paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center', borderRadius: 18 },
   ciPrivacyRow: {
     flexDirection: 'row',
@@ -3110,6 +3266,9 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
     gap: 8,
   },
+  chatHeaderWrap: {
+    paddingBottom: 4,
+  },
   chatHeaderBrand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3117,10 +3276,26 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flex: 1,
   },
-  chatHeaderTextCol: {
-    flex: 1,
-    justifyContent: 'center',
-    minWidth: 0,
+  chatHeaderChipWrap: {
+    marginTop: -6,
+    flexShrink: 1,
+  },
+  chatPresenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  chatPresenceSpacer: {
+    width: 36 + 4,
+  },
+  chatHeaderPresence: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+    letterSpacing: 0.1,
   },
   chatClassicTopActions: {
     flexDirection: 'row',
@@ -3233,8 +3408,8 @@ const styles = StyleSheet.create({
   },
   chatScrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
     gap: 18,
   },
   chatMsgRowBot: {

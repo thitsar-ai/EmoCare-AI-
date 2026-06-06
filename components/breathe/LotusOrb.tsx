@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop } from 'react-native-svg';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 const LOTUS_SIZE = 248;
 const VIEW_PAD = 32;
@@ -103,6 +104,18 @@ const RingDot = memo(function RingDot({ progress }: { progress: number }) {
   );
 });
 
+const AnimatedRingDot = memo(function AnimatedRingDot({ progress }: { progress: SharedValue<number> }) {
+  const armStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${progress.value * 360}deg` }],
+  }));
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.playheadArm, armStyle]}>
+      <View style={styles.playheadDot} />
+    </Animated.View>
+  );
+});
+
 const LotusCenter = memo(function LotusCenter({ instruction }: { instruction?: React.ReactNode }) {
   return (
     <View style={styles.lotusWrap} collapsable={false}>
@@ -116,17 +129,65 @@ const LotusCenter = memo(function LotusCenter({ instruction }: { instruction?: R
   );
 });
 
-export function LotusOrb({
-  ringProgress,
-  onPress,
-  disabled,
-  instruction,
-}: {
-  ringProgress: number;
+type LotusOrbBaseProps = {
   onPress?: () => void;
   disabled?: boolean;
   instruction?: React.ReactNode;
-}) {
+};
+
+type LotusOrbBreathProps = LotusOrbBaseProps & {
+  ringProgress: number;
+  scale?: never;
+  progress?: never;
+  phaseUniform?: never;
+};
+
+type LotusOrbAmbientProps = LotusOrbBaseProps & {
+  scale: SharedValue<number>;
+  progress: SharedValue<number>;
+  phaseUniform: SharedValue<number>;
+  ringProgress?: never;
+};
+
+export type LotusOrbProps = LotusOrbBreathProps | LotusOrbAmbientProps;
+
+function LotusOrbAmbient({
+  scale,
+  progress,
+  phaseUniform,
+  onPress,
+  disabled,
+  instruction,
+}: LotusOrbAmbientProps) {
+  const stackStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: 0.78 + phaseUniform.value * 0.16 + ((scale.value - 0.88) / 0.17) * 0.1,
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: 0.28 + phaseUniform.value * 0.32,
+    transform: [{ scale: 0.94 + phaseUniform.value * 0.08 }],
+  }));
+
+  return (
+    <Pressable onPress={onPress} disabled={disabled} style={styles.hitArea}>
+      <Animated.View style={[styles.stack, stackStyle]} collapsable={false}>
+        <Animated.View pointerEvents="none" style={[styles.ambientHalo, glowStyle]} />
+        <RingTrack />
+        <AnimatedRingDot progress={progress} />
+        <LotusCenter instruction={instruction} />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+export function LotusOrb(props: LotusOrbProps) {
+  if ('scale' in props && props.scale) {
+    return <LotusOrbAmbient {...props} />;
+  }
+
+  const { ringProgress, onPress, disabled, instruction } = props;
+
   return (
     <Pressable onPress={onPress} disabled={disabled} style={styles.hitArea}>
       <View style={styles.stack} collapsable={false}>
@@ -145,6 +206,17 @@ const styles = StyleSheet.create({
     height: RING_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  ambientHalo: {
+    position: 'absolute',
+    width: RING_SIZE - 24,
+    height: RING_SIZE - 24,
+    borderRadius: (RING_SIZE - 24) / 2,
+    backgroundColor: 'rgba(61,189,168,0.22)',
+    shadowColor: '#3DBDA8',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 28,
   },
   ringSvg: {
     position: 'absolute',

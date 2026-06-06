@@ -1,8 +1,8 @@
 import React from 'react';
-import { Animated, Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Image, Platform, StyleSheet, Text, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { BRAND_NAME, BRAND_SPLASH_FOOTER, BRAND_TAGLINE } from '../../constants/brandCopy';
-import { EmoOrb } from './EmoOrb';
+import { getSanctuaryEmoOrbSize } from '../../theme/sanctuaryEmoFace';
 
 const { width, height } = Dimensions.get('window');
 
@@ -67,11 +67,17 @@ export function SanctuarySplashContent({
   reduceMotion: boolean;
 }) {
   const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['8%', '100%'] });
+  const logoSize = getSanctuaryEmoOrbSize(2.05);
 
   return (
     <Animated.View style={[styles.inner, { opacity: fadeIn }]}>
       <View style={styles.orbWrap} pointerEvents="none">
-        <EmoOrb theme={theme} scale={2.05} minimal pulse={!reduceMotion} />
+        <Image
+          source={theme.emoFace}
+          resizeMode="contain"
+          style={{ width: logoSize, height: logoSize }}
+          accessibilityLabel="Emo"
+        />
       </View>
 
       <Text style={[styles.title, { color: theme.text }]} accessibilityRole="header">

@@ -40,41 +40,42 @@ const API_KEY = process.env.ELEVENLABS_API_KEY?.trim() || '';
 const VOICE_ID = process.env.ELEVENLABS_VOICE_ID?.trim() || '21m00Tcm4TlvDq8ikWAM';
 const MODEL = process.env.ELEVENLABS_MODEL?.trim() || 'eleven_flash_v2_5';
 
-/** Match EMO_VOICE_SETTINGS in utils/elevenLabs.js */
+/** Match EMO_BREATH_VOICE_SETTINGS in utils/elevenLabs.js */
 const VOICE_SETTINGS = {
-  stability: 0.42,
-  similarity_boost: 0.88,
-  use_speaker_boost: true,
+  stability: 0.72,
+  similarity_boost: 0.76,
+  use_speaker_boost: false,
+  speed: 0.84,
 };
 
-function prepareSanctuarySpeechText(text) {
+function prepareBreathSpeechText(text) {
   return text
     .trim()
     .replace(/\s+/g, ' ')
-    .replace(/([.!?])\s+/g, '$1  ')
-    .replace(/[,;]\s*/g, ', ');
+    .replace(/([.!?])\s+/g, '$1   ')
+    .replace(/[,;]\s*/g, ',  ');
 }
 
 /** @type {{ file: string; text: string }[]} */
 const CLIPS = [
-  { file: 'intro.mp3', text: "Let's breathe together." },
-  { file: 'phase-breathe-in.mp3', text: 'Breathe in' },
-  { file: 'phase-hold.mp3', text: 'Hold,' },
-  { file: 'phase-breathe-out.mp3', text: 'Breathe out' },
-  { file: 'phase-rest.mp3', text: 'Rest' },
-  { file: 'count-1.mp3', text: '1' },
-  { file: 'count-2.mp3', text: '2' },
-  { file: 'count-3.mp3', text: '3' },
-  { file: 'count-4.mp3', text: '4' },
-  { file: 'count-5.mp3', text: '5' },
-  { file: 'count-6.mp3', text: '6' },
-  { file: 'count-7.mp3', text: '7' },
-  { file: 'count-8.mp3', text: '8' },
-  { file: 'well-done.mp3', text: 'Beautiful.  Take a gentle breath.' },
+  { file: 'intro.mp3', text: "Let's breathe together…" },
+  { file: 'phase-breathe-in.mp3', text: 'Breathe in…' },
+  { file: 'phase-hold.mp3', text: 'Hold gently.' },
+  { file: 'phase-breathe-out.mp3', text: 'Breathe out…' },
+  { file: 'phase-rest.mp3', text: 'Rest…' },
+  { file: 'count-1.mp3', text: 'one' },
+  { file: 'count-2.mp3', text: 'two' },
+  { file: 'count-3.mp3', text: 'three' },
+  { file: 'count-4.mp3', text: 'four' },
+  { file: 'count-5.mp3', text: 'five' },
+  { file: 'count-6.mp3', text: 'six' },
+  { file: 'count-7.mp3', text: 'seven' },
+  { file: 'count-8.mp3', text: 'eight' },
+  { file: 'well-done.mp3', text: 'Beautiful…  take a gentle breath.' },
 ];
 
 async function fetchMp3(text) {
-  const prepared = prepareSanctuarySpeechText(text);
+  const prepared = prepareBreathSpeechText(text);
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(VOICE_ID)}/stream?output_format=mp3_44100_128`;
 
   const response = await fetch(url, {

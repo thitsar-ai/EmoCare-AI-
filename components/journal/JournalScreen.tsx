@@ -1,22 +1,23 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
+  Alert,
   type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Bookmark, Lock, MessageCircle, Sparkles } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
-import { ScreenNavChrome, type MainScreenKey } from '../navigation/AppNavigation';
+import { ScreenNavChrome, TAB_BAR_HEIGHT, type MainScreenKey } from '../navigation/AppNavigation';
 import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '../../theme/circadianTheme';
 import { CircadianHeroGlow } from '../shared/CircadianHeroGlow';
 import { PrimaryActionButton } from '../shared/PrimaryActionButton';
@@ -27,7 +28,6 @@ import {
   PENDING_JOURNAL_CONTEXT_KEY,
 } from '../../utils/journalStorage';
 
-const NAV_CONTENT_HEIGHT = 72;
 const H_PAD = 22;
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
@@ -104,11 +104,24 @@ function inputSurface(theme: CircadianTheme) {
 export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState('');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
-  const [viewing, setViewing] = useState<number | null>(null);
+  const [viewingId, setViewingId] = useState<number | null>(null);
   const [todayMood, setTodayMood] = useState<{ emoji: string; label: string } | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const dailyPrompt = useMemo(() => {
     const dayIndex = Math.floor(
@@ -117,13 +130,13 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
     return DAILY_PROMPTS[dayIndex % DAILY_PROMPTS.length];
   }, []);
 
-  const scrollPad = NAV_CONTENT_HEIGHT + insets.bottom + 40;
+  const scrollPad = TAB_BAR_HEIGHT + insets.bottom + 24;
 
-  /** Tall writing area — fills space between header and actions. */
-  const inputMinHeight = useMemo(() => {
-    const reserved = insets.top + insets.bottom + NAV_CONTENT_HEIGHT + 340;
-    return Math.max(196, Math.min(320, windowHeight - reserved));
-  }, [windowHeight, insets.top, insets.bottom]);
+  const composerBottomInset = keyboardVisible
+    ? Math.max(insets.bottom, 10)
+    : TAB_BAR_HEIGHT + insets.bottom;
+
+  const inputMinHeight = keyboardVisible ? 112 : 148;
 
   useEffect(() => {
     AsyncStorage.getItem(JOURNAL_ENTRIES_KEY).then((d) => {
@@ -154,7 +167,8 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   const save = async () => {
     if (!text.trim()) return;
     void hapticMedium();
-    const mood = todayMood || { emoji: '🙂', label: 'Peaceful' };
+    Keyboard.dismiss();
+    const mood = todayMood || { emoji: '○', label: 'Reflective' };
     const entry: JournalEntry = {
       id: Date.now(),
       date: new Date().toISOString(),
@@ -178,16 +192,27 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
     month: 'long',
     day: 'numeric',
   });
-  const moodLabel = (todayMood?.label || 'Peaceful').toUpperCase();
+  const moodLabel = todayMood ? todayMood.label.toUpperCase() : 'NOT CHECKED IN YET';
 
-  if (viewing !== null) {
-    const e = entries[viewing];
+  useEffect(() => {
+    if (viewingId === null) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setViewingId(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [viewingId]);
+
+  const viewingEntry = viewingId != null ? entries.find((e) => e.id === viewingId) : null;
+
+  if (viewingEntry) {
+    const e = viewingEntry;
     return (
       <View style={styles.flex}>
         <CircadianHeroGlow theme={theme} />
         <ScreenSafeArea extraTop={4}>
           <View style={[styles.detailHeader, { borderBottomColor: theme.border }]}>
-            <TouchableOpacity onPress={() => setViewing(null)} style={styles.backBtn}>
+            <TouchableOpacity onPress={() => setViewingId(null)} style={styles.backBtn}>
               <Text style={[styles.backGlyph, { color: theme.accent }]}>←</Text>
             </TouchableOpacity>
             <View style={styles.flex}>
@@ -200,8 +225,17 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
             </View>
             <TouchableOpacity
               onPress={() => {
-                deleteEntry(e.id);
-                setViewing(null);
+                Alert.alert('Delete this entry?', 'This cannot be undone.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => {
+                      void deleteEntry(e.id);
+                      setViewingId(null);
+                    },
+                  },
+                ]);
               }}
               style={styles.deleteBtn}
             >
@@ -230,8 +264,8 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
       <ScreenSafeArea extraTop={4}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 52 : 0}
         >
           <View style={styles.chromeWrap}>
             <ScreenNavChrome theme={theme} title="My Journal" titleFontSize={15} />
@@ -245,112 +279,155 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
           </View>
 
           <ScrollView
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollPad }]}
+            ref={scrollRef}
+            style={styles.flex}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: keyboardVisible ? 12 : 16 },
+            ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
+            keyboardDismissMode="interactive"
           >
-            {/* Compose column stretches toward bottom */}
-            <View style={styles.composeColumn}>
-              <JournalGlassCard theme={theme} style={styles.promptCard}>
-                <Text style={[styles.promptLabel, { color: theme.mutedText }]}>PROMPT</Text>
-                <Text style={[styles.promptText, { color: theme.text }]}>{dailyPrompt}</Text>
-              </JournalGlassCard>
+            {!keyboardVisible ? (
+              <View style={styles.pastSection}>
+                {entries.length > 0 ? (
+                  <>
+                    <Text style={[styles.sectionLabel, { color: theme.mutedText }]}>PAST ENTRIES</Text>
+                    {entries.map((e, i) => {
+                      const shortDate = new Date(e.date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      });
+                      const tagColor = moodTagColors(e.mood.label, theme);
+                      const preview =
+                        e.text.length > 72 ? `"${e.text.slice(0, 72).trim()}…"` : `"${e.text.trim()}"`;
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                nestedScrollEnabled
-                contentContainerStyle={styles.chipRow}
-                style={styles.chipScroll}
-              >
-                {CATEGORY_CHIPS.map((chip) => (
-                  <TouchableOpacity
-                    key={chip.label}
-                    style={[styles.categoryChip, { borderColor: chip.color }]}
-                    onPress={() =>
-                      setText((prev) => (prev.trim() ? `${prev}\n\n${chip.starter}` : chip.starter))
-                    }
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.categoryChipText, { color: chip.color }]}>{chip.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                      return (
+                        <TouchableOpacity key={e.id} activeOpacity={0.88} onPress={() => setViewingId(e.id)}>
+                          <JournalGlassCard theme={theme} style={styles.entryCard}>
+                            <View style={styles.entryTop}>
+                              <Text style={[styles.entryDate, { color: theme.text }]}>
+                                {shortDate} · {e.mood.label}
+                              </Text>
+                              <View style={[styles.moodTag, { borderColor: `${tagColor}66` }]}>
+                                <Bookmark size={10} color={tagColor} strokeWidth={2.4} />
+                                <Text style={[styles.moodTagText, { color: tagColor }]}>{e.mood.label}</Text>
+                              </View>
+                            </View>
+                            <Text
+                              style={[styles.entryPreview, { color: theme.secondaryText }]}
+                              numberOfLines={2}
+                            >
+                              {preview}
+                            </Text>
+                          </JournalGlassCard>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <Text style={[styles.emptyPastHint, { color: theme.mutedText }]}>
+                    Your saved entries will appear here.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+          </ScrollView>
 
-              <JournalGlassCard
+          <View
+            style={[
+              styles.composerDock,
+              {
+                borderTopColor: theme.border,
+                backgroundColor: theme.isDark ? 'rgba(18,10,36,0.98)' : 'rgba(245,240,252,0.98)',
+                paddingBottom: composerBottomInset,
+              },
+            ]}
+          >
+            {!keyboardVisible ? (
+              <>
+                <JournalGlassCard theme={theme} style={styles.promptCard}>
+                  <Text style={[styles.promptLabel, { color: theme.mutedText }]}>TODAY&apos;S PROMPT</Text>
+                  <Text style={[styles.promptText, { color: theme.text }]}>{dailyPrompt}</Text>
+                </JournalGlassCard>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="always"
+                  contentContainerStyle={styles.chipRow}
+                  style={styles.chipScroll}
+                >
+                  {CATEGORY_CHIPS.map((chip) => (
+                    <TouchableOpacity
+                      key={chip.label}
+                      style={[styles.categoryChip, { borderColor: chip.color }]}
+                      onPress={() =>
+                        setText((prev) => (prev.trim() ? `${prev}\n\n${chip.starter}` : chip.starter))
+                      }
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.categoryChipText, { color: chip.color }]}>{chip.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            ) : (
+              <View style={[styles.promptStrip, { borderBottomColor: theme.border, backgroundColor: theme.card }]}>
+                <Sparkles size={13} color={theme.accent} strokeWidth={2.2} />
+                <Text style={[styles.promptStripLabel, { color: theme.mutedText }]}>Prompt</Text>
+                <Text style={[styles.promptStripText, { color: theme.secondaryText }]} numberOfLines={1}>
+                  {dailyPrompt}
+                </Text>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.inputShell,
+                {
+                  borderColor: theme.isDark ? 'rgba(183,157,255,0.45)' : 'rgba(123,111,232,0.35)',
+                  backgroundColor: inputSurface(theme),
+                  minHeight: inputMinHeight,
+                },
+              ]}
+            >
+              <Text style={[styles.inputEyebrow, { color: theme.mutedText }]}>YOUR ENTRY</Text>
+              <TextInput
+                ref={inputRef}
+                style={[styles.journalInput, { color: theme.text, minHeight: inputMinHeight - 42 }]}
+                multiline
+                placeholder="Write what your heart wants to release today…"
+                placeholderTextColor={theme.mutedText}
+                value={text}
+                onChangeText={setText}
+                textAlignVertical="top"
+                blurOnSubmit={false}
+                returnKeyType="default"
+                scrollEnabled
+              />
+            </View>
+
+            <View style={styles.composeFooter}>
+              <PrimaryActionButton
+                label="Save this entry"
                 theme={theme}
-                style={{ ...styles.inputCard, minHeight: inputMinHeight }}
-                fill={inputSurface(theme)}
-              >
-                <TextInput
-                  style={[styles.journalInput, { color: theme.text, minHeight: inputMinHeight - 36 }]}
-                  multiline
-                  placeholder="This space is yours. Write freely. No one else will see this."
-                  placeholderTextColor={theme.mutedText}
-                  value={text}
-                  onChangeText={setText}
-                  textAlignVertical="top"
-                />
-              </JournalGlassCard>
+                onPress={() => void save()}
+                disabled={!text.trim()}
+                disabledHint="Write something to save this entry."
+              />
 
-              <View style={styles.composeSpacer} />
-
-              <View style={styles.actionBlock}>
-                <PrimaryActionButton
-                  label="Save this entry"
-                  theme={theme}
-                  onPress={() => void save()}
-                  disabled={!text.trim()}
-                  disabledHint="Write something to save this entry."
-                />
-
+              {!keyboardVisible ? (
                 <View style={[styles.privacyRow, { borderColor: theme.border, backgroundColor: theme.card }]}>
                   <Lock size={14} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
                   <Text style={[styles.privacyText, { color: theme.mutedText }]}>
                     Stored privately on this device only.
                   </Text>
                 </View>
-              </View>
+              ) : null}
             </View>
-
-            {entries.length > 0 ? (
-              <View style={styles.pastSection}>
-                <Text style={[styles.sectionLabel, { color: theme.mutedText }]}>PAST ENTRIES</Text>
-                {entries.map((e, i) => {
-                  const shortDate = new Date(e.date).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                  });
-                  const tagColor = moodTagColors(e.mood.label, theme);
-                  const preview =
-                    e.text.length > 72 ? `"${e.text.slice(0, 72).trim()}…"` : `"${e.text.trim()}"`;
-
-                  return (
-                    <TouchableOpacity key={e.id} activeOpacity={0.88} onPress={() => setViewing(i)}>
-                      <JournalGlassCard theme={theme} style={styles.entryCard}>
-                        <View style={styles.entryTop}>
-                          <Text style={[styles.entryDate, { color: theme.text }]}>
-                            {shortDate} · {e.mood.label}
-                          </Text>
-                          <View style={[styles.moodTag, { borderColor: `${tagColor}66` }]}>
-                            <Bookmark size={10} color={tagColor} strokeWidth={2.4} />
-                            <Text style={[styles.moodTagText, { color: tagColor }]}>{e.mood.label}</Text>
-                          </View>
-                        </View>
-                        <Text
-                          style={[styles.entryPreview, { color: theme.secondaryText }]}
-                          numberOfLines={2}
-                        >
-                          {preview}
-                        </Text>
-                      </JournalGlassCard>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : null}
-          </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </ScreenSafeArea>
     </View>
@@ -430,28 +507,54 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'flex-start',
   },
+  composerDock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: H_PAD,
+    paddingTop: 14,
+    gap: 14,
+  },
   promptCard: {
-    padding: 20,
-    marginBottom: 20,
+    padding: 18,
+    marginBottom: 0,
   },
   promptLabel: {
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.6,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   promptText: {
-    fontFamily: SERIF,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
     fontSize: 17,
     lineHeight: 26,
     fontWeight: '400',
   },
-  chipScroll: { flexGrow: 0, marginBottom: 20 },
+  promptStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  promptStripLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  promptStripText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: 'italic',
+  },
+  chipScroll: { flexGrow: 0, marginBottom: 0 },
   chipRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingRight: H_PAD,
+    paddingRight: 4,
   },
   categoryChip: {
     borderWidth: 1.5,
@@ -460,37 +563,29 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   categoryChipText: { fontSize: 13, fontWeight: '600' },
-  inputCard: {
-    flexGrow: 1,
-    marginBottom: 0,
+  inputShell: {
+    borderWidth: 1.5,
+    borderRadius: 18,
+    overflow: 'hidden',
   },
-  composeSpacer: {
-    flexGrow: 1,
-    minHeight: 16,
+  inputEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+  },
+  composeFooter: {
+    gap: 12,
+    paddingTop: 2,
   },
   journalInput: {
-    paddingVertical: 18,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     fontSize: 16,
     lineHeight: 26,
   },
-  actionBlock: {
-    paddingTop: 20,
-    paddingBottom: 12,
-  },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    width: '100%',
-    borderRadius: 999,
-    paddingVertical: 17,
-    marginBottom: 14,
-  },
-  saveBtnDisabled: { opacity: 0.45 },
-  saveBtnPressed: { opacity: 0.88 },
-  saveBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   privacyRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -501,8 +596,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   pastSection: {
-    marginTop: 32,
-    paddingTop: 8,
+    marginTop: 4,
+    paddingTop: 4,
+  },
+  emptyPastHint: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 12,
   },
   privacyText: { fontSize: 13, flex: 1, lineHeight: 18 },
   sectionLabel: {

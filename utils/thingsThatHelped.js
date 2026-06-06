@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const HELPED_STORAGE_KEY = 'emoThingsThatHelped';
+export const HELPED_DISMISSED_KEY = 'emoHelpedDismissed';
 
 /** Evidence-informed self-care domains (behavioral activation + NICE/WHO wellbeing). */
 export const HELPED_CATEGORIES = {
@@ -232,6 +233,15 @@ export const HELPED_CATALOG = [
     navigate: null,
     tip: 'Blood sugar dips mimic anxiety. Gentle nutrition is emotional first aid, not discipline.',
   },
+  {
+    id: 'haircut-grooming',
+    categoryId: 'care',
+    title: 'Haircut or grooming',
+    sub: 'felt refreshed',
+    navigate: null,
+    tip: 'Personal grooming can restore dignity and calm — a small act of self-care, not vanity.',
+    emoPrompt: 'Getting a haircut helped me feel better — help me notice what that reset meant',
+  },
 ];
 
 const CATALOG_BY_ID = Object.fromEntries(HELPED_CATALOG.map((item) => [item.id, item]));
@@ -335,6 +345,92 @@ export async function removeHelpedRecord(recordId) {
   await AsyncStorage.setItem(HELPED_STORAGE_KEY, JSON.stringify(next));
 }
 
+/** @param {{ title?: string; sub?: string; categoryId?: string }} patch */
+export async function updateHelpedRecord(recordId, patch) {
+  const all = await loadUserHelpedLog();
+  const idx = all.findIndex((e) => e.recordId === recordId);
+  if (idx < 0) return null;
+
+  const existing = all[idx];
+  const categoryId = patch.categoryId && HELPED_CATEGORIES[patch.categoryId] ? patch.categoryId : existing.categoryId;
+  const cat = HELPED_CATEGORIES[categoryId];
+  const next = {
+    ...existing,
+    categoryId,
+    categoryLabel: cat?.label || existing.categoryLabel,
+    color: cat?.accent || existing.color,
+  };
+
+  if (typeof patch.title === 'string' && patch.title.trim()) {
+    next.title = patch.title.trim();
+  }
+  if (typeof patch.sub === 'string') {
+    next.sub = patch.sub.trim() || existing.sub;
+  }
+
+  all[idx] = next;
+  await AsyncStorage.setItem(HELPED_STORAGE_KEY, JSON.stringify(all));
+  return next;
+}
+
+/**
+ * Edit a user log, or personalize an inferred catalog suggestion (saves as your log).
+ * @param {{ recordId?: string; catalogId?: string | null; inferred?: boolean; categoryId?: string; title?: string; sub?: string }} item
+ * @param {{ title?: string; sub?: string }} patch
+ */
+export async function editHelpedItem(item, patch) {
+  if (item?.recordId) {
+    return updateHelpedRecord(item.recordId, patch);
+  }
+
+  const catalogId = item?.catalogId;
+  if (!catalogId || !CATALOG_BY_ID[catalogId]) return null;
+
+  await dismissHelpedSuggestion(catalogId);
+
+  const base = catalogItemToRow(CATALOG_BY_ID[catalogId]);
+  const row = {
+    ...base,
+    recordId: `log-${Date.now()}`,
+    title: patch.title?.trim() || base.title,
+    sub: typeof patch.sub === 'string' ? patch.sub.trim() || base.sub : base.sub,
+    inferred: false,
+    userLogged: true,
+    weekKey: getWeekKey(),
+    addedAt: new Date().toISOString(),
+  };
+
+  const all = await loadUserHelpedLog();
+  all.unshift(row);
+  await AsyncStorage.setItem(HELPED_STORAGE_KEY, JSON.stringify(all.slice(0, 80)));
+  return row;
+}
+
+async function loadDismissedSuggestions() {
+  return parseJson(await AsyncStorage.getItem(HELPED_DISMISSED_KEY), []);
+}
+
+/** Hide an inferred catalog suggestion for a given week. */
+export async function dismissHelpedSuggestion(catalogId, weekKey = getWeekKey()) {
+  if (!catalogId) return;
+  const dismissed = await loadDismissedSuggestions();
+  const key = `${weekKey}:${catalogId}`;
+  if (dismissed.includes(key)) return;
+  dismissed.unshift(key);
+  await AsyncStorage.setItem(HELPED_DISMISSED_KEY, JSON.stringify(dismissed.slice(0, 120)));
+}
+
+/** Remove a user log or dismiss an inferred suggestion. */
+export async function removeHelpedItem(item) {
+  if (item?.recordId) {
+    await removeHelpedRecord(item.recordId);
+    return;
+  }
+  if (item?.catalogId) {
+    await dismissHelpedSuggestion(item.catalogId);
+  }
+}
+
 function inferCatalogIds(moodVectors, journalCount) {
   const labels = moodVectors.map((v) => v.moodLabel);
   const ids = new Set();
@@ -368,6 +464,8 @@ function inferCatalogIds(moodVectors, journalCount) {
 export async function loadThingsThatHelped(moodVectors = [], journalCount = 0) {
   const userWeek = await loadUserHelpedThisWeek();
   const inferredIds = inferCatalogIds(moodVectors, journalCount);
+  const dismissed = new Set(await loadDismissedSuggestions());
+  const weekKey = getWeekKey();
 
   const seen = new Set();
   const rows = [];
@@ -376,13 +474,14 @@ export async function loadThingsThatHelped(moodVectors = [], journalCount = 0) {
     const key = u.catalogId || u.recordId;
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push(u);
+    rows.push({ ...u, userLogged: true });
   }
 
   for (const id of inferredIds) {
     if (seen.has(id)) continue;
+    if (dismissed.has(`${weekKey}:${id}`)) continue;
     seen.add(id);
-    rows.push(catalogItemToRow(CATALOG_BY_ID[id]));
+    rows.push({ ...catalogItemToRow(CATALOG_BY_ID[id]), inferred: true });
   }
 
   return rows.slice(0, 8);

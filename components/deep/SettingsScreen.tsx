@@ -13,11 +13,14 @@ import {
   saveSettings,
 } from '../../utils/settingsStorage';
 import { deleteAllUserData, exportUserData } from '../../utils/dataExport';
+import { triggerAppReset } from '../../utils/appReset';
+import Constants from 'expo-constants';
 import { ScreenNavChrome, type MainScreenKey, useAppNav } from '../navigation/AppNavigation';
 import { isElevenLabsConfigured } from '../../utils/elevenLabs';
 import { refreshEmocareConfig } from '../../utils/emocareApi';
 import { hapticLight } from '../../utils/haptics';
 import { isWebInstallSupported, useWebInstallPrompt } from '../../utils/webInstallPrompt';
+import { openPrivacyPolicy } from '../../constants/legalLinks';
 
 const NAV_CONTENT_HEIGHT = 72;
 
@@ -54,13 +57,18 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const handleDeleteAll = () => {
     Alert.alert(
       'Delete all data?',
-      'This removes check-ins, journal, memory, and settings from this device. You will return to onboarding.',
+      'This will permanently remove your saved check-ins, journal entries, memories, chat history, Oracle insights, and app data from this device.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete all data',
+          text: 'Delete All Data',
           style: 'destructive',
-          onPress: () => void deleteAllUserData(),
+          onPress: () => {
+            void deleteAllUserData().then(() => {
+              triggerAppReset();
+              Alert.alert('Data deleted', 'Your sanctuary has been reset. Welcome begins again.');
+            });
+          },
         },
       ],
     );
@@ -89,7 +97,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           <ScreenNavChrome theme={theme} title="Settings" titleFontSize={15} />
         </View>
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24 }}
+        contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: insets.bottom + 24 }}
         showsVerticalScrollIndicator={false}
       >
         <SettingsSection theme={theme} label="ACCOUNT">
@@ -182,7 +190,10 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
-          <Pressable style={[styles.linkRow, { borderBottomColor: theme.border }]}>
+          <Pressable
+            onPress={openPrivacyPolicy}
+            style={[styles.linkRow, { borderBottomColor: theme.border }]}
+          >
             <Text style={[styles.rowLabel, { color: theme.text }]}>Privacy Policy</Text>
             <View style={styles.linkAction}>
               <Text style={[styles.linkActionText, { color: theme.mutedText }]}>View </Text>
@@ -200,6 +211,20 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             </View>
           </Pressable>
         </SettingsSection>
+
+        <SettingsSection theme={theme} label="ABOUT">
+          <SettingRow
+            theme={theme}
+            label="App version"
+            value={`${Constants.expoConfig?.version ?? '1.0.0'}`}
+            last
+          />
+        </SettingsSection>
+
+        <Text style={[styles.safetyNote, { color: theme.mutedText }]}>
+          EmoCare is for emotional reflection and personal growth. It is not medical care, therapy,
+          diagnosis, treatment, or crisis support. Intended for users 18 and older.
+        </Text>
 
         <Pressable
           onPress={handleDeleteAll}
@@ -303,6 +328,12 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   deleteText: { fontWeight: '700', fontSize: 16 },
+  safetyNote: {
+    fontSize: 13,
+    lineHeight: 20,
+    paddingHorizontal: 6,
+    marginBottom: 12,
+  },
   disclaimer: {
     textAlign: 'center',
     fontSize: 13,

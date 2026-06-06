@@ -1,9 +1,7 @@
 import 'react-native-reanimated';
 import { registerRootComponent } from 'expo';
 
-import App from './App';
+import LaunchGate from './components/launch/LaunchGate';
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+// Lazy-load App so Expo Go shows our dark splash while the main bundle parses.
+registerRootComponent(LaunchGate);

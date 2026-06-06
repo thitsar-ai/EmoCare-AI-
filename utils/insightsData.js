@@ -68,7 +68,7 @@ export async function loadInsightsBundle(days = 7) {
 
   return {
     weekLabel: data.weekRange.label,
-    themes: themes.length ? themes : FALLBACK_THEMES,
+    themes: themes.length ? themes : [],
     gentleInsight,
     helped,
     hasLiveData: data.moodVectors.length > 0 || data.journalExcerpts.length > 0,

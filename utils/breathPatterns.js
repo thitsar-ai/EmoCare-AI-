@@ -55,12 +55,12 @@ export const BREATH_COPY = {
   holdAfter: 'Rest in stillness...',
 };
 
-/** Short labels for countdown UI and voice cues. */
+/** Short labels for countdown UI and live voice fallback. */
 export const BREATH_PHASE_LABELS = {
-  inhale: 'Breathe in',
-  hold: 'Hold',
-  exhale: 'Breathe out',
-  holdAfter: 'Rest',
+  inhale: 'Breathe in…',
+  hold: 'Hold gently',
+  exhale: 'Breathe out…',
+  holdAfter: 'Rest…',
 };
 
 /** Target scale multipliers for the morphing core. */

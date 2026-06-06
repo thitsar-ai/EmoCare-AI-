@@ -10,6 +10,7 @@ export interface TriageTaskRecord {
   createdAt: string;
   durationMin?: number;
   emoScheduled?: boolean;
+  categoryLocked?: boolean;
 }
 
 export interface EnergyCategoryMeta {
@@ -28,6 +29,7 @@ export const ENERGY_CATEGORY_ORDER: EnergyCategoryId[];
 
 export function normalizeCategory(categoryId: string | undefined): EnergyCategoryId;
 export function inferTaskCategory(title: string): EnergyCategoryId;
+export function resolveTaskCategory(task: TriageTaskRecord): EnergyCategoryId;
 export function getTodayDayKey(date?: Date): string;
 export function loadAllTriageTasks(): Promise<TriageTaskRecord[]>;
 export function loadTodayTasks(dayKey?: string): Promise<TriageTaskRecord[]>;

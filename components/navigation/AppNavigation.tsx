@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   Modal,
   PanResponder,
   Platform,
@@ -11,7 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticLight } from '../../utils/haptics';
 import {
@@ -51,7 +52,7 @@ export type MainScreenKey =
   | 'oracle'
   | 'today';
 
-/** Tab bar order follows FULL_APP_FLOW (subset). Voice/Breathe use nearest tab highlight. */
+/** Tab bar order (subset of main screens). Voice/Breathe use nearest tab highlight. */
 export const TAB_BAR_TAB_ORDER: MainScreenKey[] = [
   'home',
   'checkin',
@@ -69,12 +70,13 @@ export const TAB_BAR_SCREENS: MainScreenKey[] = [
 
 export function tabBarHighlightKey(screen: MainScreenKey): MainScreenKey {
   if (screen === 'voice') return 'talk';
-  if (screen === 'breathe') return 'journal';
+  // Breathe is not a tab root — avoid highlighting Journal when user is in Breathe.
+  if (screen === 'breathe') return 'breathe';
   return screen;
 }
 
 /** Bottom tab bar height (excluding safe area). Keep in sync with App.tsx NavBar. */
-export const TAB_BAR_HEIGHT = 60;
+export const TAB_BAR_HEIGHT = 72;
 
 const SWIPE_EDGE_WIDTH = Platform.OS === 'ios' ? 36 : 28;
 const SWIPE_DISTANCE_PX = 24;
@@ -85,6 +87,7 @@ export type FlowStep =
   | { kind: 'onboarding'; slide: 2 | 4 | 5 }
   | { kind: 'screen'; key: MainScreenKey };
 
+/** Guided tour order for onboarding review + forward chevron (not used for back on main screens). */
 export const FULL_APP_FLOW: FlowStep[] = [
   { kind: 'onboarding', slide: 2 },
   { kind: 'onboarding', slide: 4 },
@@ -115,10 +118,6 @@ export const OB_LAST_CONTENT_SLIDE = 5 as const;
 export const OB_AGE_GATE_SLIDE = 3 as const;
 export const OB_PRIVACY_SLIDE = 4 as const;
 
-function flowIndex(key: MainScreenKey): number {
-  return APP_SCREEN_FLOW.indexOf(key);
-}
-
 function findFlowIndex(onboardingSlide: number | null, screenKey: MainScreenKey): number {
   if (onboardingSlide != null) {
     const obIdx = FULL_APP_FLOW.findIndex(
@@ -133,21 +132,47 @@ function findFlowIndex(onboardingSlide: number | null, screenKey: MainScreenKey)
   return FULL_APP_FLOW.findIndex((s) => s.kind === 'screen' && s.key === 'home');
 }
 
+function getHomeFlowIndex(): number {
+  return FULL_APP_FLOW.findIndex((s) => s.kind === 'screen' && s.key === 'home');
+}
+
+function getOnboardingStepBeforeHome(): number | null {
+  const homeIdx = getHomeFlowIndex();
+  if (homeIdx <= 0) return null;
+  return homeIdx - 1;
+}
+
+function canEnterOnboardingFromHome(screenKey: MainScreenKey): boolean {
+  return screenKey === 'home' && getOnboardingStepBeforeHome() != null;
+}
+
+function getNextScreenInFlow(current: MainScreenKey): MainScreenKey | null {
+  const start = FULL_APP_FLOW.findIndex((s) => s.kind === 'screen' && s.key === current);
+  if (start < 0) return null;
+  for (let i = start + 1; i < FULL_APP_FLOW.length; i++) {
+    const step = FULL_APP_FLOW[i];
+    if (step.kind === 'screen') return step.key;
+  }
+  return null;
+}
+
 export type OnboardingSlideKey = 'ob-welcome' | 'ob-privacy' | 'ob-checkin';
 
 export type NavTarget =
   | { kind: 'screen'; key: MainScreenKey }
   | { kind: 'onboarding'; slide: 1 | 2 | 3 | 4 | 5 };
 
-type HistoryEntry = MainScreenKey;
-
 type AppNavContextValue = {
   screen: MainScreenKey;
   navigate: (key: MainScreenKey) => void;
+  /** Open Check In — pass true to load today's saved mood/note for editing. */
+  navigateToCheckIn: (editToday?: boolean) => void;
+  consumeCheckInPrefill: () => boolean;
   goBack: () => void;
   goForward: () => void;
   canGoBack: boolean;
   canGoForward: boolean;
+  resetNavigation: (key?: MainScreenKey) => void;
   menuOpen: boolean;
   setMenuOpen: (open: boolean) => void;
   profileOpen: boolean;
@@ -189,6 +214,18 @@ export function AppNavProvider({
   const [onboardingReviewSlide, setOnboardingReviewSlide] = useState<number | null>(null);
   const [onboardingSplashActive, setOnboardingSplashActive] = useState(false);
   const [immersiveChromeHidden, setImmersiveChromeHidden] = useState(false);
+  const [navRevision, setNavRevision] = useState(0);
+  const screenHistoryRef = useRef<MainScreenKey[]>([screen]);
+  const forwardHistoryRef = useRef<MainScreenKey[]>([]);
+  const checkInPrefillRef = useRef(false);
+
+  const bumpNav = useCallback(() => setNavRevision((v) => v + 1), []);
+
+  const consumeCheckInPrefill = useCallback(() => {
+    const prefill = checkInPrefillRef.current;
+    checkInPrefillRef.current = false;
+    return prefill;
+  }, []);
 
   const applyFlowStep = useCallback(
     (index: number) => {
@@ -199,10 +236,13 @@ export function AppNavProvider({
         setOnboardingReviewSlide(step.slide);
       } else {
         setOnboardingReviewSlide(null);
+        screenHistoryRef.current = [step.key];
+        forwardHistoryRef.current = [];
         setScreen(step.key);
+        bumpNav();
       }
     },
-    [setScreen],
+    [bumpNav, setScreen],
   );
 
   const currentFlowIndex = useCallback(
@@ -210,27 +250,113 @@ export function AppNavProvider({
     [onboardingReviewSlide, screen],
   );
 
+  const resetNavigation = useCallback(
+    (key: MainScreenKey = 'home') => {
+      screenHistoryRef.current = [key];
+      forwardHistoryRef.current = [];
+      setOnboardingReviewSlide(null);
+      setMenuOpen(false);
+      setScreen(key);
+      bumpNav();
+    },
+    [bumpNav, setScreen],
+  );
+
   const navigate = useCallback(
     (key: MainScreenKey) => {
-      const idx = FULL_APP_FLOW.findIndex((s) => s.kind === 'screen' && s.key === key);
-      if (idx >= 0) applyFlowStep(idx);
+      setMenuOpen(false);
+      setOnboardingReviewSlide(null);
+      const history = screenHistoryRef.current;
+      const current = history[history.length - 1] ?? screen;
+      if (current === key) return;
+
+      // Tab switch: jump to an existing tab root instead of stacking duplicates (e.g. home → journal → home).
+      if (TAB_BAR_TAB_ORDER.includes(key)) {
+        const existingIdx = history.lastIndexOf(key);
+        if (existingIdx >= 0) {
+          const popped = history.slice(existingIdx + 1);
+          screenHistoryRef.current = history.slice(0, existingIdx + 1);
+          if (popped.length > 0) {
+            forwardHistoryRef.current = [...popped, ...forwardHistoryRef.current];
+          }
+          setScreen(key);
+          bumpNav();
+          return;
+        }
+      }
+
+      screenHistoryRef.current = [...history, key];
+      forwardHistoryRef.current = [];
+      setScreen(key);
+      bumpNav();
     },
-    [applyFlowStep],
+    [bumpNav, screen, setScreen],
+  );
+
+  const navigateToCheckIn = useCallback(
+    (editToday = false) => {
+      checkInPrefillRef.current = editToday;
+      navigate('checkin');
+    },
+    [navigate],
   );
 
   const goBack = useCallback(() => {
-    const idx = currentFlowIndex();
-    if (idx > 0) applyFlowStep(idx - 1);
-  }, [applyFlowStep, currentFlowIndex]);
+    if (onboardingReviewSlide != null) {
+      const idx = currentFlowIndex();
+      if (idx > 0) applyFlowStep(idx - 1);
+      return;
+    }
+    const history = screenHistoryRef.current;
+    if (history.length > 1) {
+      const current = history[history.length - 1];
+      const previous = history[history.length - 2];
+      screenHistoryRef.current = history.slice(0, -1);
+      forwardHistoryRef.current = [current, ...forwardHistoryRef.current];
+      setScreen(previous);
+      bumpNav();
+      return;
+    }
+    const obStep = getOnboardingStepBeforeHome();
+    if (screen === 'home' && obStep != null) {
+      applyFlowStep(obStep);
+    }
+  }, [applyFlowStep, bumpNav, currentFlowIndex, onboardingReviewSlide, screen, setScreen]);
 
   const goForward = useCallback(() => {
-    const idx = currentFlowIndex();
-    if (idx < FULL_APP_FLOW.length - 1) applyFlowStep(idx + 1);
-  }, [applyFlowStep, currentFlowIndex]);
+    if (onboardingReviewSlide != null) {
+      const idx = currentFlowIndex();
+      if (idx < FULL_APP_FLOW.length - 1) applyFlowStep(idx + 1);
+      return;
+    }
+
+    const forward = forwardHistoryRef.current;
+    if (forward.length > 0) {
+      const next = forward[0];
+      forwardHistoryRef.current = forward.slice(1);
+      screenHistoryRef.current = [...screenHistoryRef.current, next];
+      setScreen(next);
+      bumpNav();
+      return;
+    }
+
+    const nextInFlow = getNextScreenInFlow(screen);
+    if (!nextInFlow) return;
+    screenHistoryRef.current = [...screenHistoryRef.current, nextInFlow];
+    forwardHistoryRef.current = [];
+    setScreen(nextInFlow);
+    bumpNav();
+  }, [applyFlowStep, bumpNav, currentFlowIndex, onboardingReviewSlide, screen, setScreen]);
 
   const flowIdx = onboardingSplashActive ? -1 : currentFlowIndex();
-  const canGoBack = flowIdx > 0;
-  const canGoForward = flowIdx >= 0 && flowIdx < FULL_APP_FLOW.length - 1;
+  const canGoBack =
+    onboardingReviewSlide != null
+      ? flowIdx > 0
+      : screenHistoryRef.current.length > 1 || canEnterOnboardingFromHome(screen);
+  const canGoForward =
+    onboardingReviewSlide != null
+      ? flowIdx >= 0 && flowIdx < FULL_APP_FLOW.length - 1
+      : forwardHistoryRef.current.length > 0 || getNextScreenInFlow(screen) != null;
 
   const openOnboardingSlide = useCallback(
     (slide: 1 | 2 | 3 | 4 | 5) => {
@@ -254,14 +380,36 @@ export function AppNavProvider({
     setOnboardingReviewSlide(null);
   }, []);
 
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (menuOpen) {
+        setMenuOpen(false);
+        return true;
+      }
+      if (profileOpen) {
+        setProfileOpen(false);
+        return true;
+      }
+      if (canGoBack) {
+        goBack();
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [canGoBack, goBack, menuOpen, profileOpen]);
+
   const value = useMemo(
     () => ({
       screen,
       navigate,
+      navigateToCheckIn,
+      consumeCheckInPrefill,
       goBack,
       goForward,
       canGoBack,
       canGoForward,
+      resetNavigation,
       menuOpen,
       setMenuOpen,
       profileOpen,
@@ -279,10 +427,14 @@ export function AppNavProvider({
     [
       screen,
       navigate,
+      navigateToCheckIn,
+      consumeCheckInPrefill,
       goBack,
       goForward,
       canGoBack,
       canGoForward,
+      resetNavigation,
+      navRevision,
       menuOpen,
       profileOpen,
       onboardingReviewSlide,
@@ -312,17 +464,12 @@ export const MAIN_APP_MENU: {
   { label: 'Tell Me About You', Icon: Heart, accent: '#B79DFF', target: { kind: 'onboarding', slide: 5 } },
   { label: 'Home', Icon: Home, accent: '#B79DFF', target: { kind: 'screen', key: 'home' } },
   { label: 'Check In', Icon: Heart, accent: '#E89B5C', target: { kind: 'screen', key: 'checkin' } },
-  {
-    label: 'Today Dashboard',
-    Icon: CalendarDays,
-    accent: '#2A9D8F',
-    target: { kind: 'screen', key: 'today' },
-  },
+  { label: 'Today', Icon: CalendarDays, accent: '#2A9D8F', target: { kind: 'screen', key: 'today' } },
   { label: 'Talk', Icon: MessageCircle, accent: '#9B7BFF', target: { kind: 'screen', key: 'talk' } },
   { label: 'Voice Talk', Icon: AudioLines, accent: '#7BC67E', target: { kind: 'screen', key: 'voice' } },
   { label: 'Journal', Icon: BookOpen, accent: '#D4A574', target: { kind: 'screen', key: 'journal' } },
   { label: 'Breathe', Icon: Wind, accent: '#6B7FD7', target: { kind: 'screen', key: 'breathe' } },
-  { label: 'Oracle Search', Icon: Sparkles, accent: '#3DBDA8', target: { kind: 'screen', key: 'oracle' } },
+  { label: 'Oracle', Icon: Sparkles, accent: '#3DBDA8', target: { kind: 'screen', key: 'oracle' } },
   { label: 'Insights', Icon: TrendingUp, accent: '#6B7FD7', target: { kind: 'screen', key: 'insights' } },
   { label: 'Memory Ledger', Icon: Brain, accent: '#C4A35A', target: { kind: 'screen', key: 'memoryledger' } },
 ];
@@ -354,7 +501,7 @@ export function AppMenuSheet({
   onSelect: (target: NavTarget) => void;
   onOpenProfile: () => void;
 }) {
-  const insets = useSafeAreaInsets();
+  const insets = useLayoutInsets();
   const { height: windowHeight } = useWindowDimensions();
   const menuTop = insets.top + 52;
   const menuMaxHeight = Math.min(windowHeight * 0.62, windowHeight - menuTop - insets.bottom - 20);
@@ -518,6 +665,7 @@ export function NavChromeBtn({ theme, onPress, disabled, accessibilityLabel, chi
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       style={({ pressed }) => [
         styles.chromeBtn,
         btnStyle,
@@ -595,6 +743,7 @@ export function ScreenNavChrome({
   canGoBack: canGoBackOverride,
   canGoForward: canGoForwardOverride,
   centerContent,
+  centerAlign = 'center',
   /** Screen-specific actions placed before forward + app menu (e.g. bell, chat options). */
   actionsBeforeNav,
   /** @deprecated Use actionsBeforeNav */
@@ -616,6 +765,7 @@ export function ScreenNavChrome({
   canGoBack?: boolean;
   canGoForward?: boolean;
   centerContent?: React.ReactNode;
+  centerAlign?: 'center' | 'start';
   actionsBeforeNav?: React.ReactNode;
   extraRight?: React.ReactNode;
   extraTop?: React.ReactNode;
@@ -649,7 +799,9 @@ export function ScreenNavChrome({
       </View>
 
       {centerContent ? (
-        <View style={styles.chromeCenter}>{centerContent}</View>
+        <View style={[styles.chromeCenter, centerAlign === 'start' && styles.chromeCenterStart]}>
+          {centerContent}
+        </View>
       ) : title ? (
         <Text
           style={[styles.chromeTitle, { color: titleColor ?? theme.text, fontSize: titleFontSize }]}
@@ -715,14 +867,19 @@ function useEdgeSwipeResponder(
 /**
  * Full-height left/right edge zones for back/forward swipes (Expo Go compatible).
  */
+/** Space below status bar reserved for nav chrome — keeps edge swipes off header buttons. */
+const SWIPE_CHROME_CLEARANCE = 80;
+
 export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }) {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
+  const insets = useLayoutInsets();
   const { screen, goBack, goForward, canGoBack, canGoForward } = useAppNav();
   const navRef = useRef({ goBack, goForward, canGoBack, canGoForward });
   navRef.current = { goBack, goForward, canGoBack, canGoForward };
   const showTabBar = TAB_BAR_SCREENS.includes(screen);
-  const edgeHeight = height - (showTabBar ? insets.bottom + TAB_BAR_HEIGHT : insets.bottom);
+  const topOffset = insets.top + SWIPE_CHROME_CLEARANCE;
+  const edgeHeight =
+    height - topOffset - (showTabBar ? insets.bottom + TAB_BAR_HEIGHT : insets.bottom);
 
   const triggerBack = useCallback(() => {
     if (!navRef.current.canGoBack) return;
@@ -745,7 +902,7 @@ export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }
     <View style={styles.swipeEdgeHost} pointerEvents="box-none">
       {canGoBack ? (
         <View
-          style={[styles.swipeEdge, { width: SWIPE_EDGE_WIDTH, height: edgeHeight }]}
+          style={[styles.swipeEdge, { width: SWIPE_EDGE_WIDTH, height: edgeHeight, top: topOffset }]}
           {...leftResponder.panHandlers}
         />
       ) : null}
@@ -754,7 +911,12 @@ export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }
           style={[
             styles.swipeEdge,
             styles.swipeEdgeRight,
-            { width: SWIPE_EDGE_WIDTH, height: edgeHeight, left: width - SWIPE_EDGE_WIDTH },
+            {
+              width: SWIPE_EDGE_WIDTH,
+              height: edgeHeight,
+              top: topOffset,
+              left: width - SWIPE_EDGE_WIDTH,
+            },
           ]}
           {...rightResponder.panHandlers}
         />
@@ -870,6 +1032,7 @@ const styles = StyleSheet.create({
   },
   chromeTitleSpacer: { flex: 1 },
   chromeCenter: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  chromeCenterStart: { alignItems: 'flex-start', justifyContent: 'center' },
   chromeRight: {
     flexShrink: 0,
     alignItems: 'flex-end',

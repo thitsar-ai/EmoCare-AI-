@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatTimezoneLabel } from './settingsStorage';
+import { INITIAL_CHECKIN_PAYLOAD_KEY } from './onboardingLanding';
 
 export const MEMORY_LEDGER_KEY = 'emoMemoryLedger';
 export const MEMORY_CONTEXT_KEY = 'emoMemoryContextItems';
@@ -57,8 +58,8 @@ const CONTEXT_ITEM_META = {
     detail: 'Your chosen name and local timezone for this device.',
     usage: 'Personalizes greetings and keeps time-aware suggestions accurate.',
   },
-  'ctx-building': {
-    detail: 'Context you shared during onboarding about what you are building or working on.',
+  'ctx-onboarding': {
+    detail: 'Something you shared when you first began with EmoCare.',
     usage: 'Helps Emo stay relevant to your current chapter without making assumptions.',
   },
   'ctx-empty': {
@@ -122,10 +123,11 @@ function countCheckInStreak(checkIns) {
 }
 
 export async function buildPersonalContextItems(userName) {
-  const [checkInsRaw, journalRaw, onboarded] = await Promise.all([
+  const [checkInsRaw, journalRaw, onboarded, onboardingPayloadRaw] = await Promise.all([
     AsyncStorage.getItem('checkIns'),
     AsyncStorage.getItem('journalEntries'),
     AsyncStorage.getItem('onboarded'),
+    AsyncStorage.getItem(INITIAL_CHECKIN_PAYLOAD_KEY),
   ]);
   const checkIns = parseJson(checkInsRaw, []);
   const journalEntries = parseJson(journalRaw, []);
@@ -185,11 +187,15 @@ export async function buildPersonalContextItems(userName) {
   }
 
   if (onboarded === 'true') {
-    items.push({
-      id: 'ctx-building',
-      text: 'Building EmoCare emotional wellness app',
-      kind: 'context',
-    });
+    const onboardingNote = parseJson(onboardingPayloadRaw, '') || '';
+    const trimmed = typeof onboardingNote === 'string' ? onboardingNote.trim() : '';
+    if (trimmed.length >= 8) {
+      items.push({
+        id: 'ctx-onboarding',
+        text: trimmed.length > 72 ? `${trimmed.slice(0, 69)}…` : trimmed,
+        kind: 'context',
+      });
+    }
   }
 
   if (!items.length) {

@@ -1,13 +1,15 @@
 import * as NativeSplash from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
   Dimensions,
   Easing,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   PanResponder,
   Platform,
   Pressable,
@@ -23,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { Eye, LockKeyhole, Shield, ShieldCheck, Trash2, User, Sparkles, Check, type LucideIcon } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from '../../constants/obMoods';
+import { openPrivacyPolicy } from '../../constants/legalLinks';
 import { SanctuarySplashContent, SplashStarField } from '../shared/SanctuarySplash';
 import { MoodIconBadge } from '../shared/MoodIcon';
 import {
@@ -47,6 +50,7 @@ import {
   useAppNav,
   WELCOME_ONBOARDING_SLIDE,
   OB_AGE_GATE_SLIDE,
+  OB_LAST_CONTENT_SLIDE,
   OB_PRIVACY_SLIDE,
 } from '../navigation/AppNavigation';
 import {
@@ -515,15 +519,28 @@ export function OnboardingFlow({
 }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
-  const { onboardingReviewSlide, openOnboardingSlide, closeOnboardingReview, setOnboardingSplashActive } =
+  const { onboardingReviewSlide, openOnboardingSlide, closeOnboardingReview, setOnboardingSplashActive, userName, setUserName, goBack, goForward, canGoBack: navCanGoBack, canGoForward: navCanGoForward } =
     useAppNav();
   const [slide, setSlide] = useState(initialSlide);
+  const [ageGatePassed, setAgeGatePassed] = useState(false);
   const [name, setName] = useState('');
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
   const [journalNote, setJournalNote] = useState('');
   const [moodAckVisible, setMoodAckVisible] = useState('');
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (onboardingReviewSlide == null) return;
@@ -571,16 +588,71 @@ export function OnboardingFlow({
     }, 28);
   };
 
+  const slideRef = useRef(slide);
+  slideRef.current = slide;
+  const nameRef = useRef(name);
+  nameRef.current = name;
+
+  const persistWelcomeName = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim();
+      setUserName(trimmed);
+      try {
+        await AsyncStorage.setItem('userName', trimmed);
+      } catch {}
+    },
+    [setUserName],
+  );
+
   useEffect(() => {
+    if (reviewMode) return;
     AsyncStorage.getItem('userName')
       .then((stored) => {
         if (stored?.trim()) setName(stored.trim());
       })
       .catch(() => {});
-  }, []);
+  }, [reviewMode]);
+
+  useEffect(() => {
+    if (!reviewMode) return;
+    setName(userName);
+  }, [reviewMode, userName]);
+
+  useEffect(() => {
+    if (reviewMode && onboardingReviewSlide === WELCOME_ONBOARDING_SLIDE) {
+      setName(userName);
+    }
+  }, [reviewMode, onboardingReviewSlide, userName]);
+
+  const prevSlideRef = useRef(slide);
+
+  useEffect(() => {
+    const prev = prevSlideRef.current;
+    if (prev === WELCOME_ONBOARDING_SLIDE && slide !== WELCOME_ONBOARDING_SLIDE) {
+      void persistWelcomeName(nameRef.current);
+    }
+    prevSlideRef.current = slide;
+  }, [slide, persistWelcomeName]);
+
+  useEffect(() => {
+    if (!reviewMode) return;
+    return () => {
+      if (slideRef.current === WELCOME_ONBOARDING_SLIDE) {
+        void persistWelcomeName(nameRef.current);
+      }
+    };
+  }, [reviewMode, persistWelcomeName]);
 
   const goTo = (next: number) => {
-    if (next === 1) {
+    if (next === WELCOME_ONBOARDING_SLIDE && slide === WELCOME_ONBOARDING_SLIDE) {
+      return;
+    }
+    let target =
+      reviewMode && next === OB_AGE_GATE_SLIDE ? OB_PRIVACY_SLIDE : next;
+    if (slide === WELCOME_ONBOARDING_SLIDE && target !== WELCOME_ONBOARDING_SLIDE) {
+      void persistWelcomeName(nameRef.current);
+    }
+    if (target === 1) {
       closeOnboardingReview();
       Animated.sequence([
         Animated.timing(fadeAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
@@ -589,18 +661,24 @@ export function OnboardingFlow({
       setTimeout(() => setSlide(1), 220);
       return;
     }
-    if (next === OB_AGE_GATE_SLIDE && !reviewMode) {
+
+    if (!reviewMode && !ageVerificationOnly) {
+      if (target > OB_AGE_GATE_SLIDE && !ageGatePassed) {
+        target = OB_AGE_GATE_SLIDE;
+      }
+      setSlide(target);
+      return;
+    }
+
+    if (target === OB_AGE_GATE_SLIDE && !reviewMode) {
       setSlide(OB_AGE_GATE_SLIDE);
       return;
     }
-    if (([2, 4, 5] as readonly number[]).includes(next)) {
-      openOnboardingSlide(next as 2 | 4 | 5);
-      return;
+    if (reviewMode && ([2, 4, 5] as readonly number[]).includes(target)) {
+      openOnboardingSlide(target as 2 | 4 | 5);
     }
   };
 
-  const slideRef = useRef(slide);
-  slideRef.current = slide;
   const goToRef = useRef(goTo);
   goToRef.current = goTo;
 
@@ -627,6 +705,7 @@ export function OnboardingFlow({
 
   const enterSanctuary = async () => {
     if (!selectedMood) return;
+    if (!reviewMode && !ageGatePassed) return;
     const session = resolveOnboardingSession(selectedMood, journalNote);
     if (reviewMode) {
       onExitReview?.();
@@ -664,8 +743,32 @@ export function OnboardingFlow({
   };
 
   const scrollPad = { paddingBottom: Math.max(insets.bottom, 20) + 16 };
+  const tellMeKeyboardOffset = insets.top + 72;
 
   const showSlideNav = (OB_CONTENT_SLIDES as readonly number[]).includes(slide);
+
+  const handleFirstRunBack = () => {
+    if (slide === OB_PRIVACY_SLIDE) goTo(OB_AGE_GATE_SLIDE);
+    else if (slide === OB_LAST_CONTENT_SLIDE) goTo(OB_PRIVACY_SLIDE);
+    else if (slide === WELCOME_ONBOARDING_SLIDE) goTo(1);
+    else if (slide > 1) goTo(slide - 1);
+  };
+
+  const firstRunCanGoBack =
+    !reviewMode &&
+    !ageVerificationOnly &&
+    (slide === OB_PRIVACY_SLIDE || slide === OB_LAST_CONTENT_SLIDE || slide === WELCOME_ONBOARDING_SLIDE);
+
+  const handleFirstRunForward = () => {
+    if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_AGE_GATE_SLIDE);
+    else if (slide === OB_PRIVACY_SLIDE) goTo(OB_LAST_CONTENT_SLIDE);
+    else if (slide < OB_LAST_CONTENT_SLIDE && slide !== OB_AGE_GATE_SLIDE) goTo(slide + 1);
+  };
+
+  const firstRunCanGoForward =
+    !reviewMode &&
+    !ageVerificationOnly &&
+    (slide === WELCOME_ONBOARDING_SLIDE || slide === OB_PRIVACY_SLIDE);
 
   if (slide === 1) {
     return (
@@ -712,7 +815,8 @@ export function OnboardingFlow({
                 maxLength={48}
                 autoCorrect={false}
                 autoCapitalize="words"
-                textContentType="name"
+                autoComplete="off"
+                textContentType="none"
               />
             </View>
 
@@ -747,6 +851,7 @@ export function OnboardingFlow({
             scrollPad={scrollPad}
             hideBack={ageVerificationOnly}
             onVerified={() => {
+              setAgeGatePassed(true);
               if (ageVerificationOnly) {
                 onAgeVerified?.();
               } else {
@@ -811,53 +916,81 @@ export function OnboardingFlow({
       case 5:
       default:
         return (
-          <ScrollView
+          <KeyboardAvoidingView
             style={styles.flex}
-            contentContainerStyle={[styles.scrollPad, styles.checkinScroll, scrollPad]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? tellMeKeyboardOffset : 0}
           >
-            <Text style={[styles.checkinSub, { color: theme.mutedText }]}>
-              So I can support you in a way that feels personal.
-            </Text>
-            <Text style={[styles.checkinSection, { color: theme.text }]}>
-              How are you feeling today?
-            </Text>
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={[styles.scrollPad, styles.checkinScroll, { paddingBottom: 12 }]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+            >
+              <Text style={[styles.checkinSub, { color: theme.mutedText }]}>
+                So I can support you in a way that feels personal.
+              </Text>
+              <Text style={[styles.checkinSection, { color: theme.text }]}>
+                How are you feeling today?
+              </Text>
 
-            <MoodGrid theme={theme} selected={selectedMood} onSelect={handleMoodSelect} />
+              <MoodGrid theme={theme} selected={selectedMood} onSelect={handleMoodSelect} />
 
-            {moodAckVisible ? (
-              <ObCard theme={theme} style={styles.moodAckCard}>
-                <Text style={[styles.moodAckLabel, { color: theme.secondaryText }]}>Emo</Text>
-                <Text style={[styles.moodAckText, { color: theme.text }]}>{moodAckVisible}</Text>
+              {moodAckVisible ? (
+                <ObCard theme={theme} style={styles.moodAckCard}>
+                  <Text style={[styles.moodAckLabel, { color: theme.secondaryText }]}>Emo</Text>
+                  <Text style={[styles.moodAckText, { color: theme.text }]}>{moodAckVisible}</Text>
+                </ObCard>
+              ) : null}
+            </ScrollView>
+
+            <View
+              style={[
+                styles.tellMeComposer,
+                {
+                  backgroundColor: theme.isDark ? 'rgba(14,8,32,0.92)' : 'rgba(245,240,252,0.96)',
+                  borderTopColor: theme.border,
+                  paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12),
+                },
+              ]}
+            >
+              <Text style={[styles.journalTitle, { color: theme.text }]}>What's on your heart?</Text>
+              <ObCard theme={theme} style={styles.journalCard}>
+                <TextInput
+                  style={[styles.journalInput, { color: theme.text }]}
+                  placeholder="You can begin softly..."
+                  placeholderTextColor={theme.mutedText}
+                  value={journalNote}
+                  onChangeText={setJournalNote}
+                  multiline
+                  textAlignVertical="top"
+                  maxLength={500}
+                />
               </ObCard>
-            ) : null}
 
-            <Text style={[styles.journalTitle, { color: theme.text }]}>What's on your heart?</Text>
-            <ObCard theme={theme} style={styles.journalCard}>
-              <TextInput
-                style={[styles.journalInput, { color: theme.text }]}
-                placeholder="You can begin softly..."
-                placeholderTextColor={theme.mutedText}
-                value={journalNote}
-                onChangeText={setJournalNote}
-                multiline
-                textAlignVertical="top"
-                maxLength={500}
+              <LavenderButton
+                label={reviewMode ? 'Done reviewing →' : 'Enter the Sanctuary →'}
+                onPress={enterSanctuary}
+                disabled={!selectedMood}
+                theme={theme}
               />
-            </ObCard>
 
-            <LavenderButton
-              label={reviewMode ? 'Done reviewing →' : 'Enter the Sanctuary →'}
-              onPress={enterSanctuary}
-              disabled={!selectedMood}
-              theme={theme}
-            />
-
-            <Text style={[styles.legalFooter, { color: theme.mutedText }]}>
-              By continuing, you agree to the Terms of Service and Privacy Policy.
-            </Text>
-          </ScrollView>
+              {!keyboardVisible ? (
+                <Text style={[styles.legalFooter, { color: theme.mutedText }]}>
+                  By continuing, you agree to the Terms of Service and{' '}
+                  <Text
+                    style={[styles.legalLink, { color: theme.accent }]}
+                    onPress={openPrivacyPolicy}
+                    accessibilityRole="link"
+                  >
+                    Privacy Policy
+                  </Text>
+                  .
+                </Text>
+              ) : null}
+            </View>
+          </KeyboardAvoidingView>
         );
     }
   };
@@ -873,18 +1006,41 @@ export function OnboardingFlow({
               theme={theme}
               title={OB_SLIDE_TITLES[slide] ?? ''}
               titleFontSize={15}
+              showMenu={reviewMode}
               onBack={
-                slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
-                  ? () => goTo(WELCOME_ONBOARDING_SLIDE)
-                  : reviewMode && slide === WELCOME_ONBOARDING_SLIDE
+                reviewMode
+                  ? slide === WELCOME_ONBOARDING_SLIDE
                     ? closeOnboardingReview
-                    : undefined
+                    : goBack
+                  : !ageVerificationOnly && showSlideNav
+                    ? handleFirstRunBack
+                    : slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
+                      ? () => goTo(WELCOME_ONBOARDING_SLIDE)
+                      : undefined
               }
               canGoBack={
-                slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
-                  ? true
-                  : reviewMode && slide === WELCOME_ONBOARDING_SLIDE
+                reviewMode
+                  ? slide === WELCOME_ONBOARDING_SLIDE
                     ? true
+                    : navCanGoBack
+                  : firstRunCanGoBack
+                    ? true
+                    : slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
+                      ? true
+                      : undefined
+              }
+              onForward={
+                reviewMode
+                  ? goForward
+                  : !reviewMode && !ageVerificationOnly && showSlideNav
+                    ? handleFirstRunForward
+                    : undefined
+              }
+              canGoForward={
+                reviewMode
+                  ? navCanGoForward
+                  : !reviewMode && !ageVerificationOnly && showSlideNav
+                    ? firstRunCanGoForward
                     : undefined
               }
             />
@@ -896,7 +1052,10 @@ export function OnboardingFlow({
             {OB_PROGRESS_SLIDES.map((i) => (
               <Pressable
                 key={i}
-                onPress={() => goTo(i)}
+                onPress={() => {
+                  if (!ageGatePassed && i > OB_AGE_GATE_SLIDE) return;
+                  goTo(i);
+                }}
                 hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                 accessibilityRole="button"
                 accessibilityLabel={`Go to step ${i - 1} of ${OB_PROGRESS_SLIDES.length}`}
@@ -1070,6 +1229,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  tellMeComposer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 28,
+    paddingTop: 12,
+    gap: 10,
+  },
   moodGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1109,6 +1274,7 @@ const styles = StyleSheet.create({
   ctaBtn: { paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center', borderRadius: 18 },
   ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
   legalFooter: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 12 },
+  legalLink: { textDecorationLine: 'underline', fontWeight: '600' },
   skipLinkWrap: { alignItems: 'center', marginBottom: 16 },
   skipLink: { fontSize: 13, fontWeight: '500', textDecorationLine: 'underline' },
   moodAckCard: { padding: 14, marginBottom: 16 },

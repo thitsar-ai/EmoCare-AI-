@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export const SANCTUARY_REMINDERS = [
   "You don't have to carry everything at once. You are allowed to move gently.",
   'Your emotions are messages, not problems. Listen with kindness.',
@@ -123,6 +125,43 @@ export function getTodayCheckIn(checkIns = []) {
       return false;
     }
   });
+}
+
+/** Replace today's check-in (local calendar day) or append if none exists. */
+export async function saveTodayCheckIn({ mood, note = '' }) {
+  const saved = await AsyncStorage.getItem('checkIns');
+  const all = saved ? JSON.parse(saved) : [];
+  const now = new Date();
+  const withoutToday = all.filter((c) => {
+    try {
+      return !sameLocalDay(new Date(c.date), now);
+    } catch {
+      return true;
+    }
+  });
+  const entry = {
+    id: Date.now(),
+    date: now.toISOString(),
+    mood,
+    note: typeof note === 'string' ? note.trim() : '',
+  };
+  await AsyncStorage.setItem('checkIns', JSON.stringify([entry, ...withoutToday]));
+  return entry;
+}
+
+/** Remove today's check-in for the local calendar day. */
+export async function deleteTodayCheckIn() {
+  const saved = await AsyncStorage.getItem('checkIns');
+  const all = saved ? JSON.parse(saved) : [];
+  const now = new Date();
+  const withoutToday = all.filter((c) => {
+    try {
+      return !sameLocalDay(new Date(c.date), now);
+    } catch {
+      return true;
+    }
+  });
+  await AsyncStorage.setItem('checkIns', JSON.stringify(withoutToday));
 }
 
 /** @param {Array<{ date: string }>} checkIns */

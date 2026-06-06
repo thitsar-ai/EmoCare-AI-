@@ -8,16 +8,18 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0D0720"
     },
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "1",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Allow EmoCare to understand your voice so Emo can respond.",
         "NSMicrophoneUsageDescription": "Allow EmoCare to listen during Voice Talk."
       },
-      "bundleIdentifier": "com.anonymous.emocareai"
+      "bundleIdentifier": "com.tristarinter.emocare"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,7 +31,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "package": "com.anonymous.emocareai"
+      "package": "com.tristarinter.emocare"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -48,6 +50,7 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/splash-icon.png",
           "backgroundColor": "#0D0720"
         }
       ],

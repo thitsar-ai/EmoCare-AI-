@@ -29,7 +29,12 @@ export function useBreathVoiceGuide(
     if (phaseSequence === 0 || lastVoiceSeqRef.current === phaseSequence) return;
 
     lastVoiceSeqRef.current = phaseSequence;
-    speakBreathPhase(phaseKind as 'inhale' | 'hold' | 'exhale' | 'holdAfter');
+    const leadMs = phaseSequence === 1 ? 520 : 380;
+    const timer = setTimeout(() => {
+      speakBreathPhase(phaseKind as 'inhale' | 'hold' | 'exhale' | 'holdAfter');
+    }, leadMs);
+
+    return () => clearTimeout(timer);
   }, [enabled, flowActive, phaseKind, phaseCountdown, phaseTotalSeconds, phaseSequence]);
 
   useEffect(() => {

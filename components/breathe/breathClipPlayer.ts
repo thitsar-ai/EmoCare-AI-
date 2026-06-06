@@ -15,6 +15,8 @@ const uriCache = new Map<number, string>();
 let preloadPromise: Promise<void> | null = null;
 /** One clip at a time — never cut a cue mid-word. */
 let clipChain: Promise<void> = Promise.resolve();
+/** Soft pause between cues so transitions feel intentional, not clipped. */
+const BREATH_CLIP_GAP_MS = 320;
 
 function isIosSimulator(): boolean {
   return Platform.OS === 'ios' && Constants.isDevice === false;
@@ -70,9 +72,13 @@ function hasClipFinished(activePlayer: AudioPlayer): boolean {
   if (status.didJustFinish) return true;
   if (!status.isLoaded || status.playing || status.isBuffering) return false;
   if (status.duration > 0.15) {
-    return status.currentTime >= status.duration - 0.12;
+    return status.currentTime >= status.duration - 0.08;
   }
   return false;
+}
+
+async function pauseBetweenBreathCues(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, BREATH_CLIP_GAP_MS));
 }
 
 async function waitForClipFinish(activePlayer: AudioPlayer, timeoutMs = 6000): Promise<void> {
@@ -117,10 +123,11 @@ async function playBreathClipInner(source: AudioSource): Promise<void> {
 
   if (player?.currentStatus.playing) {
     await waitForClipFinish(player);
+    await pauseBetweenBreathCues();
   }
 
   if (!player) {
-    player = createAudioPlayer({ uri }, { updateInterval: 200 });
+    player = createAudioPlayer({ uri }, { updateInterval: 40 });
   } else {
     player.replace({ uri });
   }
@@ -128,7 +135,8 @@ async function playBreathClipInner(source: AudioSource): Promise<void> {
   await waitForPlayerReady(player);
 
   const vol = await getVoiceVolume();
-  player.volume = Math.max(vol, 0.85);
+  // Breath cues sit closer than Voice Talk — soft, clear, unhurried.
+  player.volume = vol * 0.74;
   player.play();
 }
 

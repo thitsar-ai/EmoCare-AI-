@@ -23,6 +23,14 @@ export const EMO_SESSION_VOICE_SETTINGS = {
   use_speaker_boost: true,
 };
 
+/** Soft breath guide — stable, warm, unhurried (no speaker boost). */
+export const EMO_BREATH_VOICE_SETTINGS = {
+  stability: 0.72,
+  similarity_boost: 0.76,
+  use_speaker_boost: false,
+  speed: 0.84,
+};
+
 /** @deprecated Keys live on the server. */
 export function getElevenLabsApiKey() {
   return isElevenLabsConfigured() ? 'proxy' : '';
@@ -54,8 +62,23 @@ export function prepareSanctuarySpeechText(text) {
     .replace(/[,;]\s*/g, ', ');
 }
 
-async function requestElevenLabsAudio(text, outputFormat, signal, { sanctuarySession = false } = {}) {
-  const trimmed = prepareSanctuarySpeechText(text);
+/** Extra spacing for short breath cues — smoother phrase endings. */
+export function prepareBreathSpeechText(text) {
+  return text
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/([.!?])\s+/g, '$1   ')
+    .replace(/[,;]\s*/g, ',  ')
+    .replace(/\.\.\./g, '… ');
+}
+
+async function requestElevenLabsAudio(
+  text,
+  outputFormat,
+  signal,
+  { sanctuarySession = false, breathGuide = false } = {},
+) {
+  const trimmed = breathGuide ? prepareBreathSpeechText(text) : prepareSanctuarySpeechText(text);
   if (!trimmed) return null;
 
   if (!isElevenLabsConfigured()) {
@@ -68,6 +91,7 @@ async function requestElevenLabsAudio(text, outputFormat, signal, { sanctuarySes
       text: trimmed,
       output_format: outputFormat,
       sanctuarySession,
+      breathGuide,
       voice_id: getElevenLabsVoiceId(),
     }),
     signal,

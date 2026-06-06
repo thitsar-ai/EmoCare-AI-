@@ -63,6 +63,59 @@ const LEGACY_CATEGORY_MAP = {
   restorative: 'care',
 };
 
+/** Authoritative category for bundled demo tasks. */
+const TASK_CATEGORY_BY_ID = {
+  'seed-work-1': 'work',
+  'seed-work-2': 'work',
+  'seed-home-1': 'home',
+  'seed-movement-1': 'movement',
+  'seed-connect-1': 'connect',
+  'seed-admin-1': 'admin',
+  'seed-care-1': 'care',
+};
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Match whole words/phrases — avoids "run" inside "errands", "call" inside "recall". */
+function keywordMatches(text, keyword) {
+  if (keyword.includes(' ')) {
+    return text.includes(keyword);
+  }
+  return new RegExp(`\\b${escapeRegExp(keyword)}\\b`, 'i').test(text);
+}
+
+function scoreTaskCategory(title) {
+  const text = title?.trim().toLowerCase() || '';
+  const scores = Object.fromEntries(ENERGY_CATEGORY_ORDER.map((id) => [id, 0]));
+
+  for (const [categoryId, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    for (const kw of keywords) {
+      if (keywordMatches(text, kw)) {
+        scores[categoryId] += kw.length >= 6 ? 3 : kw.length >= 4 ? 2 : 1;
+      }
+    }
+  }
+
+  return scores;
+}
+
+function pickBestCategory(scores) {
+  const maxScore = Math.max(...ENERGY_CATEGORY_ORDER.map((id) => scores[id]));
+  if (maxScore <= 0) return 'home';
+
+  const tied = ENERGY_CATEGORY_ORDER.filter((id) => scores[id] === maxScore);
+  if (tied.length === 1) return tied[0];
+
+  // Prefer the more specific domain when keywords tie (e.g. walk + lunch → movement).
+  const tieBreak = ['movement', 'connect', 'care', 'work', 'admin', 'home'];
+  for (const id of tieBreak) {
+    if (tied.includes(id)) return id;
+  }
+  return tied[0];
+}
+
 /** @type {Record<string, string[]>} */
 const CATEGORY_KEYWORDS = {
   work: [
@@ -138,7 +191,6 @@ const CATEGORY_KEYWORDS = {
     'dance',
     'pilates',
     'steps',
-    'move',
   ],
   connect: [
     'call',
@@ -151,6 +203,9 @@ const CATEGORY_KEYWORDS = {
     'visit',
     'meet',
     'meeting friend',
+    'lunch with',
+    'coffee with',
+    'dinner with',
     'text',
     'party',
     'social',
@@ -180,11 +235,27 @@ const CATEGORY_KEYWORDS = {
     'music',
     'self-care',
     'self care',
+    'selfcare',
     'mindful',
     'bath',
     'unwind',
     'recharge',
     'pause',
+    'haircut',
+    'hair cut',
+    'salon',
+    'barber',
+    'barbershop',
+    'groom',
+    'grooming',
+    'manicure',
+    'pedicure',
+    'facial',
+    'skincare',
+    'skin care',
+    'massage',
+    'spa',
+    'nails',
   ],
   admin: [
     'email',
@@ -196,6 +267,7 @@ const CATEGORY_KEYWORDS = {
     'appointment',
     'schedule',
     'errand',
+    'errands',
     'bank',
     'tax',
     'form',
@@ -227,6 +299,30 @@ const SEED_TASKS = [
     status: 'pending',
     energyCategory: 'work',
     durationMin: 30,
+  },
+  {
+    id: 'seed-home-1',
+    title: 'Meal prep for the week',
+    deadline: 'flexible',
+    status: 'pending',
+    energyCategory: 'home',
+    durationMin: 45,
+  },
+  {
+    id: 'seed-movement-1',
+    title: '30-min walk after lunch',
+    deadline: '1:00 PM',
+    status: 'pending',
+    energyCategory: 'movement',
+    durationMin: 30,
+  },
+  {
+    id: 'seed-connect-1',
+    title: 'Call Mom · catch up',
+    deadline: '5:00 PM',
+    status: 'pending',
+    energyCategory: 'connect',
+    durationMin: 20,
   },
   {
     id: 'seed-admin-1',
@@ -268,27 +364,37 @@ export function normalizeCategory(categoryId) {
 export function inferTaskCategory(title) {
   const text = title?.trim().toLowerCase() || '';
   if (!text) return 'home';
+  return pickBestCategory(scoreTaskCategory(text));
+}
 
-  const scores = Object.fromEntries(ENERGY_CATEGORY_ORDER.map((id) => [id, 0]));
+/** Resolve the display + grouping category for a stored task. */
+export function resolveTaskCategory(task) {
+  if (!task) return 'home';
 
-  for (const [categoryId, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    for (const kw of keywords) {
-      if (text === kw || text.includes(kw)) {
-        scores[categoryId] += kw.length >= 6 ? 3 : kw.length >= 4 ? 2 : 1;
-      }
-    }
+  if (task.id && TASK_CATEGORY_BY_ID[task.id]) {
+    return TASK_CATEGORY_BY_ID[task.id];
   }
 
-  let best = 'home';
-  let bestScore = 0;
-  for (const id of ENERGY_CATEGORY_ORDER) {
-    if (scores[id] > bestScore) {
-      bestScore = scores[id];
-      best = id;
-    }
+  const stored = normalizeCategory(task.energyCategory);
+  if (task.categoryLocked) {
+    return stored;
   }
 
-  return bestScore > 0 ? best : 'home';
+  const inferred = inferTaskCategory(task.title || '');
+  if (stored === 'home' && inferred !== 'home') {
+    return inferred;
+  }
+
+  const scores = scoreTaskCategory(task.title || '');
+  if (scores[inferred] >= 2 && scores[stored] < scores[inferred]) {
+    return inferred;
+  }
+
+  if (scores[inferred] > 0 && scores[stored] > 0 && scores[inferred] === scores[stored]) {
+    return pickBestCategory(scores);
+  }
+
+  return stored;
 }
 
 export function getTodayDayKey(date = new Date()) {
@@ -309,10 +415,10 @@ function withDayMeta(task, dayKey) {
 async function migrateLegacyCategories(all) {
   let changed = false;
   const next = all.map((task) => {
-    const normalized = normalizeCategory(task.energyCategory);
-    if (normalized !== task.energyCategory) {
+    const resolved = resolveTaskCategory(task);
+    if (resolved !== normalizeCategory(task.energyCategory)) {
       changed = true;
-      return { ...task, energyCategory: normalized };
+      return { ...task, energyCategory: resolved };
     }
     return task;
   });
@@ -323,6 +429,7 @@ async function migrateLegacyCategories(all) {
 }
 
 async function seedIfEmpty() {
+  if (!__DEV__) return;
   const raw = await AsyncStorage.getItem(TODAY_TRIAGE_STORAGE_KEY);
   if (raw) return;
   const dayKey = getTodayDayKey();
@@ -330,10 +437,32 @@ async function seedIfEmpty() {
   await AsyncStorage.setItem(TODAY_TRIAGE_STORAGE_KEY, JSON.stringify(seeded));
 }
 
+async function ensureDevSeedTasks(all) {
+  if (!__DEV__) return all;
+  const dayKey = getTodayDayKey();
+  const existingIds = new Set(all.filter((t) => t.dayKey === dayKey).map((t) => t.id));
+  const missing = SEED_TASKS.filter((seed) => !existingIds.has(seed.id)).map((seed) =>
+    withDayMeta(seed, dayKey),
+  );
+  if (!missing.length) return all;
+  const next = [...all, ...missing];
+  await AsyncStorage.setItem(TODAY_TRIAGE_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
 export async function loadAllTriageTasks() {
   await seedIfEmpty();
-  const all = parseJson(await AsyncStorage.getItem(TODAY_TRIAGE_STORAGE_KEY), []);
-  return migrateLegacyCategories(all);
+  let all = parseJson(await AsyncStorage.getItem(TODAY_TRIAGE_STORAGE_KEY), []);
+  all = await migrateLegacyCategories(all);
+  all = await ensureDevSeedTasks(all);
+  if (!__DEV__) {
+    const stripped = all.filter((t) => !String(t.id).startsWith('seed-'));
+    if (stripped.length !== all.length) {
+      all = stripped;
+      await AsyncStorage.setItem(TODAY_TRIAGE_STORAGE_KEY, JSON.stringify(all));
+    }
+  }
+  return all;
 }
 
 export async function loadTodayTasks(dayKey = getTodayDayKey()) {
@@ -356,6 +485,7 @@ export async function addTodayTask({ title, energyCategory, deadline = null, aut
       deadline,
       status: 'pending',
       energyCategory: resolvedCategory,
+      categoryLocked: !autoCategory,
     },
     dayKey,
   );
@@ -385,7 +515,7 @@ export async function deleteTodayTask(taskId) {
 export function groupTasksByEnergy(tasks) {
   return ENERGY_CATEGORY_ORDER.map((id) => ({
     category: ENERGY_CATEGORIES[id],
-    tasks: tasks.filter((t) => normalizeCategory(t.energyCategory) === id),
+    tasks: tasks.filter((t) => resolveTaskCategory(t) === id),
   })).filter((g) => g.tasks.length > 0);
 }
 
@@ -394,7 +524,7 @@ export function summarizeTodayTasks(tasks) {
   const done = tasks.filter((t) => t.status === 'done');
   const byCategory = {};
   for (const id of ENERGY_CATEGORY_ORDER) {
-    byCategory[id] = pending.filter((t) => normalizeCategory(t.energyCategory) === id).length;
+    byCategory[id] = pending.filter((t) => resolveTaskCategory(t) === id).length;
   }
 
   return {
@@ -410,7 +540,7 @@ export function summarizeTodayTasks(tasks) {
     restorativePending: byCategory.care,
     pendingTitles: pending.map((t) => ({
       title: t.title,
-      energyCategory: normalizeCategory(t.energyCategory),
+      energyCategory: resolveTaskCategory(t),
       deadline: t.deadline,
     })),
   };
@@ -454,34 +584,34 @@ export function buildEmoDailyNote(tasks, moodLabel) {
 }
 
 export function categorySubline(task) {
-  const id = normalizeCategory(task.energyCategory);
+  const id = resolveTaskCategory(task);
   const cat = ENERGY_CATEGORIES[id];
   const duration = task.durationMin || (id === 'admin' ? 15 : id === 'care' ? 10 : 30);
   const deadline = task.deadline || 'flexible';
 
   if (task.emoScheduled) {
-    return 'Scheduled by Emo based on your rhythm';
+    return `${cat.shortLabel} · Scheduled by Emo based on your rhythm`;
   }
   switch (id) {
     case 'work':
-      return `Focus · ${duration} min · ${deadline}`;
+      return `${cat.shortLabel} · Focus · ${duration} min · ${deadline}`;
     case 'home':
-      return `Daily life · ${duration} min · ${deadline}`;
+      return `${cat.shortLabel} · Daily life · ${duration} min · ${deadline}`;
     case 'movement':
-      return `Body · ${duration} min · ${deadline}`;
+      return `${cat.shortLabel} · Body · ${duration} min · ${deadline}`;
     case 'connect':
-      return `Connection · ${deadline}`;
+      return `${cat.shortLabel} · Connection · ${deadline}`;
     case 'care':
-      return `Self-care · ${duration} min · ${deadline}`;
+      return `${cat.shortLabel} · Self-care · ${duration} min · ${deadline}`;
     case 'admin':
-      return `Quick task · ${duration} min · ${deadline}`;
+      return `${cat.shortLabel} · Quick task · ${duration} min · ${deadline}`;
     default:
       return `${cat?.shortLabel || 'Task'} · ${deadline}`;
   }
 }
 
 export function isBreathCareTask(task) {
-  const id = normalizeCategory(task.energyCategory);
+  const id = resolveTaskCategory(task);
   if (id !== 'care') return false;
   return (
     task.emoScheduled ||

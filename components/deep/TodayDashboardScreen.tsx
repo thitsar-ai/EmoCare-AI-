@@ -190,7 +190,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
       <View style={styles.chromeWrap}>
-        <ScreenNavChrome theme={theme} title="Today Dashboard" titleFontSize={15} />
+        <ScreenNavChrome theme={theme} title="Today" titleFontSize={15} />
       </View>
       <View style={styles.headerBlock}>
         <Text style={[styles.dateLine, { color: theme.text }]}>Today, {todayLabel}</Text>
@@ -198,7 +198,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
           Tasks and planning — separate from the Sanctuary.
         </Text>
         <Text style={[styles.statsLine, { color: theme.mutedText }]}>
-          {summary.pendingCount} pending · {activitySummary} · mood: {moodLabel || 'Light'}
+          {summary.pendingCount} pending · {activitySummary} · mood: {moodLabel || '—'}
         </Text>
       </View>
 

@@ -33,6 +33,13 @@ const EMO_SESSION_VOICE_SETTINGS = {
   use_speaker_boost: true,
 };
 
+const EMO_BREATH_VOICE_SETTINGS = {
+  stability: 0.72,
+  similarity_boost: 0.76,
+  use_speaker_boost: false,
+  speed: 0.84,
+};
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -68,6 +75,15 @@ function prepareSanctuarySpeechText(text) {
     .replace(/\s+/g, ' ')
     .replace(/([.!?])\s+/g, '$1  ')
     .replace(/[,;]\s*/g, ', ');
+}
+
+function prepareBreathSpeechText(text) {
+  return String(text || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/([.!?])\s+/g, '$1   ')
+    .replace(/[,;]\s*/g, ',  ')
+    .replace(/\.\.\./g, '… ');
 }
 
 async function handleConfig(_req, res) {
@@ -181,7 +197,7 @@ async function handleElevenLabsTts(req, res, body) {
     return;
   }
 
-  const text = prepareSanctuarySpeechText(body.text);
+  const text = breathGuide ? prepareBreathSpeechText(body.text) : prepareSanctuarySpeechText(body.text);
   if (!text) {
     sendJson(res, 400, { error: { message: 'Missing text' } });
     return;
@@ -189,7 +205,13 @@ async function handleElevenLabsTts(req, res, body) {
 
   const outputFormat = body.output_format || body.outputFormat || 'mp3_44100_128';
   const sanctuarySession = Boolean(body.sanctuarySession);
+  const breathGuide = Boolean(body.breathGuide);
   const voiceId = body.voice_id || body.voiceId || ELEVENLABS_VOICE_ID;
+  const voiceSettings = breathGuide
+    ? EMO_BREATH_VOICE_SETTINGS
+    : sanctuarySession
+      ? EMO_SESSION_VOICE_SETTINGS
+      : EMO_VOICE_SETTINGS;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=${encodeURIComponent(outputFormat)}`;
 
   const upstream = await fetch(url, {
@@ -202,7 +224,7 @@ async function handleElevenLabsTts(req, res, body) {
     body: JSON.stringify({
       text,
       model_id: body.model_id || body.modelId || ELEVENLABS_MODEL,
-      voice_settings: sanctuarySession ? EMO_SESSION_VOICE_SETTINGS : EMO_VOICE_SETTINGS,
+      voice_settings: voiceSettings,
     }),
   });
 

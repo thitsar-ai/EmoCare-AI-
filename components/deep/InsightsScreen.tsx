@@ -18,7 +18,8 @@ import {
 } from '../shared/CircadianHeroGlow';
 import { useCircadianTheme, getCircadianIconColor } from '../../theme/circadianTheme';
 import { loadInsightsBundle } from '../../utils/insightsData';
-import { addHelpedActivity } from '../../utils/thingsThatHelped';
+import { loadOracleSavedInsights } from '../../utils/oracleSavedInsights';
+import { addHelpedActivity, editHelpedItem, removeHelpedItem } from '../../utils/thingsThatHelped';
 import { ScreenNavChrome, type MainScreenKey } from '../navigation/AppNavigation';
 import { HelpedActivitySheet, type HelpedRow } from './HelpedActivitySheet';
 import { AddHelpedSheet } from './AddHelpedSheet';
@@ -34,15 +35,21 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const [themes, setThemes] = useState<{ label: string; pct: number; color: string }[]>([]);
   const [gentleInsight, setGentleInsight] = useState('');
   const [helped, setHelped] = useState<HelpedRow[]>([]);
+  const [hasLiveData, setHasLiveData] = useState(false);
+  const [oracleInsights, setOracleInsights] = useState<
+    { id: string; query: string; insight: string; sourceCount?: number }[]
+  >([]);
   const [selectedItem, setSelectedItem] = useState<HelpedRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const refresh = useCallback(async () => {
-    const bundle = await loadInsightsBundle(7);
+    const [bundle, savedOracle] = await Promise.all([loadInsightsBundle(7), loadOracleSavedInsights()]);
     setWeekLabel(bundle.weekLabel || 'This week');
     setThemes(bundle.themes);
     setGentleInsight(bundle.gentleInsight);
     setHelped(bundle.helped as HelpedRow[]);
+    setHasLiveData(bundle.hasLiveData);
+    setOracleInsights(savedOracle.slice(0, 6));
   }, []);
 
   useEffect(() => {
@@ -87,6 +94,24 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
     [refresh],
   );
 
+  const handleDeleteHelped = useCallback(
+    async (item: HelpedRow) => {
+      await removeHelpedItem(item);
+      setSelectedItem(null);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const handleSaveHelpedEdit = useCallback(
+    async (item: HelpedRow, patch: { title: string; sub: string }) => {
+      await editHelpedItem(item, patch);
+      setSelectedItem(null);
+      await refresh();
+    },
+    [refresh],
+  );
+
   return (
     <View style={styles.flex}>
       <CircadianHeroGlow theme={theme} />
@@ -119,27 +144,67 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               <Text style={[styles.insightQuote, { color: theme.text }]}>{gentleInsight}</Text>
             </CircadianGlassCard>
 
+            {oracleInsights.length > 0 ? (
+              <CircadianGlassCard theme={theme} style={styles.card}>
+                <Text style={[styles.eyebrow, { color: '#A78BFA' }]}>SAVED ORACLE INSIGHTS</Text>
+                {oracleInsights.map((item, idx) => (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.oracleInsightRow,
+                      idx < oracleInsights.length - 1 && {
+                        borderBottomColor: theme.border,
+                        ...styles.helpedBorder,
+                      },
+                    ]}
+                  >
+                    {item.query ? (
+                      <Text style={[styles.oracleInsightQuery, { color: theme.secondaryText }]}>
+                        {item.query}
+                      </Text>
+                    ) : null}
+                    <Text style={[styles.oracleInsightText, { color: theme.text }]} numberOfLines={4}>
+                      {item.insight}
+                    </Text>
+                    {item.sourceCount ? (
+                      <Text style={[styles.oracleInsightMeta, { color: theme.mutedText }]}>
+                        {item.sourceCount} research {item.sourceCount === 1 ? 'source' : 'sources'}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </CircadianGlassCard>
+            ) : null}
+
             <CircadianGlassCard theme={theme} style={styles.card}>
               <Text style={[styles.eyebrow, { color: theme.secondaryText }]}>EMOTIONAL THEMES</Text>
-              {themes.map((row) => (
-                <View key={row.label} style={styles.themeRow}>
-                  <View style={[styles.themeDot, { backgroundColor: row.color }]} />
-                  <View style={styles.themeMain}>
-                    <View style={styles.themeLabelRow}>
-                      <Text style={[styles.themeLabel, { color: theme.text }]}>{row.label}</Text>
-                      <Text style={[styles.themePct, { color: theme.mutedText }]}>{row.pct}%</Text>
-                    </View>
-                    <View style={[styles.barTrack, { backgroundColor: theme.barTrack }]}>
-                      <View
-                        style={[
-                          styles.barFill,
-                          { width: `${Math.min(100, row.pct)}%`, backgroundColor: row.color },
-                        ]}
-                      />
+              {themes.length === 0 ? (
+                <Text style={[styles.emptyThemes, { color: theme.mutedText }]}>
+                  {hasLiveData
+                    ? 'Your themes will appear as you build more check-in rhythm this week.'
+                    : 'Check in or journal to see emotional themes here — no sample data, just your patterns.'}
+                </Text>
+              ) : (
+                themes.map((row) => (
+                  <View key={row.label} style={styles.themeRow}>
+                    <View style={[styles.themeDot, { backgroundColor: row.color }]} />
+                    <View style={styles.themeMain}>
+                      <View style={styles.themeLabelRow}>
+                        <Text style={[styles.themeLabel, { color: theme.text }]}>{row.label}</Text>
+                        <Text style={[styles.themePct, { color: theme.mutedText }]}>{row.pct}%</Text>
+                      </View>
+                      <View style={[styles.barTrack, { backgroundColor: theme.barTrack }]}>
+                        <View
+                          style={[
+                            styles.barFill,
+                            { width: `${Math.min(100, row.pct)}%`, backgroundColor: row.color },
+                          ]}
+                        />
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                ))
+              )}
             </CircadianGlassCard>
 
             <CircadianGlassCard theme={theme} style={{ ...styles.card, marginBottom: 0 }}>
@@ -203,6 +268,8 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
         onClose={() => setSelectedItem(null)}
         onTryNow={handleTryNow}
         onTalkEmo={handleTalkEmo}
+        onDelete={handleDeleteHelped}
+        onSaveEdit={handleSaveHelpedEdit}
       />
 
       <AddHelpedSheet
@@ -296,6 +363,7 @@ const styles = StyleSheet.create({
   emptyHelped: { paddingVertical: 8 },
   emptyHelpedText: { fontSize: 14, lineHeight: 21 },
   themeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  emptyThemes: { fontSize: 14, lineHeight: 21, paddingVertical: 4 },
   themeDot: { width: 10, height: 10, borderRadius: 2, transform: [{ rotate: '45deg' }] },
   themeMain: { flex: 1 },
   themeLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
@@ -309,6 +377,14 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontStyle: 'italic',
   },
+  oracleInsightRow: { paddingVertical: 12 },
+  oracleInsightQuery: { fontSize: 12, fontWeight: '600', marginBottom: 6 },
+  oracleInsightText: {
+    fontFamily: SERIF,
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  oracleInsightMeta: { fontSize: 11, marginTop: 6 },
   helpedRow: {
     flexDirection: 'row',
     alignItems: 'center',

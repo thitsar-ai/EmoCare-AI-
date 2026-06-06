@@ -34,7 +34,7 @@ export function speakBreathPhase(phase: BreathPhase): void {
   const tryLiveEmo = () => {
     if (liveFallbackUsed || isIosSimulator()) return;
     liveFallbackUsed = true;
-    void speakAloud(text, { restoreRecordMode: false, sanctuarySession: true });
+    void speakAloud(text, { restoreRecordMode: false, breathGuide: true });
   };
 
   void playBreathClip(breathPhaseClip(phase)).catch((err) => {

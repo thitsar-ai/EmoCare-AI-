@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import Svg, { Path } from 'react-native-svg';
 import { Box, Leaf, Shield, Volume2, VolumeX, X } from 'lucide-react-native';
-import { ScreenNavChrome, useAppNav } from '../navigation/AppNavigation';
+import { ScreenNavChrome, useAppNav, TAB_BAR_HEIGHT } from '../navigation/AppNavigation';
 import { useCircadianTheme } from '../../theme/circadianTheme';
 import { BREATH_COPY, BREATH_PHASE_LABELS, BREATH_TECHNIQUES } from '../../utils/breathPatterns';
 import { hapticLight } from '../../utils/haptics';
@@ -24,7 +24,6 @@ import { BREATHE_COLORS, BREATHE_GRADIENT, BREATHE_SERIF, getBreatheChromeTheme 
 import { useBreathEngine } from './useBreathEngine';
 import { stopBreathVoiceGuide, useBreathVoiceGuide } from './useBreathVoiceGuide';
 
-const NAV_CONTENT_HEIGHT = 60;
 const FLOW_EASE = Easing.bezier(0.4, 0, 0.2, 1);
 const TECHNIQUE_KEYS = ['Box', '4-7-8', 'Calm'] as const;
 
@@ -355,8 +354,8 @@ export function BreatheExperience() {
     setTechniqueKey(session.techniqueKey);
   };
 
-  const bottomPad = flowActive ? insets.bottom + 28 : NAV_CONTENT_HEIGHT + insets.bottom;
-  const endBottom = flowActive ? insets.bottom + 24 : NAV_CONTENT_HEIGHT + 18;
+  const bottomPad = flowActive ? insets.bottom + 28 : TAB_BAR_HEIGHT + insets.bottom;
+  const endBottom = flowActive ? insets.bottom + 24 : TAB_BAR_HEIGHT + 18;
 
   const sessionName = resolveSessionName(selectedPresetId, techniqueKey);
   const patternLabel = resolveTechniquePattern(techniqueKey);

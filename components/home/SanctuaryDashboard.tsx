@@ -13,13 +13,17 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Brain,
+  ChevronLeft,
   ChevronRight,
   Heart,
+  LayoutGrid,
   RefreshCw,
   Sparkles,
   Sun,
   Wind,
 } from 'lucide-react-native';
+import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { EmoOrb } from '../shared/EmoOrb';
 import { MoodIconBadge } from '../shared/MoodIcon';
 import { CrisisFooter } from '../shared/CrisisFooter';
@@ -27,8 +31,8 @@ import { OB_MOODS } from '../../constants/obMoods';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import type { MainScreenKey } from '../navigation/AppNavigation';
-import { NavChromeBtn, ScreenNavChrome } from '../navigation/AppNavigation';
-import { useCircadianTheme, type CircadianTheme } from '../../theme/circadianTheme';
+import { NavChromeBtn, useAppNav } from '../navigation/AppNavigation';
+import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '../../theme/circadianTheme';
 import {
   getSanctuaryTalkGradient,
   isSanctuaryDayArt,
@@ -175,14 +179,14 @@ function SanctuaryHero({
 
       <View style={styles.heroInner}>
         <View style={styles.heroBrandHeader}>
-          <Text style={[styles.sanctuaryEyebrow, { color: theme.accent }]}>SANCTUARY</Text>
-          <Text style={[styles.sanctuaryTaglineOnHero, { color: theme.mutedText }]}>
-            Intelligence with Soul.
+          <Text style={[styles.heroWelcomeLine, { color: theme.mutedText }]}>
+            Welcome to your quiet space.
           </Text>
         </View>
 
         <View style={styles.heroMainRow}>
           <View style={styles.heroGreetingCol}>
+            <Text style={[styles.heroBrandTagline, { color: theme.mutedText }]}>{BRAND_TAGLINE}</Text>
             <Text style={[styles.greetingTitle, { color: theme.text }]}>
               {greeting},{'\n'}
               {displayName} 💜
@@ -316,6 +320,74 @@ function QuickActionCard({
   );
 }
 
+function SanctuaryHeaderBar({
+  theme,
+  notificationsOn,
+  onOpenNotifications,
+}: {
+  theme: CircadianTheme;
+  notificationsOn: boolean;
+  onOpenNotifications: () => void;
+}) {
+  const { goBack, goForward, canGoBack, canGoForward, setMenuOpen } = useAppNav();
+  const muted = getCircadianIconColor(theme, 'muted');
+
+  return (
+    <View style={styles.sanctuaryHeaderRow} pointerEvents="box-none">
+      <View style={[styles.sanctuaryHeaderSide, styles.sanctuaryHeaderSideLeft]} pointerEvents="box-none">
+        <NavChromeBtn
+          theme={theme}
+          onPress={goBack}
+          disabled={!canGoBack}
+          accessibilityLabel="Go back"
+        >
+          <ChevronLeft
+            size={18}
+            color={canGoBack ? theme.text : muted}
+            strokeWidth={2.4}
+          />
+        </NavChromeBtn>
+      </View>
+
+      <View style={styles.sanctuaryHeaderCenter} pointerEvents="none">
+        <Text style={[styles.sanctuaryEyebrow, { color: theme.accent }]}>SANCTUARY</Text>
+      </View>
+
+      <View style={[styles.sanctuaryHeaderSide, styles.sanctuaryHeaderSideRight]} pointerEvents="box-none">
+        <View style={styles.sanctuaryHeaderActions} pointerEvents="box-none">
+          <NavChromeBtn
+            theme={theme}
+            onPress={onOpenNotifications}
+            accessibilityLabel="Notification settings"
+          >
+            <Bell size={16} color={theme.secondaryText} strokeWidth={2.2} />
+            {notificationsOn ? (
+              <View
+                style={[styles.notifDot, { backgroundColor: theme.accent, borderColor: theme.card }]}
+              />
+            ) : null}
+          </NavChromeBtn>
+          <NavChromeBtn
+            theme={theme}
+            onPress={goForward}
+            disabled={!canGoForward}
+            accessibilityLabel="Go forward"
+          >
+            <ChevronRight
+              size={18}
+              color={canGoForward ? theme.text : muted}
+              strokeWidth={2.4}
+            />
+          </NavChromeBtn>
+          <NavChromeBtn theme={theme} onPress={() => setMenuOpen(true)} accessibilityLabel="Open app menu">
+            <LayoutGrid size={16} color={theme.text} strokeWidth={2.2} />
+          </NavChromeBtn>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function SanctuaryListRow({
   theme,
   icon: Icon,
@@ -380,6 +452,7 @@ export function SanctuaryDashboard({
 }) {
   const theme = useCircadianTheme();
   const { bottom: bottomInset } = useLayoutInsets();
+  const { navigateToCheckIn } = useAppNav();
   const displayName = userName.trim() || 'friend';
   const [checkIns, setCheckIns] = useState<CheckInRow[]>([]);
   const [reminderIdx, setReminderIdx] = useState(0);
@@ -395,6 +468,7 @@ export function SanctuaryDashboard({
 
   const weekStrip = useMemo(() => buildWeekMoodStrip(checkIns), [checkIns]);
   const weekCount = useMemo(() => countWeekCheckIns(checkIns), [checkIns]);
+  const todayCheckedIn = useMemo(() => weekStrip.some((d) => d.isToday && d.checked), [weekStrip]);
   const showEveningReflection = localHour >= 17;
   const iconAccent = getSanctuaryIconAccent(theme);
   const iconLink = getSanctuaryIconLink(theme);
@@ -447,6 +521,16 @@ export function SanctuaryDashboard({
     <View style={styles.flex}>
       <SanctuaryScenicBackdrop theme={theme} />
       <ScreenSafeArea extraTop={0}>
+        <View style={styles.chromeWrap}>
+          <SanctuaryGlassCard theme={theme} style={styles.sanctuaryNavCard}>
+            <SanctuaryHeaderBar
+              theme={theme}
+              notificationsOn={notificationsOn}
+              onOpenNotifications={() => setNotificationsOpen(true)}
+            />
+          </SanctuaryGlassCard>
+        </View>
+
         <ScrollView
           style={styles.flex}
           contentContainerStyle={{
@@ -456,29 +540,11 @@ export function SanctuaryDashboard({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.chromeWrap}>
-            <ScreenNavChrome
-              theme={theme}
-              title=""
-              compact
-              actionsBeforeNav={
-                <NavChromeBtn
-                  theme={theme}
-                  onPress={() => setNotificationsOpen(true)}
-                  accessibilityLabel="Notification settings"
-                >
-                  <Bell size={17} color={theme.secondaryText} strokeWidth={2.2} />
-                  {notificationsOn ? (
-                    <View
-                      style={[styles.notifDot, { backgroundColor: theme.accent, borderColor: theme.card }]}
-                    />
-                  ) : null}
-                </NavChromeBtn>
-              }
-            />
-          </View>
-
-          <SanctuaryHero theme={theme} greeting={greeting} displayName={displayName} />
+          <SanctuaryHero
+            theme={theme}
+            greeting={greeting}
+            displayName={displayName}
+          />
 
           <SanctuaryGlassCard theme={theme} style={styles.moodCard}>
             <View style={styles.moodHeader}>
@@ -488,12 +554,14 @@ export function SanctuaryDashboard({
               <Pressable
                 onPress={() => {
                   void hapticLight();
-                  onNav('checkin');
+                  navigateToCheckIn(todayCheckedIn);
                 }}
                 hitSlop={8}
                 style={({ pressed }) => pressLinkStyle(theme, pressed)}
               >
-                <Text style={[styles.editLink, { color: theme.accent }]}>Edit</Text>
+                <Text style={[styles.editLink, { color: theme.accent }]}>
+                  {todayCheckedIn ? 'Edit' : 'Check in'}
+                </Text>
               </Pressable>
             </View>
             <View style={styles.moodRow}>
@@ -504,7 +572,7 @@ export function SanctuaryDashboard({
                     key={`${day.label}-${i}`}
                     onPress={() => {
                       void hapticLight();
-                      onNav('checkin');
+                      navigateToCheckIn(todayCheckedIn && active);
                     }}
                     style={({ pressed }) => [styles.moodCol, pressChipStyle(theme.accent, pressed)]}
                   >
@@ -528,7 +596,7 @@ export function SanctuaryDashboard({
               iconColor="#E97D6A"
               title="Check In"
               subtitle="How are you feeling now?"
-              onPress={() => onNav('checkin')}
+              onPress={() => navigateToCheckIn(false)}
             />
             <QuickActionCard
               theme={theme}
@@ -557,8 +625,18 @@ export function SanctuaryDashboard({
               body="Discover patterns and rhythms in your emotional journey."
               linkLabel="View Insights"
               linkColor={iconLink}
-              badge={weekCount > 0 ? 'New' : undefined}
+              badge={weekCount >= 3 ? 'New' : undefined}
               onPress={() => onNav('insights')}
+            />
+            <SanctuaryListRow
+              theme={theme}
+              icon={Brain}
+              iconColor="#C4A35A"
+              title="Memory Ledger"
+              body="What Emo holds on this device — personal context, milestones, and how memory is used."
+              linkLabel="Open Ledger"
+              linkColor={iconLink}
+              onPress={() => onNav('memoryledger')}
             />
             {showEveningReflection ? (
               <SanctuaryListRow
@@ -636,7 +714,55 @@ export function SanctuaryDashboard({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  chromeWrap: { paddingHorizontal: 8, marginBottom: 6 },
+  chromeWrap: { paddingHorizontal: 0, marginBottom: 10 },
+  sanctuaryNavCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 22,
+    overflow: 'visible',
+  },
+  sanctuaryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+  },
+  sanctuaryHeaderSide: {
+    flexShrink: 0,
+    zIndex: 2,
+  },
+  sanctuaryHeaderSideLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    minWidth: 44,
+    minHeight: 44,
+  },
+  sanctuaryHeaderSideRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    minHeight: 44,
+    flex: 1,
+  },
+  sanctuaryHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  sanctuaryHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    flexShrink: 0,
+  },
+  heroWelcomeLine: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
   notifDot: {
     position: 'absolute',
     top: 5,
@@ -649,16 +775,15 @@ const styles = StyleSheet.create({
   sanctuaryEyebrow: {
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 2.4,
-    marginBottom: 4,
+    letterSpacing: 2.2,
     textAlign: 'center',
   },
-  sanctuaryTaglineOnHero: {
+  heroBrandTagline: {
     fontFamily: SERIF,
     fontStyle: 'italic',
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
   },
   heroSection: {
     marginHorizontal: -HERO_H_PAD,

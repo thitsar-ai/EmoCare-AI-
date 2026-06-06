@@ -7,4 +7,4 @@ export const BRAND_TAGLINE = 'Intelligence with Soul.';
 export const BRAND_SPLASH_FOOTER = 'Your Emotional Sanctuary';
 
 /** Talk screen — Emo presence line when idle (not thinking/speaking). */
-export const CHAT_PRESENCE_TAGLINE = 'Always be with you';
+export const CHAT_PRESENCE_TAGLINE = 'Emo is always with you';

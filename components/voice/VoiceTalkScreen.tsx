@@ -3,7 +3,6 @@ import {
   Animated,
   Easing,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -15,8 +14,8 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
-import { Mic, MicOff } from 'lucide-react-native';
-import { ScreenNavChrome, useAppNav, TAB_BAR_HEIGHT } from '../navigation/AppNavigation';
+import { Ellipsis, Mic, MicOff } from 'lucide-react-native';
+import { NavChromeBtn, ScreenNavChrome, useAppNav, TAB_BAR_HEIGHT } from '../navigation/AppNavigation';
 import { EmoMemoryChip } from '../shared/EmoMemoryChip';
 import {
   useCircadianTheme,
@@ -47,9 +46,9 @@ function VoiceEmoFaceOrb({
   compact?: boolean;
 }) {
   const faceSource = getSanctuaryEmoFace(theme.phase);
-  const scale = compact ? 1.05 : 1.45;
+  const scale = compact ? 0.92 : 1.45;
   const faceSize = getSanctuaryEmoOrbSize(scale);
-  const stageSize = compact ? 168 : 240;
+  const stageSize = compact ? 120 : 240;
   const pulse = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -200,14 +199,19 @@ export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [micMenuOpen, setMicMenuOpen] = React.useState(false);
   const [memoryChipLabel, setMemoryChipLabel] = React.useState<string | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = React.useState(false);
+  const [keyboardHeight, setKeyboardHeight] = React.useState(0);
   const sessionStarted = React.useRef(false);
+  const keyboardVisible = keyboardHeight > 0;
 
   React.useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -266,93 +270,104 @@ export function VoiceTalkScreen({ userName }: VoiceTalkScreenProps) {
     borderColor: theme.border,
   };
 
-  const navPad = keyboardVisible ? 8 : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8);
-  const keyboardOffset = Platform.OS === 'ios' ? insets.top + 4 : 0;
+  const footerHeight = keyboardVisible ? 64 : 118;
+  const footerInset = keyboardVisible
+    ? keyboardHeight + 10
+    : TAB_BAR_HEIGHT + insets.bottom + 8;
 
   return (
     <View style={styles.flex}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <ScreenSafeArea extraTop={4}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={keyboardOffset}
-        >
-          <View style={styles.root}>
-            <View style={styles.chromeWrap}>
-              <ScreenNavChrome theme={theme} title="Voice Talk" titleFontSize={15} />
+        <View style={styles.root}>
+          <View style={styles.chromeWrap}>
+            <ScreenNavChrome
+              theme={theme}
+              title="Voice Talk"
+              titleFontSize={15}
+              actionsBeforeNav={
+                <NavChromeBtn
+                  theme={theme}
+                  onPress={() => setMenuOpen(true)}
+                  accessibilityLabel="Voice session options"
+                >
+                  <Ellipsis size={18} color={theme.text} strokeWidth={2.4} />
+                </NavChromeBtn>
+              }
+            />
+          </View>
+
+          <View style={[styles.body, { paddingBottom: footerInset + footerHeight }]}>
+            <View style={[styles.titleBlock, keyboardVisible && styles.titleBlockCompact]}>
+              {!keyboardVisible ? (
+                <>
+                  <Text style={[styles.greetingLead, { color: theme.text }]}>
+                    Good to hear you,
+                  </Text>
+                  <Text style={[styles.greetingName, { color: theme.text }]}>{displayName}</Text>
+                </>
+              ) : null}
+              {!keyboardVisible ? (
+                <Text style={[styles.statusLine, { color: theme.mutedText }]}>{statusLine}</Text>
+              ) : null}
+              {!keyboardVisible && memoryChipLabel ? (
+                <EmoMemoryChip
+                  theme={theme}
+                  label={memoryChipLabel}
+                  onPress={() => navigate('memoryledger')}
+                />
+              ) : null}
             </View>
 
-            <View style={styles.body}>
-              <View style={[styles.titleBlock, keyboardVisible && styles.titleBlockCompact]}>
-                {!keyboardVisible ? (
-                  <>
-                    <Text style={[styles.greetingLead, { color: theme.text }]}>
-                      Good to hear you,
-                    </Text>
-                    <Text style={[styles.greetingName, { color: theme.text }]}>{displayName}</Text>
-                  </>
-                ) : null}
-                <Text style={[styles.statusLine, { color: theme.mutedText }]}>{statusLine}</Text>
-                {!keyboardVisible && memoryChipLabel ? (
-                  <EmoMemoryChip
-                    theme={theme}
-                    label={memoryChipLabel}
-                    onPress={() => navigate('memoryledger')}
-                  />
-                ) : null}
-              </View>
+            <View style={[styles.centerStage, keyboardVisible && styles.centerStageCompact]}>
+              <VoiceEmoFaceOrb
+                theme={theme}
+                isSpeaking={isEmoSpeaking}
+                onPress={handleFacePress}
+                compact={keyboardVisible}
+              />
+            </View>
+          </View>
 
-              <View style={[styles.centerStage, keyboardVisible && styles.centerStageCompact]}>
-                <VoiceEmoFaceOrb
-                  theme={theme}
-                  isSpeaking={isEmoSpeaking}
-                  onPress={handleFacePress}
-                  compact={keyboardVisible}
+          <View style={[styles.footerDock, { bottom: footerInset }]}>
+            <View style={[styles.inputCard, chromeBtnStyle, keyboardVisible && styles.inputCardCompact]}>
+              {!keyboardVisible ? (
+                <Text style={[styles.inputLabel, { color: theme.mutedText, opacity: 0.62 }]}>
+                  Type your message — Emo will speak back
+                </Text>
+              ) : null}
+              <View style={[styles.inputRow, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF', borderColor: theme.border }]}>
+                <TextInput
+                  ref={inputRef}
+                  value={draft}
+                  onChangeText={setDraft}
+                  placeholder="What's on your heart?"
+                  placeholderTextColor={theme.mutedText}
+                  style={[styles.input, { color: theme.text }]}
+                  returnKeyType="send"
+                  submitBehavior="submit"
+                  blurOnSubmit={false}
+                  onSubmitEditing={handleSend}
+                  multiline={false}
+                  autoCorrect
+                  autoCapitalize="sentences"
                 />
-              </View>
-
-              <View style={[styles.footer, { paddingBottom: navPad }]}>
-                <View style={[styles.inputCard, chromeBtnStyle, keyboardVisible && styles.inputCardCompact]}>
-                  {!keyboardVisible ? (
-                    <Text style={[styles.inputLabel, { color: theme.mutedText, opacity: 0.62 }]}>
-                      Type your message - Emo will speak back
-                    </Text>
-                  ) : null}
-                  <View style={[styles.inputRow, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF', borderColor: theme.border }]}>
-                    <TextInput
-                      ref={inputRef}
-                      value={draft}
-                      onChangeText={setDraft}
-                      placeholder="What's on your heart?"
-                      placeholderTextColor={theme.mutedText}
-                      style={[styles.input, { color: theme.text }]}
-                      returnKeyType="send"
-                      submitBehavior="submit"
-                      blurOnSubmit={false}
-                      onSubmitEditing={handleSend}
-                      multiline={false}
-                      autoCorrect
-                      autoCapitalize="sentences"
-                    />
-                    <Pressable
-                      onPress={() => setMicMenuOpen(true)}
-                      style={styles.micBtn}
-                      accessibilityRole="button"
-                      accessibilityLabel="Voice controls"
-                    >
-                      {isMicMuted ? (
-                        <MicOff size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.4} />
-                      ) : (
-                        <Mic size={17} color={theme.accent} strokeWidth={2.4} />
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
+                <Pressable
+                  onPress={() => setMicMenuOpen(true)}
+                  style={styles.micBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Voice controls"
+                >
+                  {isMicMuted ? (
+                    <MicOff size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.4} />
+                  ) : (
+                    <Mic size={17} color={theme.accent} strokeWidth={2.4} />
+                  )}
+                </Pressable>
               </View>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </ScreenSafeArea>
 
       <VoiceMenuDropdown
@@ -382,6 +397,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   root: {
     flex: 1,
+    position: 'relative',
   },
   chromeWrap: { paddingHorizontal: 8, paddingBottom: 4 },
   body: {
@@ -444,11 +460,11 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   centerStageCompact: {
-    flexGrow: 0,
-    flexShrink: 1,
+    flex: 0,
     justifyContent: 'flex-start',
-    paddingTop: 4,
-    paddingBottom: 4,
+    paddingTop: 8,
+    paddingBottom: 0,
+    minHeight: 120,
   },
   orbStage: {
     alignItems: 'center',
@@ -466,10 +482,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   facePressed: { opacity: 0.88 },
-  footer: {
-    paddingTop: 4,
-    paddingHorizontal: 0,
-    flexShrink: 0,
+  footerDock: {
+    position: 'absolute',
+    left: 28,
+    right: 28,
   },
   inputCard: {
     borderRadius: 22,

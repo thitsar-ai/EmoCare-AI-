@@ -21,6 +21,8 @@ export interface SpeakAloudOptions {
   onElevenLabsError?: (message: string) => void;
   /** Slower, dreamier voice for meditations and stories. */
   sanctuarySession?: boolean;
+  /** Soft, slow breath-guide delivery. */
+  breathGuide?: boolean;
   /** Called before each segment in a long session (1-based index). */
   onSegmentStart?: (index: number, total: number) => void;
   /** After playback, restore mic-friendly audio mode (voice sanctuary). */
@@ -174,13 +176,15 @@ async function speakWithExpoSpeech(trimmed: string, options: SpeakAloudOptions):
   options.onProvider?.('system');
   await enterPlaybackMode();
   const vol = Math.max(await getVoiceVolume(), isIosSimulator() ? 1 : 0);
+  const rate = options.breathGuide ? 0.8 : options.sanctuarySession ? 0.86 : 0.92;
+  const pitch = options.breathGuide ? 1 : options.sanctuarySession ? 1.02 : 1.08;
 
   return new Promise<void>((resolve) => {
     Speech.speak(trimmed, {
       language: 'en-US',
-      rate: 0.92,
-      pitch: 1.08,
-      volume: vol,
+      rate,
+      pitch,
+      volume: options.breathGuide ? vol * 0.82 : vol,
       onStart: () => {
         if (!isSpeakGenerationActive(generation)) return;
         options.onStart?.();
@@ -240,7 +244,7 @@ async function playElevenLabsFile(
     stopActivePlayer();
     throw new Error('Voice playback superseded');
   }
-  activePlayer.volume = vol;
+  activePlayer.volume = options.breathGuide ? vol * 0.75 : vol;
   activePlayer.play();
 
   // expo-audio often "plays" silently on iOS Simulator — detect and fall back to system TTS.
@@ -297,6 +301,7 @@ async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, 
   try {
     const pcmBytes = await fetchElevenLabsPcm(trimmed, controller.signal, {
       sanctuarySession: options.sanctuarySession,
+      breathGuide: options.breathGuide,
     });
     if (!pcmBytes?.length || controller.signal.aborted || !isSpeakGenerationActive(generation)) {
       throw new Error('Empty ElevenLabs PCM audio');
@@ -319,6 +324,7 @@ async function speakWithElevenLabs(trimmed: string, options: SpeakAloudOptions, 
   try {
     const mp3Bytes = await fetchElevenLabsMp3(trimmed, controller.signal, {
       sanctuarySession: options.sanctuarySession,
+      breathGuide: options.breathGuide,
     });
     if (!mp3Bytes?.length || controller.signal.aborted || !isSpeakGenerationActive(generation)) {
       throw new Error('Empty ElevenLabs MP3 audio');
