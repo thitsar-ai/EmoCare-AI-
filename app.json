@@ -16,6 +16,7 @@
       "supportsTablet": true,
       "buildNumber": "1",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSSpeechRecognitionUsageDescription": "Allow EmoCare to understand your voice so Emo can respond.",
         "NSMicrophoneUsageDescription": "Allow EmoCare to listen during Voice Talk."
       },
