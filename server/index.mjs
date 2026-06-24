@@ -40,6 +40,40 @@ const EMO_BREATH_VOICE_SETTINGS = {
   speed: 0.84,
 };
 
+// --- in-memory per-IP rate limiter (single-instance; fine for v1 scale) ---
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;   // 1 minute
+const RATE_LIMIT_MAX = 30;                // requests per IP per window — tune to real usage
+const rateBuckets = new Map();
+
+function getClientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim();   // Railway sets this
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+function rateLimited(req) {
+  const ip = getClientIp(req);
+  const now = Date.now();
+  const b = rateBuckets.get(ip);
+  if (!b || now > b.resetAt) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  b.count += 1;
+  return b.count > RATE_LIMIT_MAX;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, b] of rateBuckets) if (now > b.resetAt) rateBuckets.delete(ip);
+}, 5 * 60 * 1000).unref();
+
+const MAX_TOKENS_CEILING = 1600;  // covers Oracle; still blocks abusive 8000-token requests
+function clampMaxTokens(requested) {
+  const n = Number(requested) || 700;
+  return Math.min(Math.max(n, 1), MAX_TOKENS_CEILING);
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -62,7 +96,10 @@ async function readJsonBody(req) {
 }
 
 function authorize(req, res) {
-  if (!EMOCARE_API_SECRET) return true;
+  if (!EMOCARE_API_SECRET) {
+    sendJson(res, 503, { error: { type: 'config_error', message: 'Server auth not configured' } });
+    return false;   // fail CLOSED, never run open
+  }
   const auth = req.headers.authorization || '';
   if (auth === `Bearer ${EMOCARE_API_SECRET}`) return true;
   sendJson(res, 401, { error: { type: 'authentication_error', message: 'Unauthorized' } });
@@ -113,7 +150,7 @@ async function handleAnthropicMessages(req, res, body) {
     },
     body: JSON.stringify({
       model: body.model || ANTHROPIC_MODEL,
-      max_tokens: body.max_tokens ?? body.maxTokens ?? 700,
+      max_tokens: clampMaxTokens(body.max_tokens ?? body.maxTokens),
       ...(body.system ? { system: body.system } : {}),
       messages: body.messages,
     }),
@@ -144,7 +181,7 @@ async function handleAnthropicStream(req, res, body) {
     },
     body: JSON.stringify({
       model: body.model || ANTHROPIC_MODEL,
-      max_tokens: body.max_tokens ?? body.maxTokens ?? 700,
+      max_tokens: clampMaxTokens(body.max_tokens ?? body.maxTokens),
       stream: true,
       ...(body.system ? { system: body.system } : {}),
       messages: body.messages,
@@ -197,6 +234,8 @@ async function handleElevenLabsTts(req, res, body) {
     return;
   }
 
+  const sanctuarySession = Boolean(body.sanctuarySession);
+  const breathGuide = Boolean(body.breathGuide);
   const text = breathGuide ? prepareBreathSpeechText(body.text) : prepareSanctuarySpeechText(body.text);
   if (!text) {
     sendJson(res, 400, { error: { message: 'Missing text' } });
@@ -204,8 +243,6 @@ async function handleElevenLabsTts(req, res, body) {
   }
 
   const outputFormat = body.output_format || body.outputFormat || 'mp3_44100_128';
-  const sanctuarySession = Boolean(body.sanctuarySession);
-  const breathGuide = Boolean(body.breathGuide);
   const voiceId = body.voice_id || body.voiceId || ELEVENLABS_VOICE_ID;
   const voiceSettings = breathGuide
     ? EMO_BREATH_VOICE_SETTINGS
@@ -338,6 +375,7 @@ async function handleOracleSearch(_req, res, body) {
 }
 
 const server = createServer(async (req, res) => {
+  // OPTIONS — CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, corsHeaders());
     res.end();
@@ -347,20 +385,26 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const path = url.pathname;
 
+  // GET /health — open (Railway / uptime monitors)
   if (req.method === 'GET' && path === '/health') {
     sendJson(res, 200, { ok: true });
     return;
   }
 
-  if (req.method === 'GET' && path === '/v1/config') {
-    await handleConfig(req, res);
-    return;
+  // Rate limit before auth + any expensive work
+  if (rateLimited(req)) {
+    return sendJson(res, 429, { error: { type: 'rate_limited', message: 'Too many requests. Please slow down.' } });
   }
-
+  // Fail closed — required for all non-health routes (including /v1/config)
   if (!authorize(req, res)) return;
 
   try {
     const body = req.method === 'POST' ? await readJsonBody(req) : {};
+
+    if (req.method === 'GET' && path === '/v1/config') {
+      await handleConfig(req, res);
+      return;
+    }
 
     if (req.method === 'POST' && path === '/v1/anthropic/messages') {
       await handleAnthropicMessages(req, res, body);
@@ -392,5 +436,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  Anthropic: ${ANTHROPIC_API_KEY ? 'ready' : 'missing ANTHROPIC_API_KEY'}`);
   console.log(`  ElevenLabs: ${ELEVENLABS_API_KEY ? 'ready' : 'missing ELEVENLABS_API_KEY'}`);
   console.log(`  Tavily: ${TAVILY_API_KEY ? 'ready' : 'missing TAVILY_API_KEY'}`);
-  console.log(`  Auth: ${EMOCARE_API_SECRET ? 'secret required' : 'open (set EMOCARE_API_SECRET for production)'}`);
+  console.log(`  Auth: ${EMOCARE_API_SECRET ? 'secret required' : 'BLOCKED — set EMOCARE_API_SECRET'}`);
 });
