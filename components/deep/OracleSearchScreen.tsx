@@ -93,7 +93,7 @@ function getOracleColors(theme: CircadianTheme) {
     inputText: theme.text,
     placeholder: theme.mutedText,
     sendBg: teal,
-    sendDisabled: `${teal}59`,
+    sendDisabled: `${teal}66`,
     accentSoft: teal,
     accentMuted: `${teal}8C`,
     userBubble: tokens.surface.bubble,
@@ -419,7 +419,9 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               {item.label}
             </Text>
             {!compact ? (
-              <Text style={[styles.modeHint, { color: theme.mutedText }]}>{item.hint}</Text>
+              <Text style={[styles.modeHint, { color: theme.mutedText }]} numberOfLines={2}>
+                {item.hint}
+              </Text>
             ) : null}
           </Pressable>
         );
@@ -479,28 +481,26 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
           <View style={styles.chromeWrap}>
-            <ScreenNavChrome
-              theme={theme}
-              titleColor={oracle.navTitle}
-              centerContent={
-                <View style={styles.navCenter}>
-                  <Text style={[styles.navTitle, { color: oracle.navTitle }]} numberOfLines={1}>
-                    {ORACLE_HEADER_TITLE}
-                  </Text>
-                  <Text style={[styles.navTagline, { color: oracle.body }]} numberOfLines={1}>
-                    {ORACLE_HEADER_TAGLINE}
-                  </Text>
-                  {searching ? (
-                    <View style={[styles.statusPill, { borderColor: `${oracle.accentSoft}44` }]}>
-                      <Loader2 size={12} color={oracle.accentSoft} />
-                      <Text style={[styles.statusPillText, { color: oracle.accentSoft }]}>
-                        {ORACLE_STATUS_SHORT}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              }
-            />
+            <ScreenNavChrome theme={theme} title={ORACLE_HEADER_TITLE} titleColor={oracle.navTitle} />
+          </View>
+
+          <View style={styles.oracleHeaderMeta}>
+            <Text
+              style={[styles.oracleTagline, { color: oracle.body }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.82}
+            >
+              {ORACLE_HEADER_TAGLINE}
+            </Text>
+            {searching ? (
+              <View style={[styles.statusPill, { borderColor: `${oracle.accentSoft}55` }]}>
+                <Loader2 size={12} color={oracle.accentSoft} />
+                <Text style={[styles.statusPillText, { color: oracle.accentSoft }]}>
+                  {ORACLE_STATUS_SHORT}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <View style={[styles.oracleEmoRow, !isEmpty && styles.oracleEmoRowCompact]}>
@@ -656,25 +656,21 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  chromeWrap: { paddingHorizontal: 8, paddingBottom: 2 },
-  navTitle: {
-    fontFamily: SERIF,
-    fontSize: tokens.typography.navTitleLarge.fontSize,
-    lineHeight: tokens.typography.navTitleLarge.lineHeight,
-    fontWeight: tokens.typography.navTitleLarge.fontWeight,
-    textAlign: 'center',
-    letterSpacing: 0.2,
+  chromeWrap: { paddingHorizontal: 8, paddingBottom: 0 },
+  oracleHeaderMeta: {
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
   },
-  navTagline: {
-    fontSize: 12,
-    lineHeight: 16,
+  oracleTagline: {
+    fontSize: 11,
+    lineHeight: 14,
     textAlign: 'center',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    letterSpacing: 0.15,
     fontWeight: '600',
-    paddingHorizontal: 8,
+    alignSelf: 'stretch',
   },
-  navCenter: { alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%' },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -689,7 +685,7 @@ const styles = StyleSheet.create({
   oracleEmoRow: {
     alignItems: 'center',
     overflow: 'visible',
-    paddingTop: 0,
+    paddingTop: 6,
     paddingBottom: 2,
   },
   oracleEmoRowCompact: {
@@ -720,6 +716,7 @@ const styles = StyleSheet.create({
   },
   modeChip: {
     flex: 1,
+    minWidth: 0,
     borderWidth: 1,
     borderRadius: 16,
     paddingVertical: 12,
@@ -731,14 +728,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   modeLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
+    lineHeight: 14,
   },
   modeHint: {
     fontSize: 10,
     marginTop: 4,
     textAlign: 'center',
+    lineHeight: 13,
   },
   sectionEyebrow: {
     fontSize: 11,
@@ -772,6 +771,7 @@ const styles = StyleSheet.create({
   },
   categoryChip: {
     width: '48%',
+    minWidth: '46%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -780,8 +780,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
-  categoryIcon: { fontSize: 16 },
-  categoryLabel: { fontSize: 13, fontWeight: '600' },
+  categoryIcon: { fontSize: 16, flexShrink: 0 },
+  categoryLabel: { fontSize: 13, fontWeight: '600', flex: 1, flexShrink: 1 },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 18,
@@ -906,11 +906,11 @@ const styles = StyleSheet.create({
     borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#58D6D0',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: '#12D4CB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 6,
   },
   sendBtnLarge: {
     width: 50,
@@ -918,10 +918,10 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#58D6D0',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: '#12D4CB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 6,
   },
 });

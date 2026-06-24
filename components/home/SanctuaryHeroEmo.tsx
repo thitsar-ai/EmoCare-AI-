@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { getSanctuaryEmoFace, getSanctuaryEmoOrbSize } from '../../theme/sanctuaryEmoFace';
+import { getSanctuaryEmoFace, getSanctuaryEmoStageSize } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryEmoOrbFace } from '../shared/SanctuaryEmoOrbFace';
 
 const BREATHE_MS = 2000;
@@ -39,10 +39,7 @@ export function SanctuaryHeroEmo({
   const float = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
   const faceSource = getSanctuaryEmoFace(theme.phase);
-  const faceSize = getSanctuaryEmoOrbSize(scale);
-  /** Extra canvas so leaf tips aren't clipped by tight square bounds. */
-  const leafPad = Math.round(faceSize * 0.16);
-  const stageSize = faceSize + leafPad * 2;
+  const stageSize = getSanctuaryEmoStageSize(scale);
 
   useEffect(() => {
     if (reduceMotion) return;
@@ -116,7 +113,7 @@ export function SanctuaryHeroEmo({
         >
           <SanctuaryEmoOrbFace
             source={faceSource}
-            size={faceSize}
+            size={stageSize}
             scale={faceScaleAnim}
             accessibilityLabel="Emo, your companion"
           />
@@ -130,6 +127,7 @@ const styles = StyleSheet.create({
   stage: {
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
   orbFrame: {
     overflow: 'visible',

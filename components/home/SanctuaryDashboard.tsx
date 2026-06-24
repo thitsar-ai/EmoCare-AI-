@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -24,7 +24,7 @@ import {
 } from 'lucide-react-native';
 import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
-import { SANCTUARY_EMO_STANDARD_SCALE } from '../../theme/sanctuaryEmoFace';
+import { SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryMemoryBadge, memoryMoodFromChipLabel } from './SanctuaryMemoryBadge';
 import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
 import { MoodIconBadge } from '../shared/MoodIcon';
@@ -59,9 +59,11 @@ import { NotificationSheet } from './NotificationSheet';
 import { loadSettings } from '../../utils/settingsStorage';
 import { SanctuaryScenicBackdrop } from './SanctuaryScenicBackdrop';
 import { SanctuaryGlassSurface } from '../shared/SanctuaryGlassSurface';
+import { CrisisFooter } from '../shared/CrisisFooter';
 import { BRAND_CTA_GRADIENT } from '../../theme/tokens';
 import { primaryButtonInner, primaryButtonLabel } from '../../theme/primaryButton';
 import type { GlassSurfaceVariant } from '../../theme/glassSurfaces';
+import { isNarrowPhone } from '../../utils/layoutBreakpoints';
 
 const SERIF = 'Georgia';
 const NAV_CONTENT_HEIGHT = 72;
@@ -147,7 +149,7 @@ function SanctuaryGlassCard({
 }
 
 const HERO_H_PAD = 18;
-const SCREEN_W = Dimensions.get('window').width;
+const HERO_ORB_STAGE_HEIGHT = getSanctuaryEmoStageSize(SANCTUARY_EMO_STANDARD_SCALE);
 
 function SanctuaryHero({
   theme,
@@ -217,7 +219,7 @@ function SanctuaryHero({
           <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_STANDARD_SCALE} />
         </View>
 
-        <Text style={[styles.heroBrandTagline, { color: theme.mutedText }]}>{BRAND_TAGLINE}</Text>
+        <Text style={[styles.heroBrandTagline, { color: theme.secondaryText }]}>{BRAND_TAGLINE}</Text>
       </View>
 
       <LinearGradient
@@ -238,10 +240,13 @@ function SanctuaryHero({
 function SanctuaryTalkCard({
   theme,
   onPress,
+  narrow,
 }: {
   theme: CircadianTheme;
   onPress: () => void;
+  narrow: boolean;
 }) {
+  const orbScale = narrow ? SANCTUARY_EMO_STANDARD_SCALE * 0.72 : SANCTUARY_EMO_STANDARD_SCALE;
   return (
     <Pressable
       onPress={() => {
@@ -251,26 +256,40 @@ function SanctuaryTalkCard({
       style={({ pressed }) => [styles.talkHeroWrap, pressHeroCardStyle(pressed)]}
     >
       <SanctuaryGlassSurface variant="lavender" style={styles.talkHeroGlass}>
-        <View style={styles.talkHeroRow}>
+        <View style={[styles.talkHeroRow, narrow && styles.talkHeroRowNarrow]}>
           <View style={styles.talkHeroCopy}>
             <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Talk to Emo 💜</Text>
             <Text style={[styles.talkHeroBody, { color: theme.secondaryText }]}>
               Whatever is on your heart, we can begin there.
             </Text>
-            <LinearGradient
-              colors={[...BRAND_CTA_GRADIENT]}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={[primaryButtonInner, styles.talkHeroBtn]}
-            >
-              <Text style={[primaryButtonLabel, styles.talkHeroBtnText]}>Start Conversation</Text>
-              <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} />
-            </LinearGradient>
           </View>
-          <View style={styles.talkOrbWrap} pointerEvents="none">
-            <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_STANDARD_SCALE} />
-          </View>
+          {!narrow ? (
+            <View style={styles.talkOrbWrap} pointerEvents="none">
+              <SanctuaryEmoPresence theme={theme} scale={orbScale} />
+            </View>
+          ) : null}
         </View>
+        {narrow ? (
+          <View style={styles.talkOrbWrapNarrow} pointerEvents="none">
+            <SanctuaryEmoPresence theme={theme} scale={orbScale} />
+          </View>
+        ) : null}
+        <LinearGradient
+          colors={[...BRAND_CTA_GRADIENT]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[primaryButtonInner, styles.talkHeroBtn]}
+        >
+          <Text
+            style={[primaryButtonLabel, styles.talkHeroBtnText]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.88}
+          >
+            Start Conversation
+          </Text>
+          <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} style={styles.talkHeroBtnIcon} />
+        </LinearGradient>
       </SanctuaryGlassSurface>
     </Pressable>
   );
@@ -304,7 +323,7 @@ function QuickActionCard({
           <Icon size={18} color={iconColor} strokeWidth={2.2} />
         </View>
         <Text style={[styles.quickTitle, { color: theme.text }]}>{title}</Text>
-        <Text style={[styles.quickSub, { color: theme.mutedText }]} numberOfLines={2}>
+        <Text style={[styles.quickSub, { color: theme.secondaryText }]}>
           {subtitle}
         </Text>
       </SanctuaryGlassSurface>
@@ -336,7 +355,7 @@ function SanctuaryHeaderBar({
             onPress={onOpenNotifications}
             accessibilityLabel="Notification settings"
           >
-            <Bell size={16} color={theme.secondaryText} strokeWidth={2.2} />
+            <Bell size={16} color={theme.text} strokeWidth={2.2} />
             {notificationsOn ? (
               <View
                 style={[styles.notifDot, { backgroundColor: theme.accent, borderColor: theme.card }]}
@@ -395,11 +414,11 @@ function SanctuaryListRow({
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.listCopy, { color: theme.mutedText }]}>{body}</Text>
-          </View>
-          <View style={styles.listLinkCol}>
-            <Text style={[styles.listLink, { color: linkColor }]}>{linkLabel}</Text>
-            <ChevronRight size={14} color={linkColor} strokeWidth={2.4} />
+            <Text style={[styles.listCopy, { color: theme.secondaryText }]}>{body}</Text>
+            <View style={styles.listLinkRow}>
+              <Text style={[styles.listLink, { color: linkColor }]}>{linkLabel}</Text>
+              <ChevronRight size={14} color={linkColor} strokeWidth={2.4} />
+            </View>
           </View>
         </View>
       </SanctuaryGlassSurface>
@@ -415,6 +434,8 @@ export function SanctuaryDashboard({
   onNav: (key: MainScreenKey) => void;
 }) {
   const theme = useCircadianTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const narrow = isNarrowPhone(windowWidth);
   const { bottom: bottomInset, top: topInset } = useLayoutInsets();
   const topPad = topInset + 4;
   const { navigateToCheckIn } = useAppNav();
@@ -554,7 +575,7 @@ export function SanctuaryDashboard({
                   return (
                     <View key={entry.id ?? entry.date} style={styles.journeyChip}>
                       {mood ? <MoodIconBadge mood={mood} variant="week" active /> : null}
-                      <Text style={[styles.journeyMood, { color: theme.text }]} numberOfLines={1}>
+                      <Text style={[styles.journeyMood, { color: theme.text }]}>
                         {entry.mood?.label ?? 'Check-in'}
                       </Text>
                       <Text style={[styles.journeyTime, { color: theme.mutedText }]}>
@@ -579,7 +600,7 @@ export function SanctuaryDashboard({
                     style={({ pressed }) => [styles.moodCol, pressChipStyle(theme.accent, pressed)]}
                   >
                     <WeekMoodDot day={day} theme={theme} />
-                    <Text style={[styles.moodDayLabel, { color: active ? theme.accent : iconLink }]}>
+                    <Text style={[styles.moodDayLabel, { color: active ? theme.accent : theme.secondaryText }]}>
                       {day.label}
                     </Text>
                   </Pressable>
@@ -588,7 +609,7 @@ export function SanctuaryDashboard({
             </View>
           </SanctuaryGlassCard>
 
-          <SanctuaryTalkCard theme={theme} onPress={() => onNav('talk')} />
+          <SanctuaryTalkCard theme={theme} narrow={narrow} onPress={() => onNav('talk')} />
 
           <Text style={[styles.sectionEyebrow, { color: labelAccent }]}>QUICK ACTIONS</Text>
           <View style={styles.quickRow}>
@@ -651,6 +672,8 @@ export function SanctuaryDashboard({
               />
             ) : null}
           </View>
+
+          <CrisisFooter theme={theme} variant="home" style={styles.crisisFooter} />
 
           <View style={{ height: bottomInset > 0 ? 8 : 16 }} />
         </ScrollView>
@@ -755,7 +778,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 8,
     overflow: 'visible',
-    minHeight: 200,
+    minHeight: HERO_ORB_STAGE_HEIGHT + 12,
+    paddingTop: 8,
   },
   heroGreetingCol: {
     alignSelf: 'stretch',
@@ -784,6 +808,7 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     fontWeight: '400',
     textAlign: 'left',
+    flexShrink: 1,
   },
   greetingSub: {
     fontFamily: SERIF,
@@ -810,13 +835,15 @@ const styles = StyleSheet.create({
   journeyChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: 'rgba(123,77,255,0.08)',
+    maxWidth: '100%',
   },
-  journeyMood: { fontSize: 12, fontWeight: '600', maxWidth: 88 },
+  journeyMood: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
   journeyTime: { fontSize: 11, fontWeight: '500' },
   moodHeader: {
     flexDirection: 'row',
@@ -849,13 +876,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
+  talkHeroRowNarrow: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
   talkOrbWrap: {
     flexShrink: 0,
     marginLeft: 4,
     overflow: 'visible',
-    minWidth: 200,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  talkOrbWrapNarrow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    overflow: 'visible',
+    paddingTop: 6,
   },
   talkHeroCopy: {
     flex: 1,
@@ -870,14 +907,23 @@ const styles = StyleSheet.create({
   talkHeroBody: {
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 10,
+    marginBottom: 0,
   },
   talkHeroBtn: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     alignSelf: 'stretch',
-    gap: 4,
+    gap: 6,
+    marginTop: 14,
   },
-  talkHeroBtnText: { fontSize: 15 },
+  talkHeroBtnText: {
+    fontSize: 15,
+    flexShrink: 1,
+  },
+  talkHeroBtnIcon: {
+    flexShrink: 0,
+  },
   sectionEyebrow: {
     fontSize: 10,
     fontWeight: '700',
@@ -901,7 +947,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   quickTitle: { fontSize: 12, fontWeight: '700', marginBottom: 3 },
-  quickSub: { fontSize: 9, lineHeight: 12 },
+  quickSub: { fontSize: 10, lineHeight: 14, fontWeight: '500' },
   listSection: { gap: 10, marginBottom: 20 },
   listRowWrap: {},
   listRowOuter: {},
@@ -925,6 +971,12 @@ const styles = StyleSheet.create({
   listBadge: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
   listBadgeText: { fontSize: 10, fontWeight: '700' },
   listCopy: { fontSize: 12, lineHeight: 18 },
-  listLinkCol: { alignItems: 'flex-end', gap: 2, maxWidth: 96, flexShrink: 0 },
-  listLink: { fontSize: 11, fontWeight: '700', textAlign: 'right' },
+  listLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 10,
+  },
+  listLink: { fontSize: 12, fontWeight: '700' },
+  crisisFooter: { marginTop: 8, paddingHorizontal: 8 },
 });

@@ -89,7 +89,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
     overflow: 'visible',
-    minHeight: 220,
+    paddingTop: 10,
+    paddingBottom: 6,
   },
   welcomeBlock: {
     alignItems: 'center',

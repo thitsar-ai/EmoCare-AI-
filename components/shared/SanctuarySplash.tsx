@@ -120,6 +120,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 22,
     overflow: 'visible',
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   title: {
     fontSize: 48,
