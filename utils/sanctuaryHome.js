@@ -85,6 +85,32 @@ function sameLocalDay(a, b) {
   );
 }
 
+/** Morning / afternoon / evening / night label for a timestamp. */
+export function partOfDayLabel(date = new Date()) {
+  const h = date.getHours();
+  if (h >= 5 && h < 12) return 'Morning';
+  if (h >= 12 && h < 17) return 'Afternoon';
+  if (h >= 17 && h < 21) return 'Evening';
+  return 'Night';
+}
+
+function entriesForLocalDay(checkIns, dayDate) {
+  return checkIns.filter((c) => {
+    try {
+      return sameLocalDay(new Date(c.date), dayDate);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Latest check-in for a calendar day (for week strip display). */
+export function getLatestCheckInForDay(checkIns = [], dayDate = new Date()) {
+  const forDay = entriesForLocalDay(checkIns, dayDate);
+  if (!forDay.length) return null;
+  return forDay.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+}
+
 /**
  * @param {Array<{ date: string; mood?: { emoji?: string; label?: string } }>} checkIns
  */
@@ -96,13 +122,7 @@ export function buildWeekMoodStrip(checkIns = []) {
   return DAY_LABELS.map((label, i) => {
     const dayDate = new Date(weekStart);
     dayDate.setDate(weekStart.getDate() + i);
-    const entry = checkIns.find((c) => {
-      try {
-        return sameLocalDay(new Date(c.date), dayDate);
-      } catch {
-        return false;
-      }
-    });
+    const entry = getLatestCheckInForDay(checkIns, dayDate);
     return {
       label,
       isToday: i === todayIdx,
@@ -113,40 +133,44 @@ export function buildWeekMoodStrip(checkIns = []) {
   });
 }
 
+/** All of today's check-ins, oldest first — today's emotional journey. */
+export function getTodayCheckIns(checkIns = []) {
+  const now = new Date();
+  return entriesForLocalDay(checkIns, now).sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+}
+
 /**
  * @param {Array<{ date: string; mood?: { emoji?: string; label?: string } }>} checkIns
  */
 export function getTodayCheckIn(checkIns = []) {
-  const now = new Date();
-  return checkIns.find((c) => {
-    try {
-      return sameLocalDay(new Date(c.date), now);
-    } catch {
-      return false;
-    }
-  });
+  const entries = getTodayCheckIns(checkIns);
+  return entries.length ? entries[entries.length - 1] : undefined;
 }
 
-/** Replace today's check-in (local calendar day) or append if none exists. */
-export async function saveTodayCheckIn({ mood, note = '' }) {
+/** Append a check-in for now — same-day updates build a journey, never overwrite. */
+export async function appendTodayCheckIn({ mood, note = '', intensity }) {
   const saved = await AsyncStorage.getItem('checkIns');
   const all = saved ? JSON.parse(saved) : [];
   const now = new Date();
-  const withoutToday = all.filter((c) => {
-    try {
-      return !sameLocalDay(new Date(c.date), now);
-    } catch {
-      return true;
-    }
-  });
   const entry = {
     id: Date.now(),
     date: now.toISOString(),
+    partOfDay: partOfDayLabel(now),
     mood,
     note: typeof note === 'string' ? note.trim() : '',
+    ...(typeof intensity === 'number'
+      ? { intensity: Math.min(5, Math.max(1, Math.round(intensity))) }
+      : {}),
   };
-  await AsyncStorage.setItem('checkIns', JSON.stringify([entry, ...withoutToday]));
+  await AsyncStorage.setItem('checkIns', JSON.stringify([entry, ...all]));
   return entry;
+}
+
+/** @deprecated Use appendTodayCheckIn — kept for call sites; always appends. */
+export async function saveTodayCheckIn(payload) {
+  return appendTodayCheckIn(payload);
 }
 
 /** Remove today's check-in for the local calendar day. */

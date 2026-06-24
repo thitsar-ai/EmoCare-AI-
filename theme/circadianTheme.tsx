@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { Animated, AppState, Easing, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { tokens, menuSurface, SANCTUARY_SPLASH as TOKEN_SPLASH } from './tokens';
 
 export type CircadianPhase = 'morning' | 'afternoon' | 'evening' | 'night';
 
@@ -19,6 +20,9 @@ export type CircadianTheme = {
   secondaryText: string;
   mutedText: string;
   card: string;
+  cardLavender: string;
+  cardElevated: string;
+  cardBorder: string;
   border: string;
   navBar: string;
   navBarBorder: string;
@@ -32,70 +36,49 @@ export type CircadianTheme = {
   barFill: string;
 };
 
-/** Icon stroke on circadian surfaces — brighter than label mutedText when dark. */
+/** Icon stroke on circadian surfaces. */
 export function getCircadianIconColor(
   theme: CircadianTheme,
   role: 'accent' | 'secondary' | 'muted' = 'accent',
 ): string {
   if (role === 'accent') return theme.accent;
   if (role === 'secondary') return theme.secondaryText;
-  return theme.isDark ? theme.secondaryText : theme.mutedText;
+  return theme.mutedText;
 }
 
-/** Text tokens for fixed dark overlay sheets (menu, profile) — readable in all circadian phases. */
-export const DARK_MENU_SURFACE = {
-  text: '#FFFFFF',
-  secondaryText: '#C4B7FF',
-  mutedText: '#A99CCF',
-  card: 'rgba(255,255,255,0.08)',
-  border: 'rgba(255,255,255,0.12)',
-} as const;
+/** Menu / modal sheet tokens — light sanctuary in all phases. */
+export const DARK_MENU_SURFACE = menuSurface;
 
 const EMO_FACE_LAVENDER_TRANSPARENT: ImageSourcePropType = require('../assets/emo-face-lavender-transparent.png');
-const EMO_FACE_NIGHT_KEYED: ImageSourcePropType = require('../assets/emo-face-night-keyed.png');
 
-/** @deprecated Use live chrono theme — night phase matches onboarding canvas. */
-export const SANCTUARY_SPLASH = ['#0D0720', '#1A0F2E'] as const;
+export const SANCTUARY_SPLASH = TOKEN_SPLASH;
 
-const LIGHT_LINGUISTIC = {
+const SANCTUARY_LINGUISTIC = {
   isDark: false as const,
-  text: '#2D1B4A',
-  secondaryText: '#5C4A7A',
-  mutedText: '#7A6B96',
-  card: 'rgba(255,255,255,0.75)',
-  border: 'rgba(45,27,74,0.12)',
-  navBar: 'rgba(255,255,255,0.96)',
-  navBarBorder: 'rgba(45,27,74,0.10)',
-  heroWash: ['rgba(232,228,245,0.55)', 'rgba(240,236,248,0)'] as const,
-  barTrack: 'rgba(45,27,74,0.12)',
-  barFill: '#7B5CFF',
+  text: tokens.text.primary,
+  secondaryText: tokens.text.body,
+  mutedText: tokens.text.secondary,
+  card: tokens.bg.card,
+  cardLavender: tokens.bg.card,
+  cardElevated: tokens.bg.elevated,
+  cardBorder: tokens.glass.cardBorder,
+  border: tokens.border.standard,
+  navBar: tokens.bg.elevated,
+  navBarBorder: tokens.border.standard,
+  heroWash: [`${tokens.brand.gradMid2}33`, 'rgba(244, 236, 251, 0)'] as const,
+  barTrack: tokens.border.standard,
+  barFill: tokens.brand.gradEnd,
 };
 
-const DARK_LINGUISTIC = {
-  isDark: true as const,
-  text: '#FFFFFF',
-  secondaryText: '#C4B7FF',
-  mutedText: '#A99CCF',
-  card: 'rgba(255,255,255,0.11)',
-  border: 'rgba(255,255,255,0.18)',
-  navBar: 'rgba(18,10,38,0.98)',
-  navBarBorder: 'rgba(255,255,255,0.10)',
-  heroWash: ['rgba(45,27,74,0.55)', 'rgba(13,7,32,0)'] as const,
-  barTrack: 'rgba(255,255,255,0.15)',
-  barFill: '#B79DFF',
-};
-
+/** Unified canvas — Sanctuary web gradient (#F4ECFB → #E8DBF4). */
 const PHASE_GRADIENT: Record<CircadianPhase, readonly [string, string]> = {
-  morning: ['#E8E4F5', '#F0ECF8'],
-  afternoon: ['#DDD6F3', '#EDE8F5'],
-  evening: ['#2D1B4A', '#1A0F2E'],
-  night: ['#0D0720', '#1A0F2E'],
+  morning: [tokens.bg.canvasTop, tokens.bg.canvasBottom],
+  afternoon: [tokens.bg.canvasTop, tokens.bg.canvasBottom],
+  evening: [tokens.bg.canvasTop, tokens.bg.canvasBottom],
+  night: [tokens.bg.canvasTop, tokens.bg.canvasBottom],
 };
 
-function getEmoFaceForPhase(phase: CircadianPhase): ImageSourcePropType {
-  if (phase === 'night' || phase === 'evening') {
-    return EMO_FACE_NIGHT_KEYED;
-  }
+function getEmoFaceForPhase(_phase: CircadianPhase): ImageSourcePropType {
   return EMO_FACE_LAVENDER_TRANSPARENT;
 }
 
@@ -111,40 +94,39 @@ export function getCircadianPhase(date: Date = new Date()): CircadianPhase {
 export function getCircadianTheme(date: Date = new Date()): CircadianTheme {
   const phase = getCircadianPhase(date);
   const gradient = PHASE_GRADIENT[phase];
-  const linguistic = phase === 'morning' || phase === 'afternoon' ? LIGHT_LINGUISTIC : DARK_LINGUISTIC;
 
   const phaseAccent: Record<
     CircadianPhase,
     Pick<CircadianTheme, 'accent' | 'glow' | 'presenceLine' | 'ringGradient'>
   > = {
     morning: {
-      accent: '#7B5CFF',
-      glow: 'rgba(123,92,255,0.28)',
+      accent: tokens.text.primary,
+      glow: `${tokens.brand.gradEnd}47`,
       presenceLine: 'Lavender horizon · morning light',
-      ringGradient: ['#9B7BFF', '#C4A8FF'],
+      ringGradient: [tokens.brand.gradStart, tokens.brand.gradEnd],
     },
     afternoon: {
-      accent: '#6B52C9',
-      glow: 'rgba(107,82,201,0.24)',
+      accent: tokens.text.primary,
+      glow: `${tokens.brand.gradMid2}3D`,
       presenceLine: 'Cognitive bandwidth · steady focus',
-      ringGradient: ['#8B6FD4', '#B89AFF'],
+      ringGradient: [tokens.brand.gradStart, tokens.brand.gradEnd],
     },
     evening: {
-      accent: '#B79DFF',
-      glow: 'rgba(183,157,255,0.35)',
+      accent: tokens.text.primary,
+      glow: `${tokens.brand.gradMid}59`,
       presenceLine: 'Sunset decompression · winding down',
-      ringGradient: ['#6E52B8', '#A88FFF'],
+      ringGradient: [tokens.brand.gradStart, tokens.brand.gradEnd],
     },
     night: {
-      accent: '#C6B0FF',
-      glow: 'rgba(198,176,255,0.35)',
-      presenceLine: 'Velvet obsidian · night in the Sanctuary',
-      ringGradient: ['#5E48A8', '#9B7BFF'],
+      accent: tokens.text.primary,
+      glow: `${tokens.brand.gradEnd}59`,
+      presenceLine: 'Quiet sanctuary · gentle night',
+      ringGradient: [tokens.brand.gradStart, tokens.brand.gradEnd],
     },
   };
 
   return {
-    ...linguistic,
+    ...SANCTUARY_LINGUISTIC,
     ...phaseAccent[phase],
     phase,
     gradient,
@@ -152,9 +134,9 @@ export function getCircadianTheme(date: Date = new Date()): CircadianTheme {
   };
 }
 
-/** @deprecated Onboarding uses live chrono theme (night = velvet obsidian). */
+/** Onboarding uses the same light sanctuary canvas. */
 export function getOnboardingTheme(): CircadianTheme {
-  return getCircadianTheme(new Date(new Date().setHours(23, 0, 0, 0)));
+  return getCircadianTheme();
 }
 
 const CircadianThemeContext = createContext<CircadianTheme | null>(null);

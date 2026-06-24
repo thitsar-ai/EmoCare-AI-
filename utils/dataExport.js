@@ -9,7 +9,7 @@ import {
   INITIAL_EMO_INTENT_KEY,
 } from './onboardingLanding';
 import { HELPED_STORAGE_KEY } from './thingsThatHelped';
-import { VOICE_VOLUME_KEY } from './voiceVolume';
+import { clearPasscode } from './passcodeLock';
 
 const EXPORT_KEYS = [
   'userName',
@@ -27,14 +27,12 @@ const EXPORT_KEYS = [
   'chatSaved',
   'todayTriageTasks',
   'emoAppSettings',
-  'chatVoiceAloudEnabled',
   'pendingTalkQuery',
   PENDING_JOURNAL_CONTEXT_KEY,
   HELPED_STORAGE_KEY,
   HOME_LANDING_MODE_KEY,
   INITIAL_EMO_INTENT_KEY,
   INITIAL_CHECKIN_PAYLOAD_KEY,
-  VOICE_VOLUME_KEY,
 ];
 
 export async function gatherExportPayload() {
@@ -69,4 +67,5 @@ export async function deleteAllUserData() {
   await AsyncStorage.multiRemove(EXPORT_KEYS);
   await AsyncStorage.setItem('onboarded', 'false');
   await AsyncStorage.removeItem(AGE_VERIFIED_KEY);
+  await clearPasscode();
 }

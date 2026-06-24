@@ -2,10 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import type { CircadianTheme } from '../theme/circadianTheme';
-import { DARK_MENU_SURFACE } from '../theme/circadianTheme';
+import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../theme/tokens';
 import { DEFAULT_MEMORY_ITEMS, loadMemoryLedger, saveMemoryLedger } from '../utils/memoryLedger';
-
-const MENU_SOLID = '#2A1848';
 
 type MemoryItem = {
   id: string;
@@ -87,7 +85,7 @@ export function MemoryLedgerSheet({
                 void saveMemoryLedger(items);
                 onClose();
               }}
-              style={[styles.doneBtn, { backgroundColor: theme.accent }]}
+              style={[styles.doneBtn, { backgroundColor: tokens.brand.ctaStart }]}
             >
               <Text style={styles.doneBtnText}>Done</Text>
             </Pressable>
@@ -112,6 +110,14 @@ const styles = StyleSheet.create({
   howRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
   howLabel: { fontSize: 12, fontWeight: '600' },
   usageBlock: { fontSize: 12, lineHeight: 18, marginTop: 8 },
-  doneBtn: { marginTop: 16, borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
-  doneBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  doneBtn: {
+    marginTop: 16,
+    borderRadius: 28,
+    minHeight: 56,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
 });

@@ -2,9 +2,7 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Shield, Trash2, X } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
-
-const MENU_SOLID = '#2A1848';
+import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
 
 export type MemoryDetailItem = {
   id: string;
@@ -93,7 +91,7 @@ export function MemoryItemDetailSheet({
               ) : (
                 <Pressable
                   onPress={onClose}
-                  style={[styles.primaryBtn, { backgroundColor: theme.accent }]}
+                  style={[styles.primaryBtn, { backgroundColor: tokens.brand.ctaStart }]}
                 >
                   <Text style={styles.primaryText}>Got it</Text>
                 </Pressable>
@@ -127,8 +125,15 @@ const styles = StyleSheet.create({
   },
   usageText: { flex: 1, fontSize: 13, lineHeight: 19 },
   actions: { gap: 10, marginTop: 4 },
-  primaryBtn: { borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
-  primaryText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  primaryBtn: {
+    borderRadius: 28,
+    minHeight: 56,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
   forgetBtn: {
     flexDirection: 'row',
     alignItems: 'center',

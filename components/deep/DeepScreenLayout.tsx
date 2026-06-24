@@ -1,9 +1,10 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ScreenSafeArea } from '../shared/ScreenSafeArea';
+import { NavChromeShell, ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { ScreenNavChrome } from '../navigation/AppNavigation';
+import { tokens as designTokens } from '../../theme/tokens';
 
 export const DEEP_DARK = {
   text: '#FFFFFF',
@@ -18,15 +19,15 @@ export const DEEP_DARK = {
 } as const;
 
 export const TODAY_LIGHT = {
-  text: '#2D1B4A',
-  secondaryText: '#5C4A7A',
-  mutedText: '#7A6B96',
-  card: '#FFFFFF',
-  border: 'rgba(45,27,74,0.10)',
-  accent: '#7B5CFF',
-  teal: '#2A9D8F',
-  gold: '#C4A35A',
-  glow: 'rgba(123,92,255,0.12)',
+  text: designTokens.text.primary,
+  secondaryText: designTokens.text.body,
+  mutedText: designTokens.text.secondary,
+  card: designTokens.bg.card,
+  border: designTokens.border.standard,
+  accent: designTokens.text.primary,
+  teal: designTokens.oracle.accent,
+  gold: designTokens.gold.accent,
+  glow: designTokens.shadow.card,
 } as const;
 
 export const SERIF = 'Georgia';
@@ -77,22 +78,22 @@ export function DeepScreenLayout({
 }) {
   const insets = useSafeAreaInsets();
   const isDark = variant === 'dark';
-  const tokens = isDark ? DEEP_DARK : TODAY_LIGHT;
+  const palette = isDark ? DEEP_DARK : TODAY_LIGHT;
   const scrollPad = (showNav ? NAV_CONTENT_HEIGHT : 24) + insets.bottom + 28;
 
   const themeStub = {
-    text: tokens.text,
-    mutedText: tokens.mutedText,
-    card: tokens.card,
-    border: tokens.border,
-    accent: tokens.accent,
+    text: palette.text,
+    mutedText: palette.mutedText,
+    card: palette.card,
+    border: palette.border,
+    accent: palette.accent,
   };
 
   return (
     <View style={styles.flex}>
       <View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFillObject, { backgroundColor: isDark ? '#0D0720' : '#E8E4F5' }]}
+        style={[StyleSheet.absoluteFillObject, { backgroundColor: designTokens.bg.canvas }]}
       />
       <LinearGradient
         colors={isDark ? ['rgba(80,50,140,0.35)', 'transparent'] : ['rgba(180,160,230,0.25)', 'transparent']}
@@ -103,23 +104,16 @@ export function DeepScreenLayout({
       />
       <ScreenSafeArea extraTop={4}>
         {showNav ? (
-          <ScreenNavChrome theme={themeStub as never} title={title} extraRight={extraRight} />
+          <NavChromeShell style={styles.navChromeWrap}>
+            <ScreenNavChrome theme={themeStub as never} title={title} extraRight={extraRight} showForward={false} />
+          </NavChromeShell>
         ) : null}
         <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingBottom: scrollPad }]}
+          contentContainerStyle={[styles.scroll, { paddingBottom: scrollPad, paddingTop: showNav ? 12 : 4 }]}
           showsVerticalScrollIndicator={false}
         >
-          {!showNav ? (
-            <View style={styles.titleBlock}>
-              <View style={styles.titleSpacer} />
-            </View>
-          ) : null}
           {subtitle ? (
-            <View style={styles.subtitleWrap}>
-              <View style={styles.subtitleText}>
-                {/* title shown in chrome; subtitle below */}
-              </View>
-            </View>
+            <Text style={[styles.subtitle, { color: palette.mutedText }]}>{subtitle}</Text>
           ) : null}
           {children}
         </ScrollView>
@@ -138,17 +132,21 @@ const styles = StyleSheet.create({
     height: 320,
     borderRadius: 160,
   },
-  scroll: { paddingHorizontal: 18, paddingTop: 4 },
+  navChromeWrap: { paddingHorizontal: 8, paddingBottom: 0 },
+  scroll: { paddingHorizontal: 18 },
   glassCard: {
     borderRadius: 18,
     borderWidth: 0.5,
     padding: 16,
     marginBottom: 14,
   },
-  titleBlock: { height: 8 },
-  titleSpacer: { flex: 1 },
-  subtitleWrap: { marginBottom: 8 },
-  subtitleText: {},
+  subtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
 });
 
 export { NAV_CONTENT_HEIGHT };

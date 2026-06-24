@@ -93,6 +93,7 @@ export async function aggregateWeeklyEmoData(days = 7, anchorDate = new Date()) 
         ambientProgress: getMoodAmbientProgress(label),
         graphScore: getMoodGraphScore(label),
         note: entry.note?.trim()?.slice(0, 180) || '',
+        intensity: typeof entry.intensity === 'number' ? entry.intensity : null,
       };
     })
     .sort((a, b) => new Date(a.date) - new Date(b.date));

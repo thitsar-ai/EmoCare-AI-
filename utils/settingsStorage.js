@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { isElevenLabsConfigured } from './elevenLabs';
 
 export const SETTINGS_STORAGE_KEY = 'emoAppSettings';
 
@@ -7,11 +6,9 @@ export const DEFAULT_SETTINGS = {
   notificationsEnabled: true,
   notificationTime: '8:00 PM',
   timezone: 'US Eastern',
-  voiceStyle: 'Warm & calm',
-  voiceSpeed: '0.85x',
-  elevenLabsEnabled: true,
   circadianAuto: true,
   themeMode: 'auto',
+  biometricUnlockEnabled: false,
 };
 
 export async function loadSettings() {
@@ -21,10 +18,7 @@ export async function loadSettings() {
       return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
     }
   } catch {}
-  return {
-    ...DEFAULT_SETTINGS,
-    elevenLabsEnabled: isElevenLabsConfigured(),
-  };
+  return { ...DEFAULT_SETTINGS };
 }
 
 export async function saveSettings(partial) {

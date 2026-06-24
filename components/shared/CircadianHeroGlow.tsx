@@ -1,7 +1,9 @@
 import React from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { CircadianTheme } from '../../theme/circadianTheme';
+import { SanctuaryGlassSurface } from './SanctuaryGlassSurface';
+import type { GlassSurfaceVariant } from '../../theme/glassSurfaces';
 
 /** Subtle top-right glow — sits on the global circadian canvas without covering it. */
 export function CircadianHeroGlow({ theme }: { theme: CircadianTheme }) {
@@ -20,21 +22,17 @@ export function CircadianGlassCard({
   theme,
   children,
   style,
+  variant = 'primary',
 }: {
   theme: CircadianTheme;
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  variant?: GlassSurfaceVariant;
 }) {
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: theme.card, borderColor: theme.border },
-        style,
-      ]}
-    >
+    <SanctuaryGlassSurface variant={variant} style={[styles.card, style]}>
       {children}
-    </View>
+    </SanctuaryGlassSurface>
   );
 }
 
@@ -50,8 +48,6 @@ const styles = StyleSheet.create({
     borderRadius: 150,
   },
   card: {
-    borderRadius: 18,
-    borderWidth: 0.5,
     padding: 16,
     marginBottom: 14,
   },

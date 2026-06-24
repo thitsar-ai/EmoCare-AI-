@@ -10,14 +10,12 @@ import {
 } from 'react-native';
 import { Plus, X } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
 import {
   HELPED_CATEGORIES,
   HELPED_CATEGORY_ORDER,
   getCatalogByCategory,
 } from '../../utils/thingsThatHelped';
-
-const MENU_SOLID = '#2A1848';
 
 export function AddHelpedSheet({
   visible,
@@ -133,7 +131,7 @@ export function AddHelpedSheet({
               disabled={!customTitle.trim()}
               style={[
                 styles.addBtn,
-                { backgroundColor: theme.accent, opacity: customTitle.trim() ? 1 : 0.5 },
+                { backgroundColor: tokens.brand.ctaStart, opacity: customTitle.trim() ? 1 : 0.5 },
               ]}
             >
               <Text style={styles.addBtnText}>Add to this week</Text>
@@ -188,6 +186,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  addBtn: { borderRadius: 999, paddingVertical: 14, alignItems: 'center', marginBottom: 8 },
-  addBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  addBtn: {
+    borderRadius: 28,
+    minHeight: 56,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  addBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
 });

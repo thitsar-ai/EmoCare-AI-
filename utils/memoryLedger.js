@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatTimezoneLabel } from './settingsStorage';
 import { INITIAL_CHECKIN_PAYLOAD_KEY } from './onboardingLanding';
+import { JOURNAL_ENTRIES_KEY, PENDING_JOURNAL_CONTEXT_KEY } from './journalStorage';
+import { loadOracleSavedInsights, ORACLE_SAVED_INSIGHTS_KEY } from './oracleSavedInsights';
 
 export const MEMORY_LEDGER_KEY = 'emoMemoryLedger';
 export const MEMORY_CONTEXT_KEY = 'emoMemoryContextItems';
@@ -295,11 +297,377 @@ export async function loadMemoryStats() {
   };
 }
 
+export const MEMORY_CATEGORIES = [
+  { id: 'growth', icon: '🌱', label: 'Growth' },
+  { id: 'relationships', icon: '💜', label: 'Relationships' },
+  { id: 'reflection', icon: '🌙', label: 'Reflection' },
+  { id: 'gratitude', icon: '✨', label: 'Gratitude' },
+  { id: 'challenges', icon: '🌊', label: 'Challenges' },
+  { id: 'milestones', icon: '🏆', label: 'Milestones' },
+];
+
+const MOOD_EMOJI = {
+  Peaceful: '😌',
+  Grateful: '✨',
+  Hopeful: '🌱',
+  Light: '☀️',
+  Heavy: '🌧',
+  Overwhelmed: '🌊',
+  Anxious: '💭',
+  Tired: '🌙',
+  Neutral: '💜',
+};
+
+function moodEmoji(label) {
+  return MOOD_EMOJI[label] || '💜';
+}
+
+function formatMonthKey(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  } catch {
+    return 'Earlier';
+  }
+}
+
+function formatDayLabel(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function truncateQuote(text, max = 88) {
+  const trimmed = String(text || '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max - 1)}…`;
+}
+
+function inferCategory({ moodLabel, text = '', kind }) {
+  const lower = text.toLowerCase();
+  if (kind === 'milestone') return 'milestones';
+  if (moodLabel === 'Grateful' || /grateful|gratitude|thank/i.test(lower)) return 'gratitude';
+  if (moodLabel === 'Hopeful' || /growth|progress|step|learning/i.test(lower)) return 'growth';
+  if (/friend|family|partner|relationship|love|people|mom|dad|talked to/i.test(lower)) return 'relationships';
+  if (['Overwhelmed', 'Heavy', 'Anxious'].includes(moodLabel) || /hard|difficult|stress|overwhelm/i.test(lower)) {
+    return 'challenges';
+  }
+  if (kind === 'journal' || kind === 'reflection' || kind === 'checkin') return 'reflection';
+  return 'reflection';
+}
+
+async function loadTimelineSources() {
+  const [checkInsRaw, journalRaw, chatCurrentRaw, chatSavedRaw, oracleInsights] = await Promise.all([
+    AsyncStorage.getItem('checkIns'),
+    AsyncStorage.getItem('journalEntries'),
+    AsyncStorage.getItem('chatCurrent'),
+    AsyncStorage.getItem('chatSaved'),
+    loadOracleSavedInsights(),
+  ]);
+
+  return {
+    checkIns: parseJson(checkInsRaw, []),
+    journalEntries: parseJson(journalRaw, []),
+    chatCurrent: parseJson(chatCurrentRaw, []),
+    chatSaved: parseJson(chatSavedRaw, []),
+    oracleInsights: oracleInsights || [],
+  };
+}
+
+function countConversations(chatCurrent, chatSaved) {
+  let count = 0;
+  if (Array.isArray(chatCurrent)) {
+    count += chatCurrent.filter((m) => m.role === 'user' && m.text?.trim()).length;
+  }
+  if (Array.isArray(chatSaved)) {
+    for (const thread of chatSaved) {
+      const msgs = thread?.messages || [];
+      count += msgs.filter((m) => m.role === 'user' && m.text?.trim()).length;
+    }
+  }
+  return count;
+}
+
+/** Build chronological memory timeline items. */
+export function buildMemoryTimeline(checkIns, journalEntries, milestones, oracleInsights, context) {
+  const items = [];
+
+  for (const entry of journalEntries) {
+    if (!entry?.date) continue;
+    const moodLabel = entry.mood?.label || '';
+    const quote = truncateQuote(entry.text);
+    if (!quote) continue;
+    items.push({
+      id: `journal-${entry.id || entry.date}`,
+      date: entry.date,
+      dayLabel: formatDayLabel(entry.date),
+      monthKey: formatMonthKey(entry.date),
+      moodLabel: moodLabel || 'Reflection',
+      emoji: entry.mood?.emoji || moodEmoji(moodLabel) || '📝',
+      quote,
+      category: inferCategory({ moodLabel, text: quote, kind: 'journal' }),
+      kind: 'journal',
+      title: 'Journal reflection',
+    });
+  }
+
+  for (const checkIn of checkIns) {
+    if (!checkIn?.date) continue;
+    const moodLabel = checkIn.mood?.label || 'Check-in';
+    const quote =
+      truncateQuote(checkIn.note) ||
+      `You checked in feeling ${moodLabel.toLowerCase()}.`;
+    items.push({
+      id: `checkin-${checkIn.date}-${checkIn.id || moodLabel}`,
+      date: checkIn.date,
+      dayLabel: formatDayLabel(checkIn.date),
+      monthKey: formatMonthKey(checkIn.date),
+      moodLabel,
+      emoji: checkIn.mood?.emoji || moodEmoji(moodLabel),
+      quote,
+      category: inferCategory({ moodLabel, text: quote, kind: 'checkin' }),
+      kind: 'checkin',
+      title: 'Check-in',
+    });
+  }
+
+  for (const ms of milestones) {
+    items.push({
+      id: ms.id,
+      date: new Date().toISOString(),
+      dayLabel: formatDayLabel(new Date().toISOString()),
+      monthKey: formatMonthKey(new Date().toISOString()),
+      moodLabel: 'Milestone',
+      emoji: '🏆',
+      quote: ms.text,
+      category: 'milestones',
+      kind: 'milestone',
+      title: 'Milestone',
+      sourceItem: ms,
+    });
+  }
+
+  for (const insight of oracleInsights) {
+    if (!insight?.date) continue;
+    items.push({
+      id: insight.id || `oracle-${insight.date}`,
+      date: insight.date,
+      dayLabel: formatDayLabel(insight.date),
+      monthKey: formatMonthKey(insight.date),
+      moodLabel: 'Insight',
+      emoji: '✨',
+      quote: truncateQuote(insight.insight || insight.query),
+      category: 'growth',
+      kind: 'insight',
+      title: 'Saved insight',
+    });
+  }
+
+  for (const ctx of context) {
+    if (ctx.id === 'ctx-empty') continue;
+    items.push({
+      id: ctx.id,
+      date: new Date().toISOString(),
+      dayLabel: formatDayLabel(new Date().toISOString()),
+      monthKey: formatMonthKey(new Date().toISOString()),
+      moodLabel: 'Context',
+      emoji: '💜',
+      quote: ctx.text,
+      category: inferCategory({ text: ctx.text, kind: 'context' }),
+      kind: 'context',
+      title: 'Personal context',
+      sourceItem: ctx,
+    });
+  }
+
+  return items.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+/** Group timeline items by month label. */
+export function groupTimelineByMonth(items) {
+  const groups = [];
+  const map = new Map();
+  for (const item of items) {
+    const key = item.monthKey || 'Earlier';
+    if (!map.has(key)) {
+      const group = { monthKey: key, items: [] };
+      map.set(key, group);
+      groups.push(group);
+    }
+    map.get(key).items.push(item);
+  }
+  return groups;
+}
+
+/** Pick a featured memory for the hero card. */
+export function buildFeaturedMemory(timeline, checkIns) {
+  if (!timeline.length) {
+    return {
+      dayLabel: '',
+      moodLabel: '',
+      emoji: '💜',
+      quote: 'Your journey is just beginning — Emo will remember the moments that matter as you show up.',
+      reason: 'Every first check-in and reflection becomes part of your story.',
+    };
+  }
+
+  const journalOrNote = timeline.find((t) => t.kind === 'journal' || (t.kind === 'checkin' && t.quote.length > 28));
+  const hopeful = timeline.find((t) => ['Hopeful', 'Grateful', 'Peaceful'].includes(t.moodLabel));
+  const featured = journalOrNote || hopeful || timeline[0];
+
+  const moodCounts = {};
+  for (const c of checkIns) {
+    const label = c.mood?.label;
+    if (label) moodCounts[label] = (moodCounts[label] || 0) + 1;
+  }
+  const topMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const reason = topMood
+    ? `Saved because ${topMood.toLowerCase()} has appeared often in your journey.`
+    : 'Saved because this theme appeared often in your journey.';
+
+  return {
+    dayLabel: featured.dayLabel,
+    moodLabel: featured.moodLabel,
+    emoji: featured.emoji,
+    quote: featured.quote.startsWith('"') ? featured.quote : `"${featured.quote}"`,
+    reason,
+    sourceItem: featured.sourceItem || featured,
+  };
+}
+
+/** Supportive emotional pattern lines — personal, never clinical. */
+export function buildEmotionalPatterns(checkIns, journalEntries) {
+  const lines = [];
+  const moodCounts = {};
+  const hourCounts = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+
+  for (const c of checkIns) {
+    const label = c.mood?.label;
+    if (label) moodCounts[label] = (moodCounts[label] || 0) + 1;
+    hourCounts[hourBucket(new Date(c.date).getHours())] += 1;
+  }
+
+  if (journalEntries.length >= 2) {
+    lines.push('You often find peace through journaling.');
+  } else if (journalEntries.length === 1) {
+    lines.push('Writing has already become a quiet anchor for you.');
+  }
+
+  if ((moodCounts.Grateful || 0) >= 1) {
+    lines.push('Gratitude appears frequently in your reflections.');
+  }
+  if ((moodCounts.Peaceful || 0) >= 2) {
+    lines.push('Peaceful moments keep returning to your check-ins.');
+  }
+  if ((moodCounts.Hopeful || 0) >= 1) {
+    lines.push('Hope shows up even on mixed days — that matters.');
+  }
+
+  const preferred = Object.entries(hourCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (checkIns.length >= 3 && preferred === 'evening') {
+    lines.push('You tend to feel calmer after evening check-ins.');
+  } else if (checkIns.length >= 3 && preferred === 'morning') {
+    lines.push('Morning check-ins help you begin the day with intention.');
+  }
+
+  const hasBreathJournal = journalEntries.some((e) => /breath|breathe|calm/i.test(e.text || ''));
+  if (hasBreathJournal) {
+    lines.push('Breathing and pause have been gentle allies for you.');
+  }
+
+  if (!lines.length) {
+    lines.push('Emo is learning your rhythms — each check-in helps your story take shape.');
+    lines.push('There is no rush. Meaningful patterns appear in their own time.');
+  }
+
+  return lines.slice(0, 4);
+}
+
+/** Weekly memory reflection — warm, narrative, never predictive. */
+export function buildMemoryReflection(checkIns, journalEntries, patterns) {
+  const recentCheckIns = [...checkIns]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 14);
+  const recentJournal = [...journalEntries]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 5);
+
+  if (!recentCheckIns.length && !recentJournal.length) {
+    return "Looking back, your ledger is open and waiting. When you're ready, Emo will reflect the themes that emerge — gently, without judgment.";
+  }
+
+  const moodCounts = {};
+  for (const c of recentCheckIns) {
+    const label = c.mood?.label;
+    if (label) moodCounts[label] = (moodCounts[label] || 0) + 1;
+  }
+  const topMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  if (topMood === 'Grateful' && (moodCounts.Heavy || moodCounts.Overwhelmed)) {
+    return 'Looking back, one thing stands out: gratitude kept finding you, even alongside harder days. That speaks to a quiet resilience Emo wants you to remember.';
+  }
+  if (topMood === 'Peaceful') {
+    return 'Looking back, one thing stands out: calm has been visiting you more often. Those still moments are becoming part of who you are becoming.';
+  }
+  if (topMood === 'Hopeful') {
+    return 'Looking back, one thing stands out: hope has threaded through your recent days — not loud, but steady. That forward whisper is worth honoring.';
+  }
+  if (recentJournal.length >= 2) {
+    return 'Looking back, one thing stands out: you keep returning to put feelings into words. That honesty is a form of care Emo will always remember.';
+  }
+  if (patterns[0]) {
+    return `Looking back, one thing stands out: ${patterns[0].replace(/\.$/, '').toLowerCase()}. Emo holds that as part of your story.`;
+  }
+  return 'Looking back, one thing stands out: you keep showing up for yourself — imperfectly, genuinely. That is the heart of this journey.';
+}
+
+function countCategoryItems(timeline) {
+  const counts = {};
+  for (const cat of MEMORY_CATEGORIES) counts[cat.id] = 0;
+  for (const item of timeline) {
+    if (counts[item.category] != null) counts[item.category] += 1;
+  }
+  return counts;
+}
+
 export async function loadMemoryLedgerBundle(userName) {
-  const [page, stats] = await Promise.all([loadMemoryLedgerPage(userName), loadMemoryStats()]);
+  const [page, stats, sources] = await Promise.all([
+    loadMemoryLedgerPage(userName),
+    loadMemoryStats(),
+    loadTimelineSources(),
+  ]);
   const context = page.context.map(enrichContextItem);
   const milestones = page.milestones.map(enrichMilestoneItem);
   const savedCount = context.filter((c) => c.erasable).length + milestones.length;
+
+  const timeline = buildMemoryTimeline(
+    sources.checkIns,
+    sources.journalEntries,
+    milestones,
+    sources.oracleInsights,
+    context,
+  );
+  const timelineByMonth = groupTimelineByMonth(timeline);
+  const emotionalPatterns = buildEmotionalPatterns(sources.checkIns, sources.journalEntries);
+  const memoryReflection = buildMemoryReflection(
+    sources.checkIns,
+    sources.journalEntries,
+    emotionalPatterns,
+  );
+  const featuredMemory = buildFeaturedMemory(timeline, sources.checkIns);
+  const categoryCounts = countCategoryItems(timeline);
+
+  const emoRemembers = {
+    reflectionsCount: stats.journalCount,
+    conversationsCount: countConversations(sources.chatCurrent, sources.chatSaved),
+    savedInsightsCount: sources.oracleInsights.length,
+    meaningfulMemoriesCount: Math.max(
+      savedCount,
+      timeline.filter((t) => t.kind !== 'context').length,
+    ),
+  };
 
   return {
     context,
@@ -307,6 +675,14 @@ export async function loadMemoryLedgerBundle(userName) {
     stats,
     savedCount,
     memoryTypes: DEFAULT_MEMORY_ITEMS,
+    emoRemembers,
+    featuredMemory,
+    emotionalPatterns,
+    memoryReflection,
+    timeline,
+    timelineByMonth,
+    categoryCounts,
+    memoryCategories: MEMORY_CATEGORIES,
   };
 }
 
@@ -367,9 +743,22 @@ export async function loadMemoryLedgerPage(userName) {
   return { context, milestones: milestonesFiltered };
 }
 
+/** Clear Memory Ledger history — timeline sources + dismissed context/milestones. */
 export async function clearAllMemoryItems() {
-  await AsyncStorage.setItem(MEMORY_CONTEXT_KEY, JSON.stringify(['__all__']));
-  await AsyncStorage.setItem(MEMORY_MILESTONES_KEY, JSON.stringify(['__all__']));
+  await AsyncStorage.multiSet([
+    [MEMORY_CONTEXT_KEY, JSON.stringify(['__all__'])],
+    [MEMORY_MILESTONES_KEY, JSON.stringify(['__all__'])],
+    ['checkIns', JSON.stringify([])],
+    [JOURNAL_ENTRIES_KEY, JSON.stringify([])],
+    [ORACLE_SAVED_INSIGHTS_KEY, JSON.stringify([])],
+    ['chatCurrent', JSON.stringify([])],
+    ['chatSaved', JSON.stringify([])],
+  ]);
+  await AsyncStorage.multiRemove([
+    'oracleChatCurrent',
+    'oracleTopicLog',
+    PENDING_JOURNAL_CONTEXT_KEY,
+  ]);
 }
 
 export async function loadMemoryLedger() {

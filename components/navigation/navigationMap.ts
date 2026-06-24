@@ -1,10 +1,15 @@
 /**
  * Official EmoCare app route order and metadata.
- * Keep in sync with MainScreenKey in AppNavigation.tsx and screens map in App.tsx.
+ * Screen order MUST match MAIN_APP_MENU + Settings in AppNavigation.tsx.
  *
- * Main-app back/forward uses visit history (AppNavProvider).
- * FULL_APP_FLOW in AppNavigation.tsx is only for onboarding review + guided forward tour.
+ * Main-app back uses visit history (AppNavProvider).
+ * The app menu is the primary path to secondary screens.
  */
+
+import {
+  MAIN_SCREEN_MENU_ORDER,
+  ONBOARDING_MENU_SLIDES,
+} from './AppNavigation';
 
 export type AppRouteKey =
   | 'splash'
@@ -13,9 +18,7 @@ export type AppRouteKey =
   | 'checkin'
   | 'today'
   | 'talk'
-  | 'voice'
   | 'journal'
-  | 'breathe'
   | 'oracle'
   | 'insights'
   | 'memoryledger'
@@ -29,22 +32,42 @@ export type RouteMeta = {
   flowOrder: number;
 };
 
-/** Guided tour order (onboarding review slides, then main screens). */
+const ONBOARDING_ROUTE_LABELS: Record<(typeof ONBOARDING_MENU_SLIDES)[number], { label: string; component: string }> = {
+  2: { label: 'Welcome', component: 'OnboardingFlow slide 2' },
+  4: { label: 'Privacy', component: 'OnboardingFlow slide 4' },
+  5: { label: 'Tell Me About You', component: 'OnboardingFlow slide 5' },
+};
+
+const MAIN_ROUTE_META: Record<
+  (typeof MAIN_SCREEN_MENU_ORDER)[number],
+  { label: string; component: string; tabBar?: boolean }
+> = {
+  home: { label: 'Home / Sanctuary', component: 'SanctuaryDashboard', tabBar: true },
+  checkin: { label: 'Check In', component: 'CheckInScreen', tabBar: true },
+  today: { label: "Today's Dashboard", component: 'TodayDashboardScreen', tabBar: true },
+  talk: { label: 'Talk', component: 'ChatScreen', tabBar: true },
+  journal: { label: 'Journal', component: 'JournalScreen', tabBar: true },
+  oracle: { label: 'Oracle', component: 'OracleSearchScreen' },
+  insights: { label: 'Insights', component: 'InsightsScreen' },
+  memoryledger: { label: 'Memory Ledger', component: 'MemoryLedgerScreen' },
+  settings: { label: 'Settings', component: 'SettingsScreen' },
+};
+
+/** Guided tour order (onboarding review slides, then main screens) — mirrors app menu. */
 export const APP_ROUTE_FLOW: RouteMeta[] = [
-  { key: 'onboarding', label: 'Welcome', component: 'OnboardingFlow slide 2', flowOrder: 1 },
-  { key: 'onboarding', label: 'Privacy', component: 'OnboardingFlow slide 4', flowOrder: 2 },
-  { key: 'onboarding', label: 'Tell Me About You', component: 'OnboardingFlow slide 5', flowOrder: 3 },
-  { key: 'home', label: 'Home / Sanctuary', component: 'SanctuaryDashboard', tabBar: true, flowOrder: 4 },
-  { key: 'checkin', label: 'Check In', component: 'CheckInScreen', tabBar: true, flowOrder: 5 },
-  { key: 'today', label: "Today's Dashboard", component: 'TodayDashboardScreen', tabBar: true, flowOrder: 6 },
-  { key: 'talk', label: 'Emo Chat', component: 'ChatScreen', tabBar: true, flowOrder: 7 },
-  { key: 'voice', label: 'Voice Talk', component: 'VoiceTalkScreen', flowOrder: 8 },
-  { key: 'journal', label: 'Journal', component: 'JournalScreen', tabBar: true, flowOrder: 9 },
-  { key: 'breathe', label: 'Breathe', component: 'BreatheExperience', flowOrder: 10 },
-  { key: 'oracle', label: 'Oracle', component: 'OracleSearchScreen', flowOrder: 11 },
-  { key: 'insights', label: 'Insights', component: 'InsightsScreen', flowOrder: 12 },
-  { key: 'memoryledger', label: 'Memory Ledger', component: 'MemoryLedgerScreen', flowOrder: 13 },
-  { key: 'settings', label: 'Settings', component: 'SettingsScreen', flowOrder: 14 },
+  ...ONBOARDING_MENU_SLIDES.map((slide, index) => ({
+    key: 'onboarding' as const,
+    label: ONBOARDING_ROUTE_LABELS[slide].label,
+    component: ONBOARDING_ROUTE_LABELS[slide].component,
+    flowOrder: index + 1,
+  })),
+  ...MAIN_SCREEN_MENU_ORDER.map((key, index) => ({
+    key: key as AppRouteKey,
+    label: MAIN_ROUTE_META[key].label,
+    component: MAIN_ROUTE_META[key].component,
+    tabBar: MAIN_ROUTE_META[key].tabBar,
+    flowOrder: ONBOARDING_MENU_SLIDES.length + index + 1,
+  })),
 ];
 
 export const TAB_BAR_ROUTE_KEYS: AppRouteKey[] = [
@@ -55,9 +78,5 @@ export const TAB_BAR_ROUTE_KEYS: AppRouteKey[] = [
   'journal',
 ];
 
-/** Screens that show the bottom tab bar (includes voice + breathe with aliased highlights). */
-export const TAB_BAR_VISIBLE_KEYS: AppRouteKey[] = [
-  ...TAB_BAR_ROUTE_KEYS,
-  'voice',
-  'breathe',
-];
+/** Screens that show the bottom tab bar. */
+export const TAB_BAR_VISIBLE_KEYS: AppRouteKey[] = [...TAB_BAR_ROUTE_KEYS];

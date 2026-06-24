@@ -2,10 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
 import { loadSettings, saveSettings } from '../../utils/settingsStorage';
-
-const MENU_SOLID = '#2A1848';
 
 export const NOTIFICATION_TIME_OPTIONS = ['8:00 AM', '12:00 PM', '6:00 PM', '8:00 PM'];
 
@@ -114,7 +112,10 @@ export function NotificationSheet({
               <Pressable
                 onPress={() => void handleSave()}
                 disabled={saving}
-                style={[styles.saveBtn, { backgroundColor: theme.accent, opacity: saving ? 0.7 : 1 }]}
+                style={[
+                  styles.saveBtn,
+                  { backgroundColor: tokens.brand.ctaStart, opacity: saving ? 0.7 : 1 },
+                ]}
               >
                 <Text style={styles.saveBtnText}>Save</Text>
               </Pressable>
@@ -165,6 +166,13 @@ const styles = StyleSheet.create({
   },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 4 },
   ghostBtn: { paddingVertical: 10, paddingHorizontal: 14 },
-  saveBtn: { paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999 },
-  saveBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  saveBtn: {
+    minHeight: 56,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
 });

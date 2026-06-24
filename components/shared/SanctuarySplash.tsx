@@ -1,8 +1,9 @@
 import React from 'react';
-import { Animated, Dimensions, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Platform, StyleSheet, Text, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { BRAND_NAME, BRAND_SPLASH_FOOTER, BRAND_TAGLINE } from '../../constants/brandCopy';
-import { getSanctuaryEmoOrbSize } from '../../theme/sanctuaryEmoFace';
+import { SanctuaryEmoPresence } from './SanctuaryEmoPresence';
+import { tokens } from '../../theme/tokens';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,11 +28,15 @@ export const SPLASH_STAR_PARTICLES = [
 
 export function SplashStarField({
   theme,
-  variant = 'night',
+  variant = 'sanctuary',
 }: {
   theme: CircadianTheme;
-  variant?: 'night' | 'circadian';
+  variant?: 'sanctuary' | 'circadian';
 }) {
+  const particleColor =
+    variant === 'sanctuary' ? tokens.brand.accent : theme.isDark ? '#FFFFFF' : theme.accent;
+  const particleOpacityScale = variant === 'sanctuary' ? 0.42 : theme.isDark ? 1 : 0.4;
+
   return (
     <>
       {SPLASH_STAR_PARTICLES.map((p, i) => (
@@ -45,8 +50,8 @@ export function SplashStarField({
             width: p.size,
             height: p.size,
             borderRadius: p.size / 2,
-            backgroundColor: variant === 'night' ? '#FFFFFF' : theme.isDark ? '#FFFFFF' : theme.accent,
-            opacity: p.opacity * (variant === 'night' ? 1 : theme.isDark ? 1 : 0.4),
+            backgroundColor: particleColor,
+            opacity: p.opacity * particleOpacityScale,
           }}
         />
       ))}
@@ -54,12 +59,12 @@ export function SplashStarField({
   );
 }
 
-/** Minimal orb + EmoCare copy + loading bar + sanctuary footer. No "AI". */
+/** Glowing lavender Emo orb + EmoCare copy + loading bar + sanctuary footer. */
 export function SanctuarySplashContent({
   theme,
   fadeIn,
   progress,
-  reduceMotion,
+  reduceMotion: _reduceMotion,
 }: {
   theme: CircadianTheme;
   fadeIn: Animated.Value;
@@ -67,17 +72,11 @@ export function SanctuarySplashContent({
   reduceMotion: boolean;
 }) {
   const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['8%', '100%'] });
-  const logoSize = getSanctuaryEmoOrbSize(2.05);
 
   return (
     <Animated.View style={[styles.inner, { opacity: fadeIn }]}>
       <View style={styles.orbWrap} pointerEvents="none">
-        <Image
-          source={theme.emoFace}
-          resizeMode="contain"
-          style={{ width: logoSize, height: logoSize }}
-          accessibilityLabel="Emo"
-        />
+        <SanctuaryEmoPresence theme={theme} size="splash" />
       </View>
 
       <Text style={[styles.title, { color: theme.text }]} accessibilityRole="header">
@@ -120,6 +119,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 22,
+    overflow: 'visible',
   },
   title: {
     fontSize: 48,

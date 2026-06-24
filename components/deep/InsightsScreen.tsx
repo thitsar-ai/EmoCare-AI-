@@ -8,18 +8,22 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { OB_MOODS } from '../../constants/obMoods';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
-import {
-  CircadianGlassCard,
-  CircadianHeroGlow,
-  SERIF,
-} from '../shared/CircadianHeroGlow';
-import { useCircadianTheme, getCircadianIconColor } from '../../theme/circadianTheme';
+import { CircadianGlassCard, CircadianHeroGlow, SERIF } from '../shared/CircadianHeroGlow';
+import { useCircadianTheme } from '../../theme/circadianTheme';
+import { getSanctuaryLabelAccent } from '../../theme/sanctuaryBrand';
 import { loadInsightsBundle } from '../../utils/insightsData';
-import { loadOracleSavedInsights } from '../../utils/oracleSavedInsights';
-import { addHelpedActivity, editHelpedItem, removeHelpedItem } from '../../utils/thingsThatHelped';
+import {
+  addHelpedActivity,
+  editHelpedItem,
+  removeHelpedItem,
+} from '../../utils/thingsThatHelped';
+import { tokens } from '../../theme/tokens';
+import { hapticLight } from '../../utils/haptics';
+import { pressLinkStyle } from '../../utils/pressFeedback';
 import { ScreenNavChrome, type MainScreenKey } from '../navigation/AppNavigation';
 import { HelpedActivitySheet, type HelpedRow } from './HelpedActivitySheet';
 import { AddHelpedSheet } from './AddHelpedSheet';
@@ -27,29 +31,84 @@ import { AddHelpedSheet } from './AddHelpedSheet';
 const H_PAD = 22;
 const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
 
+type WeatherMood = { label: string; color: string; emoji: string | null };
+
+function moodEmoji(label: string, fallback: string | null) {
+  if (fallback) return fallback;
+  return OB_MOODS.find((m) => m.label === label)?.emoji ?? '💜';
+}
+
+function SectionEyebrow({
+  icon,
+  label,
+  color,
+}: {
+  icon: string;
+  label: string;
+  color: string;
+}) {
+  return (
+    <Text style={[styles.eyebrow, { color }]}>
+      {icon} {label}
+    </Text>
+  );
+}
+
+function EmotionalWeatherBubbles({ moods }: { moods: WeatherMood[] }) {
+  if (!moods.length) return null;
+
+  return (
+    <View style={styles.bubbleCloud}>
+      {moods.map((mood, index) => {
+        const drift = index % 3 === 1 ? styles.bubbleDriftMid : index % 3 === 2 ? styles.bubbleDriftLow : null;
+        return (
+          <View
+            key={mood.label}
+            style={[
+              styles.moodBubble,
+              drift,
+              {
+                backgroundColor: `${mood.color}18`,
+                borderColor: `${mood.color}40`,
+              },
+            ]}
+          >
+            <Text style={styles.bubbleEmoji}>{moodEmoji(mood.label, mood.emoji)}</Text>
+            <Text style={[styles.bubbleLabel, { color: mood.color }]}>{mood.label}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const labelAccent = getSanctuaryLabelAccent(theme);
+
   const [weekLabel, setWeekLabel] = useState('This week');
-  const [themes, setThemes] = useState<{ label: string; pct: number; color: string }[]>([]);
-  const [gentleInsight, setGentleInsight] = useState('');
+  const [heroInsight, setHeroInsight] = useState('');
+  const [emotionalWeather, setEmotionalWeather] = useState<WeatherMood[]>([]);
+  const [whatHelpedTitles, setWhatHelpedTitles] = useState<string[]>([]);
+  const [gentleGrowth, setGentleGrowth] = useState({ line1: '', line2: '' });
+  const [emoReflection, setEmoReflection] = useState('');
   const [helped, setHelped] = useState<HelpedRow[]>([]);
   const [hasLiveData, setHasLiveData] = useState(false);
-  const [oracleInsights, setOracleInsights] = useState<
-    { id: string; query: string; insight: string; sourceCount?: number }[]
-  >([]);
   const [selectedItem, setSelectedItem] = useState<HelpedRow | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [bundle, savedOracle] = await Promise.all([loadInsightsBundle(7), loadOracleSavedInsights()]);
+    const bundle = await loadInsightsBundle(7);
     setWeekLabel(bundle.weekLabel || 'This week');
-    setThemes(bundle.themes);
-    setGentleInsight(bundle.gentleInsight);
+    setHeroInsight(bundle.heroInsight);
+    setEmotionalWeather(bundle.emotionalWeather);
+    setWhatHelpedTitles(bundle.whatHelpedTitles);
+    setGentleGrowth(bundle.gentleGrowth);
+    setEmoReflection(bundle.emoReflection);
     setHelped(bundle.helped as HelpedRow[]);
     setHasLiveData(bundle.hasLiveData);
-    setOracleInsights(savedOracle.slice(0, 6));
   }, []);
 
   useEffect(() => {
@@ -117,15 +176,24 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} title="Insights" titleFontSize={15} />
+          <ScreenNavChrome theme={theme} title="Insights" />
         </View>
 
         <View style={styles.headerBlock}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Your emotional landscape</Text>
           <View style={styles.subtitleRow}>
             <Text style={[styles.subtitle, { color: theme.mutedText }]}>
-              Understanding your emotional world
+              Reflection, not reporting — understanding at your pace.
             </Text>
-            <View style={[styles.weekPill, { borderColor: theme.border, backgroundColor: theme.card }]}>
+            <View
+              style={[
+                styles.weekPill,
+                {
+                  borderColor: tokens.border.standard,
+                  backgroundColor: tokens.bg.card,
+                },
+              ]}
+            >
               <Text style={[styles.weekPillText, { color: theme.secondaryText }]}>{weekLabel}</Text>
             </View>
           </View>
@@ -138,126 +206,109 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.cardsColumn}>
-            <CircadianGlassCard theme={theme} style={styles.card}>
-              <Text style={[styles.eyebrow, { color: '#3DBDA8' }]}>A GENTLE INSIGHT</Text>
-              <Text style={[styles.insightQuote, { color: theme.text }]}>{gentleInsight}</Text>
-            </CircadianGlassCard>
+          {/* 1. Hero — Gentle Insight */}
+          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
+            <SectionEyebrow icon="💜" label="Gentle Insight" color={tokens.text.primary} />
+            <Text style={[styles.heroQuote, { color: theme.text }]}>{heroInsight}</Text>
+          </CircadianGlassCard>
 
-            {oracleInsights.length > 0 ? (
-              <CircadianGlassCard theme={theme} style={styles.card}>
-                <Text style={[styles.eyebrow, { color: '#A78BFA' }]}>SAVED ORACLE INSIGHTS</Text>
-                {oracleInsights.map((item, idx) => (
-                  <View
-                    key={item.id}
-                    style={[
-                      styles.oracleInsightRow,
-                      idx < oracleInsights.length - 1 && {
-                        borderBottomColor: theme.border,
-                        ...styles.helpedBorder,
-                      },
-                    ]}
-                  >
-                    {item.query ? (
-                      <Text style={[styles.oracleInsightQuery, { color: theme.secondaryText }]}>
-                        {item.query}
-                      </Text>
-                    ) : null}
-                    <Text style={[styles.oracleInsightText, { color: theme.text }]} numberOfLines={4}>
-                      {item.insight}
-                    </Text>
-                    {item.sourceCount ? (
-                      <Text style={[styles.oracleInsightMeta, { color: theme.mutedText }]}>
-                        {item.sourceCount} research {item.sourceCount === 1 ? 'source' : 'sources'}
-                      </Text>
-                    ) : null}
-                  </View>
-                ))}
-              </CircadianGlassCard>
-            ) : null}
+          {/* 2. Emotional Weather */}
+          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Emotional Weather</Text>
+            {emotionalWeather.length === 0 ? (
+              <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
+                {hasLiveData
+                  ? 'Your emotional skies will take shape as you check in this week.'
+                  : 'Check in when you’re ready — your moods will gather here like soft weather.'}
+              </Text>
+            ) : (
+              <EmotionalWeatherBubbles moods={emotionalWeather} />
+            )}
+          </CircadianGlassCard>
 
-            <CircadianGlassCard theme={theme} style={styles.card}>
-              <Text style={[styles.eyebrow, { color: theme.secondaryText }]}>EMOTIONAL THEMES</Text>
-              {themes.length === 0 ? (
-                <Text style={[styles.emptyThemes, { color: theme.mutedText }]}>
-                  {hasLiveData
-                    ? 'Your themes will appear as you build more check-in rhythm this week.'
-                    : 'Check in or journal to see emotional themes here — no sample data, just your patterns.'}
+          {/* 3. What Helped This Week */}
+          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
+            <View style={styles.helpedHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
+                What Helped This Week
+              </Text>
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setAddOpen(true);
+                }}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.logChip,
+                  {
+                    borderColor: `${theme.accent}44`,
+                    backgroundColor: `${theme.accent}10`,
+                  },
+                  pressed && { opacity: 0.85 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Log what helped"
+              >
+                <Plus size={13} color={theme.accent} strokeWidth={2.4} />
+                <Text style={[styles.logChipText, { color: theme.accent }]}>Log</Text>
+              </Pressable>
+            </View>
+            {whatHelpedTitles.length === 0 ? (
+              <Pressable
+                onPress={() => setAddOpen(true)}
+                style={({ pressed }) => [styles.emptyHelped, pressLinkStyle(theme, pressed)]}
+              >
+                <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
+                  Walks, journaling, breathing, time with Emo — log what lifted you this week.
                 </Text>
-              ) : (
-                themes.map((row) => (
-                  <View key={row.label} style={styles.themeRow}>
-                    <View style={[styles.themeDot, { backgroundColor: row.color }]} />
-                    <View style={styles.themeMain}>
-                      <View style={styles.themeLabelRow}>
-                        <Text style={[styles.themeLabel, { color: theme.text }]}>{row.label}</Text>
-                        <Text style={[styles.themePct, { color: theme.mutedText }]}>{row.pct}%</Text>
-                      </View>
-                      <View style={[styles.barTrack, { backgroundColor: theme.barTrack }]}>
-                        <View
-                          style={[
-                            styles.barFill,
-                            { width: `${Math.min(100, row.pct)}%`, backgroundColor: row.color },
-                          ]}
-                        />
-                      </View>
-                    </View>
-                  </View>
-                ))
-              )}
-            </CircadianGlassCard>
-
-            <CircadianGlassCard theme={theme} style={{ ...styles.card, marginBottom: 0 }}>
-              <View style={styles.helpedHeader}>
-                <Text style={[styles.eyebrow, { color: theme.secondaryText, marginBottom: 0 }]}>
-                  THINGS THAT HELPED
+              </Pressable>
+            ) : (
+              <>
+                <View style={styles.helpedCloud}>
+                  {whatHelpedTitles.map((title) => {
+                    const row = helped.find((h) => h.title === title);
+                    return (
+                      <Pressable
+                        key={title}
+                        onPress={() => row && setSelectedItem(row)}
+                        disabled={!row}
+                        style={({ pressed }) => [
+                          styles.helpedChip,
+                          {
+                            borderColor: tokens.border.strong,
+                            backgroundColor: tokens.surface.tint,
+                          },
+                          row && pressed && { opacity: 0.88 },
+                        ]}
+                      >
+                        <Text style={[styles.helpedChipText, { color: theme.text }]}>{title}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.supportCopy, { color: theme.mutedText }]}>
+                  These activities often appeared before calmer moments.
                 </Text>
-                <Pressable
-                  onPress={() => setAddOpen(true)}
-                  style={({ pressed }) => [
-                    styles.addChip,
-                    { borderColor: theme.accent, backgroundColor: `${theme.accent}18` },
-                    pressed && styles.chromeBtnPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Log what helped"
-                >
-                  <Plus size={14} color={theme.accent} strokeWidth={2.4} />
-                  <Text style={[styles.addChipText, { color: theme.accent }]}>Log</Text>
-                </Pressable>
-              </View>
+              </>
+            )}
+          </CircadianGlassCard>
 
-              {helped.length === 0 ? (
-                <Pressable onPress={() => setAddOpen(true)} style={styles.emptyHelped}>
-                  <Text style={[styles.emptyHelpedText, { color: theme.mutedText }]}>
-                    Tap Log to record what lifted your mood this week — walks, movies, time with friends, and more.
-                  </Text>
-                </Pressable>
-              ) : (
-                helped.map((item, idx) => (
-                  <Pressable
-                    key={item.recordId || item.id}
-                    onPress={() => setSelectedItem(item)}
-                    style={[
-                      styles.helpedRow,
-                      idx < helped.length - 1 && { borderBottomColor: theme.border, ...styles.helpedBorder },
-                    ]}
-                  >
-                    <View style={[styles.octIcon, { backgroundColor: `${item.color}33`, borderColor: item.color }]}>
-                      <View style={[styles.octInner, { backgroundColor: item.color }]} />
-                    </View>
-                    <View style={styles.helpedText}>
-                      <Text style={[styles.helpedTitle, { color: theme.text }]}>{item.title}</Text>
-                      <Text style={[styles.helpedSub, { color: theme.mutedText }]}>{item.sub}</Text>
-                    </View>
-                    <ChevronRight size={18} color={getCircadianIconColor(theme, 'muted')} strokeWidth={2.2} />
-                  </Pressable>
-                ))
-              )}
-            </CircadianGlassCard>
+          {/* 4. Gentle Growth */}
+          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
+            <SectionEyebrow icon="✨" label="Gentle Growth" color={labelAccent} />
+            <Text style={[styles.growthLine1, { color: theme.text }]}>{gentleGrowth.line1}</Text>
+            <Text style={[styles.growthLine2, { color: theme.secondaryText }]}>
+              {gentleGrowth.line2}
+            </Text>
+          </CircadianGlassCard>
 
-            <View style={styles.bottomSpacer} />
-          </View>
+          {/* 5. Emo's Reflection */}
+          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.cardLast}>
+            <SectionEyebrow icon="💜" label="Emo's Reflection" color={tokens.text.primary} />
+            <Text style={[styles.reflectionQuote, { color: theme.text }]}>{emoReflection}</Text>
+          </CircadianGlassCard>
+
+          <View style={styles.bottomSpacer} />
         </ScrollView>
       </ScreenSafeArea>
 
@@ -286,44 +337,32 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   chromeWrap: { paddingHorizontal: 8, paddingBottom: 4 },
-  chromeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: H_PAD,
-    paddingTop: 4,
-    paddingBottom: 2,
-    gap: 8,
-  },
-  chromeSpacer: { flex: 1 },
-  chromeBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 0.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chromeBtnDisabled: { opacity: 0.45 },
-  chromeBtnPressed: { opacity: 0.82 },
   headerBlock: {
     paddingHorizontal: 28,
     paddingTop: 4,
-    paddingBottom: 16,
+    paddingBottom: 12,
+  },
+  headerTitle: {
+    fontFamily: SERIF,
+    fontSize: tokens.typography.pageTitle.fontSize,
+    lineHeight: tokens.typography.pageTitle.lineHeight,
+    fontWeight: tokens.typography.pageTitle.fontWeight,
+    marginBottom: 8,
   },
   subtitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
   },
   weekPill: {
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
     flexShrink: 0,
   },
-  weekPillText: { fontSize: 12, fontWeight: '600' },
+  weekPillText: { fontSize: 11, fontWeight: '600' },
   subtitle: {
     fontSize: 13,
     lineHeight: 20,
@@ -333,24 +372,79 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: H_PAD,
   },
-  cardsColumn: {
-    flexGrow: 1,
+  heroCard: {
+    marginBottom: 18,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
   },
   card: {
     marginBottom: 18,
   },
+  cardLast: {
+    marginBottom: 0,
+  },
   bottomSpacer: {
-    flexGrow: 1,
     minHeight: 24,
   },
-  eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 16 },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    marginBottom: 14,
+    textTransform: 'uppercase',
+  },
+  heroQuote: {
+    fontFamily: SERIF,
+    fontSize: 22,
+    lineHeight: 32,
+    fontWeight: '400',
+  },
+  sectionTitle: {
+    fontFamily: SERIF,
+    fontSize: 17,
+    lineHeight: 24,
+    marginBottom: 16,
+  },
+  emptyCopy: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  bubbleCloud: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  moodBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  bubbleDriftMid: {
+    marginTop: 4,
+  },
+  bubbleDriftLow: {
+    marginTop: -2,
+  },
+  bubbleEmoji: {
+    fontSize: 15,
+  },
+  bubbleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   helpedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  addChip: {
+  logChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -359,50 +453,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  addChipText: { fontSize: 12, fontWeight: '700' },
-  emptyHelped: { paddingVertical: 8 },
-  emptyHelpedText: { fontSize: 14, lineHeight: 21 },
-  themeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  emptyThemes: { fontSize: 14, lineHeight: 21, paddingVertical: 4 },
-  themeDot: { width: 10, height: 10, borderRadius: 2, transform: [{ rotate: '45deg' }] },
-  themeMain: { flex: 1 },
-  themeLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  themeLabel: { fontSize: 15, fontWeight: '600' },
-  themePct: { fontSize: 13 },
-  barTrack: { height: 9, borderRadius: 5, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 5 },
-  insightQuote: {
+  logChipText: { fontSize: 12, fontWeight: '700' },
+  emptyHelped: { paddingVertical: 4 },
+  helpedCloud: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  helpedChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  helpedChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  supportCopy: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  growthLine1: {
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  growthLine2: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  reflectionQuote: {
     fontFamily: SERIF,
-    fontSize: 17,
+    fontSize: 16,
     lineHeight: 26,
     fontStyle: 'italic',
   },
-  oracleInsightRow: { paddingVertical: 12 },
-  oracleInsightQuery: { fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  oracleInsightText: {
-    fontFamily: SERIF,
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  oracleInsightMeta: { fontSize: 11, marginTop: 6 },
-  helpedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-  },
-  helpedBorder: { borderBottomWidth: StyleSheet.hairlineWidth },
-  octIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ rotate: '22.5deg' }],
-  },
-  octInner: { width: 10, height: 10, borderRadius: 2 },
-  helpedText: { flex: 1 },
-  helpedTitle: { fontSize: 15, fontWeight: '700' },
-  helpedSub: { fontSize: 12, marginTop: 3 },
 });

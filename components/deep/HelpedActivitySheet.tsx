@@ -2,11 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Pencil, Sparkles, Trash2, X } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
 import { HELPED_CATEGORIES } from '../../utils/thingsThatHelped';
 import type { MainScreenKey } from '../navigation/AppNavigation';
-
-const MENU_SOLID = '#2A1848';
 
 export type HelpedRow = {
   id: string;
@@ -149,7 +147,7 @@ export function HelpedActivitySheet({
                   disabled={!draftTitle.trim()}
                   style={[
                     styles.primaryBtn,
-                    { backgroundColor: theme.accent, opacity: draftTitle.trim() ? 1 : 0.5 },
+                    { backgroundColor: tokens.brand.ctaStart, opacity: draftTitle.trim() ? 1 : 0.5 },
                   ]}
                 >
                   <Text style={styles.primaryText}>Save changes</Text>
@@ -165,7 +163,7 @@ export function HelpedActivitySheet({
                   {item.navigate ? (
                     <Pressable
                       onPress={() => onTryNow(item)}
-                      style={[styles.primaryBtn, { backgroundColor: theme.accent }]}
+                      style={[styles.primaryBtn, { backgroundColor: tokens.brand.ctaStart }]}
                     >
                       <Text style={styles.primaryText}>Try this now</Text>
                     </Pressable>
@@ -182,7 +180,7 @@ export function HelpedActivitySheet({
                   {!item.navigate && !item.emoPrompt ? (
                     <Pressable
                       onPress={onClose}
-                      style={[styles.primaryBtn, { backgroundColor: theme.accent }]}
+                      style={[styles.primaryBtn, { backgroundColor: tokens.brand.ctaStart }]}
                     >
                       <Text style={styles.primaryText}>Got it</Text>
                     </Pressable>
@@ -219,8 +217,15 @@ const styles = StyleSheet.create({
   },
   inputSub: { fontWeight: '400', fontSize: 14, marginBottom: 8 },
   actions: { gap: 10, marginTop: 4 },
-  primaryBtn: { borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
-  primaryText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
+  primaryBtn: {
+    borderRadius: 28,
+    minHeight: 56,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',

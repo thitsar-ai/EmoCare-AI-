@@ -69,5 +69,13 @@ export function buildEmoDailyNote(
   tasks: TriageTaskRecord[],
   moodLabel: string | null | undefined,
 ): string;
+export function buildTodayHeroInsight(
+  tasks: TriageTaskRecord[],
+  moodLabel: string | null | undefined,
+): string;
+export function buildTodayGentleGrowth(tasks: TriageTaskRecord[]): {
+  line1: string;
+  line2: string;
+};
 export function categorySubline(task: TriageTaskRecord): string;
 export function isBreathCareTask(task: TriageTaskRecord): boolean;

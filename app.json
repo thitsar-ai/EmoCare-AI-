@@ -10,37 +10,32 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0D0720"
+      "backgroundColor": "#F4ECFB"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSSpeechRecognitionUsageDescription": "Allow EmoCare to understand your voice so Emo can respond.",
-        "NSMicrophoneUsageDescription": "Allow EmoCare to listen during Voice Talk."
+        "NSFaceIDUsageDescription": "Allow EmoCare to unlock your sanctuary with Face ID."
       },
       "bundleIdentifier": "com.tristarinter.emocare"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1A0F2E"
+        "backgroundColor": "#F4ECFB"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
-      ],
       "package": "com.tristarinter.emocare"
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "backgroundColor": "#070312",
+      "backgroundColor": "#F4ECFB",
       "name": "EmoCare — Your Sanctuary",
       "shortName": "EmoCare",
       "description": "A private sanctuary for check-ins, journal, and conversations with Emo.",
-      "themeColor": "#0D0720",
+      "themeColor": "#F4ECFB",
       "display": "standalone",
       "startUrl": "/",
       "scope": "/",
@@ -52,7 +47,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "backgroundColor": "#0D0720"
+          "backgroundColor": "#F4ECFB"
         }
       ],
       [
@@ -61,20 +56,9 @@
           "photosPermission": "Allow EmoCare to access your photos so you can share them with Emo."
         }
       ],
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Allow EmoCare to listen during Voice Talk — your conversations stay private on this device."
-        }
-      ],
-      [
-        "expo-speech-recognition",
-        {
-          "microphonePermission": "Allow EmoCare to listen during Voice Talk.",
-          "speechRecognitionPermission": "Allow EmoCare to understand your voice so Emo can respond."
-        }
-      ],
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store",
+      "expo-local-authentication"
     ]
   }
 }

@@ -25,12 +25,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { Eye, LockKeyhole, Shield, ShieldCheck, Trash2, User, Sparkles, Check, type LucideIcon } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from '../../constants/obMoods';
-import { openPrivacyPolicy } from '../../constants/legalLinks';
+import { openPrivacyPolicy, openTermsOfService } from '../../constants/legalLinks';
 import { SanctuarySplashContent, SplashStarField } from '../shared/SanctuarySplash';
-import { MoodIconBadge } from '../shared/MoodIcon';
+import { MoodPicker } from '../shared/MoodPicker';
 import {
   getSanctuaryButtonGradient,
   getSanctuaryButtonGradientDisabled,
+  getSanctuaryButtonGradientPressed,
   getSanctuaryLavenderAccent,
   getSanctuaryLavenderBorder,
   getSanctuaryLavenderFieldBg,
@@ -38,6 +39,12 @@ import {
   getSanctuaryIconAccent,
   getSanctuaryLabelAccent,
 } from '../../theme/sanctuaryBrand';
+import {
+  primaryButtonInner,
+  primaryButtonLabel,
+  primaryButtonLabelDisabled,
+  primaryButtonShell,
+} from '../../theme/primaryButton';
 import { hapticLight } from '../../utils/haptics';
 import {
   getCircadianIconColor,
@@ -57,6 +64,7 @@ import {
   isAtLeast18,
   parseBirthDate,
   persistAgeVerified,
+  readAgeVerified,
   YOUTH_SUPPORT_RESOURCES,
 } from '../../utils/ageVerification';
 import { openCrisisCall, openCrisisText } from '../../utils/crisisLine';
@@ -84,14 +92,14 @@ const OB_SLIDE_TITLES: Record<number, string> = {
 const PRIVACY_CARDS: { icon: LucideIcon; title: string; desc: string; color: string }[] = [
   {
     icon: LockKeyhole,
-    title: 'Zero-knowledge storage',
-    desc: 'Journal entries and ledger logs are encrypted on your device — only accessible by you.',
+    title: 'Encrypted on your device',
+    desc: 'Journal entries and Memory Ledger data stay on your device — encrypted and only accessible by you.',
     color: '#9B7BFF',
   },
   {
     icon: Shield,
-    title: 'Sovereign personal data',
-    desc: 'We never sell or share your information.',
+    title: 'Never sold',
+    desc: 'We never sell your information.',
     color: '#4ADE80',
   },
   {
@@ -136,7 +144,7 @@ function ObCard({
   style?: object;
 }) {
   return (
-    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }, style]}>
+    <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.cardBorder }, style]}>
       {children}
     </View>
   );
@@ -154,69 +162,28 @@ function LavenderButton({
   theme: CircadianTheme;
 }) {
   return (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      style={[styles.ctaWrap, disabled && styles.ctaDisabled]}
+    <Pressable
       onPress={onPress}
       disabled={disabled}
+      style={({ pressed }) => [primaryButtonShell, styles.ctaWrap, disabled && styles.ctaDisabled]}
     >
-      <LinearGradient
-        colors={
-          disabled
-            ? getSanctuaryButtonGradientDisabled(theme.phase)
-            : getSanctuaryButtonGradient(theme.phase)
-        }
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={styles.ctaBtn}
-      >
-        <Text style={styles.ctaText}>{label}</Text>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
-
-function MoodGrid({
-  theme,
-  selected,
-  onSelect,
-}: {
-  theme: CircadianTheme;
-  selected: Mood | null;
-  onSelect: (m: Mood) => void;
-}) {
-  return (
-    <View style={styles.moodGrid}>
-      {OB_MOODS.map((m) => {
-        const isSelected = selected?.label === m.label;
-        return (
-          <TouchableOpacity
-            key={m.label}
-            activeOpacity={0.85}
-            style={[
-              styles.moodCard,
-              { backgroundColor: theme.card, borderColor: theme.border },
-              isSelected && {
-                borderColor: m.accentColor ?? theme.accent,
-                backgroundColor: m.accentBg ?? 'rgba(155,123,255,0.16)',
-              },
-            ]}
-            onPress={() => {
-              void hapticLight();
-              onSelect(m);
-            }}
-          >
-            <MoodIconBadge mood={m} variant="full" active={isSelected} />
-            <View style={styles.moodCardText}>
-              <Text style={[styles.moodCardTitle, { color: theme.text }]}>{m.label}</Text>
-              <Text style={[styles.moodCardDesc, { color: theme.mutedText }]}>
-                {m.desc}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
+      {({ pressed }) => (
+        <LinearGradient
+          colors={
+            disabled
+              ? getSanctuaryButtonGradientDisabled(theme.phase)
+              : pressed
+                ? getSanctuaryButtonGradientPressed(theme.phase)
+                : getSanctuaryButtonGradient(theme.phase)
+          }
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[primaryButtonInner, styles.ctaBtn]}
+        >
+          <Text style={[primaryButtonLabel, disabled && primaryButtonLabelDisabled]}>{label}</Text>
+        </LinearGradient>
+      )}
+    </Pressable>
   );
 }
 
@@ -244,16 +211,11 @@ function AgeGateSlide({
   const fieldsComplete = month.length >= 1 && day.length >= 1 && year.length === 4;
   const validDate = birthDate != null;
   const eligible = validDate && isAtLeast18(birthDate);
-  const canContinue = ageConfirmed || (fieldsComplete && validDate);
+  const canContinue = ageConfirmed && fieldsComplete && validDate;
 
   const handleContinue = async () => {
     setAttempted(true);
-    if (ageConfirmed && !validDate) {
-      await persistAgeVerified();
-      onVerified();
-      return;
-    }
-    if (!validDate) return;
+    if (!ageConfirmed || !validDate) return;
     if (!isAtLeast18(birthDate)) {
       setBlocked(true);
       return;
@@ -295,7 +257,7 @@ function AgeGateSlide({
                   if (item.type === 'phone') openResource('phone', item.value);
                   else if (item.type === 'sms') openResource('sms', item.value, item.smsBody);
                 }}
-                style={[styles.youthResourceRow, { borderColor: theme.border, backgroundColor: theme.card }]}
+                style={[styles.youthResourceRow, { borderColor: theme.cardBorder, backgroundColor: theme.card }]}
               >
                 <Text style={[styles.youthResourceLabel, { color: theme.text }]}>{item.label}</Text>
                 {tappable ? (
@@ -440,7 +402,7 @@ function AgeGateSlide({
       />
       {!canContinue ? (
         <Text style={[styles.ageHint, { color: theme.mutedText }]}>
-          Confirm you are 18+ or enter your full date of birth to continue.
+          Confirm you are 18+ and enter your full date of birth to continue.
         </Text>
       ) : null}
       {fieldsComplete && validDate && !eligible ? (
@@ -484,7 +446,7 @@ function SplashSlide({
 
   return (
     <Pressable style={styles.splashSlide} onPress={onContinue}>
-      <SplashStarField theme={theme} variant="night" />
+      <SplashStarField theme={theme} variant="sanctuary" />
       <View style={styles.splashBody}>
         <SanctuarySplashContent
           theme={theme}
@@ -523,6 +485,7 @@ export function OnboardingFlow({
     useAppNav();
   const [slide, setSlide] = useState(initialSlide);
   const [ageGatePassed, setAgeGatePassed] = useState(false);
+  const [ageGateReady, setAgeGateReady] = useState(false);
   const [name, setName] = useState('');
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
   const [journalNote, setJournalNote] = useState('');
@@ -543,11 +506,29 @@ export function OnboardingFlow({
   }, []);
 
   useEffect(() => {
-    if (onboardingReviewSlide == null) return;
-    if (onboardingReviewSlide !== slide) {
-      setSlide(onboardingReviewSlide);
+    if (reviewMode || ageVerificationOnly) {
+      setAgeGateReady(true);
+      return;
     }
-  }, [onboardingReviewSlide, slide]);
+    void readAgeVerified().then((verified) => {
+      if (verified) {
+        setAgeGatePassed(true);
+        setSlide(WELCOME_ONBOARDING_SLIDE);
+      }
+      setAgeGateReady(true);
+    });
+  }, [ageVerificationOnly, reviewMode]);
+
+  useEffect(() => {
+    if (onboardingReviewSlide == null) return;
+    let target = onboardingReviewSlide;
+    if (!reviewMode && !ageVerificationOnly && !ageGatePassed && target > OB_AGE_GATE_SLIDE) {
+      target = OB_AGE_GATE_SLIDE;
+    }
+    if (target !== slide) {
+      setSlide(target);
+    }
+  }, [ageGatePassed, ageVerificationOnly, onboardingReviewSlide, reviewMode, slide]);
 
   useEffect(() => {
     setOnboardingSplashActive(!reviewMode && slide === 1);
@@ -704,13 +685,18 @@ export function OnboardingFlow({
   ).current;
 
   const enterSanctuary = async () => {
-    if (!selectedMood) return;
-    if (!reviewMode && !ageGatePassed) return;
-    const session = resolveOnboardingSession(selectedMood, journalNote);
     if (reviewMode) {
-      onExitReview?.();
+      goForward();
       return;
     }
+    if (!selectedMood) return;
+    if (!ageGatePassed) return;
+    const ageOk = await readAgeVerified();
+    if (!ageOk) {
+      setSlide(OB_AGE_GATE_SLIDE);
+      return;
+    }
+    const session = resolveOnboardingSession(selectedMood, journalNote);
     closeOnboardingReview();
     try {
       await AsyncStorage.setItem('onboarded', 'true');
@@ -748,9 +734,9 @@ export function OnboardingFlow({
   const showSlideNav = (OB_CONTENT_SLIDES as readonly number[]).includes(slide);
 
   const handleFirstRunBack = () => {
-    if (slide === OB_PRIVACY_SLIDE) goTo(OB_AGE_GATE_SLIDE);
+    if (slide === OB_PRIVACY_SLIDE) goTo(WELCOME_ONBOARDING_SLIDE);
     else if (slide === OB_LAST_CONTENT_SLIDE) goTo(OB_PRIVACY_SLIDE);
-    else if (slide === WELCOME_ONBOARDING_SLIDE) goTo(1);
+    else if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_AGE_GATE_SLIDE);
     else if (slide > 1) goTo(slide - 1);
   };
 
@@ -760,7 +746,8 @@ export function OnboardingFlow({
     (slide === OB_PRIVACY_SLIDE || slide === OB_LAST_CONTENT_SLIDE || slide === WELCOME_ONBOARDING_SLIDE);
 
   const handleFirstRunForward = () => {
-    if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_AGE_GATE_SLIDE);
+    if (slide === OB_AGE_GATE_SLIDE && ageGatePassed) goTo(WELCOME_ONBOARDING_SLIDE);
+    else if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_PRIVACY_SLIDE);
     else if (slide === OB_PRIVACY_SLIDE) goTo(OB_LAST_CONTENT_SLIDE);
     else if (slide < OB_LAST_CONTENT_SLIDE && slide !== OB_AGE_GATE_SLIDE) goTo(slide + 1);
   };
@@ -768,14 +755,25 @@ export function OnboardingFlow({
   const firstRunCanGoForward =
     !reviewMode &&
     !ageVerificationOnly &&
-    (slide === WELCOME_ONBOARDING_SLIDE || slide === OB_PRIVACY_SLIDE);
+    ((slide === OB_AGE_GATE_SLIDE && ageGatePassed) ||
+      slide === WELCOME_ONBOARDING_SLIDE ||
+      slide === OB_PRIVACY_SLIDE);
+
+  if (!ageGateReady) {
+    return (
+      <View style={styles.flex}>
+        <CircadianHeroGlow theme={theme} />
+        <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+      </View>
+    );
+  }
 
   if (slide === 1) {
     return (
       <View style={styles.flex}>
         <CircadianHeroGlow theme={theme} />
         <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-        <SplashSlide theme={theme} onContinue={() => goTo(WELCOME_ONBOARDING_SLIDE)} />
+        <SplashSlide theme={theme} onContinue={() => goTo(OB_AGE_GATE_SLIDE)} />
       </View>
     );
   }
@@ -804,7 +802,7 @@ export function OnboardingFlow({
             <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>
               What should I call you? (Optional)
             </Text>
-            <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
               <User size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2} />
               <TextInput
                 style={[styles.nameInput, { color: theme.text }]}
@@ -820,7 +818,7 @@ export function OnboardingFlow({
               />
             </View>
 
-            <Pressable onPress={() => goTo(OB_AGE_GATE_SLIDE)} hitSlop={8} style={styles.skipLinkWrap}>
+            <Pressable onPress={() => goTo(OB_PRIVACY_SLIDE)} hitSlop={8} style={styles.skipLinkWrap}>
               <Text style={[styles.skipLink, { color: theme.mutedText }]}>Skip for now</Text>
             </Pressable>
 
@@ -839,7 +837,11 @@ export function OnboardingFlow({
               </Text>
             </ObCard>
 
-            <LavenderButton label="Begin Gently →" onPress={() => goTo(OB_AGE_GATE_SLIDE)} theme={theme} />
+            <LavenderButton
+              label="Begin Gently →"
+              onPress={() => (reviewMode ? goForward() : goTo(OB_PRIVACY_SLIDE))}
+              theme={theme}
+            />
           </ScrollView>
         );
 
@@ -855,7 +857,7 @@ export function OnboardingFlow({
               if (ageVerificationOnly) {
                 onAgeVerified?.();
               } else {
-                goTo(OB_PRIVACY_SLIDE);
+                goTo(WELCOME_ONBOARDING_SLIDE);
               }
             }}
             onBack={() => goTo(WELCOME_ONBOARDING_SLIDE)}
@@ -883,7 +885,7 @@ export function OnboardingFlow({
               Your thoughts{'\n'}stay with you.
             </Text>
             <Text style={[styles.body, { color: theme.mutedText }]}>
-              Everything is stored privately on your device.{'\n'}Nothing shared. Nothing sold.
+              Encrypted on your device.{'\n'}Never sold.
             </Text>
 
             <View style={styles.privacyList}>
@@ -909,7 +911,11 @@ export function OnboardingFlow({
               and are not stored long-term on our servers.
             </Text>
 
-            <LavenderButton label="I Understand →" onPress={() => goTo(5)} theme={theme} />
+            <LavenderButton
+              label="I Understand →"
+              onPress={() => (reviewMode ? goForward() : goTo(5))}
+              theme={theme}
+            />
           </ScrollView>
         );
 
@@ -935,7 +941,13 @@ export function OnboardingFlow({
                 How are you feeling today?
               </Text>
 
-              <MoodGrid theme={theme} selected={selectedMood} onSelect={handleMoodSelect} />
+              <MoodPicker
+                theme={theme}
+                selected={selectedMood}
+                onSelect={handleMoodSelect}
+                variant="onboarding"
+                horizontalPadding={28}
+              />
 
               {moodAckVisible ? (
                 <ObCard theme={theme} style={styles.moodAckCard}>
@@ -970,15 +982,23 @@ export function OnboardingFlow({
               </ObCard>
 
               <LavenderButton
-                label={reviewMode ? 'Done reviewing →' : 'Enter the Sanctuary →'}
+                label="Enter the Sanctuary →"
                 onPress={enterSanctuary}
-                disabled={!selectedMood}
+                disabled={!reviewMode && !selectedMood}
                 theme={theme}
               />
 
               {!keyboardVisible ? (
                 <Text style={[styles.legalFooter, { color: theme.mutedText }]}>
-                  By continuing, you agree to the Terms of Service and{' '}
+                  By continuing, you agree to the{' '}
+                  <Text
+                    style={[styles.legalLink, { color: theme.accent }]}
+                    onPress={openTermsOfService}
+                    accessibilityRole="link"
+                  >
+                    Terms of Service
+                  </Text>{' '}
+                  and{' '}
                   <Text
                     style={[styles.legalLink, { color: theme.accent }]}
                     onPress={openPrivacyPolicy}
@@ -1005,7 +1025,6 @@ export function OnboardingFlow({
             <ScreenNavChrome
               theme={theme}
               title={OB_SLIDE_TITLES[slide] ?? ''}
-              titleFontSize={15}
               showMenu={reviewMode}
               onBack={
                 reviewMode
@@ -1014,9 +1033,7 @@ export function OnboardingFlow({
                     : goBack
                   : !ageVerificationOnly && showSlideNav
                     ? handleFirstRunBack
-                    : slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
-                      ? () => goTo(WELCOME_ONBOARDING_SLIDE)
-                      : undefined
+                    : undefined
               }
               canGoBack={
                 reviewMode
@@ -1025,9 +1042,7 @@ export function OnboardingFlow({
                     : navCanGoBack
                   : firstRunCanGoBack
                     ? true
-                    : slide === OB_AGE_GATE_SLIDE && !ageVerificationOnly
-                      ? true
-                      : undefined
+                    : undefined
               }
               onForward={
                 reviewMode
@@ -1079,8 +1094,6 @@ export function OnboardingFlow({
     </View>
   );
 }
-
-const CARD_W = (width - 56 - 14) / 2;
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
@@ -1235,30 +1248,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 10,
   },
-  moodGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    width: '100%',
-    marginBottom: 22,
-  },
-  moodCard: {
-    width: CARD_W,
-    flexBasis: CARD_W,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-    paddingHorizontal: 11,
-    borderRadius: 15,
-    borderWidth: 1,
-    gap: 10,
-    minHeight: 74,
-  },
-  moodEmoji: { fontSize: 17 },
-  moodCardText: { flex: 1, paddingTop: 3 },
-  moodCardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 4, lineHeight: 16 },
-  moodCardDesc: { fontSize: 11, lineHeight: 16 },
-
   journalTitle: {
     fontSize: 17,
     fontWeight: '700',
@@ -1269,10 +1258,9 @@ const styles = StyleSheet.create({
   journalCard: { padding: 14, marginBottom: 22, minHeight: 110 },
   journalInput: { fontSize: 14, lineHeight: 21, minHeight: 88, padding: 0 },
 
-  ctaWrap: { borderRadius: 18, overflow: 'hidden', marginTop: 4, marginBottom: 12 },
-  ctaDisabled: { opacity: 0.45 },
-  ctaBtn: { paddingVertical: 16, paddingHorizontal: 18, alignItems: 'center', borderRadius: 18 },
-  ctaText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  ctaWrap: { marginTop: 4, marginBottom: 12 },
+  ctaDisabled: { opacity: 1 },
+  ctaBtn: {},
   legalFooter: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4, paddingHorizontal: 12 },
   legalLink: { textDecorationLine: 'underline', fontWeight: '600' },
   skipLinkWrap: { alignItems: 'center', marginBottom: 16 },

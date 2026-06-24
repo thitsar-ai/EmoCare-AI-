@@ -566,21 +566,90 @@ export function formatBriefingContext(tasks, moodLabel, ambientProgress, userNam
 export function buildEmoDailyNote(tasks, moodLabel) {
   const summary = summarizeTodayTasks(tasks);
   if (summary.byCategory.care > 0) {
-    return 'You have self-care on the list — protect that pause like any other appointment.';
+    return 'One thing I noticed: you made room for rest today. Protect that pause like any other appointment.';
   }
   if (summary.byCategory.movement > 0) {
-    return 'Movement is on your plate today. Even a short walk can shift your whole afternoon.';
+    return 'One thing I noticed: movement is on your list. Even a short walk can gently shift the whole afternoon.';
   }
   if (summary.byCategory.work >= 2) {
-    return 'A full work day ahead — start with one focus block before opening messages.';
+    return 'One thing I noticed: today asks for focus. Starting with one meaningful block can make the rest feel lighter.';
   }
   if (summary.byCategory.home > 0) {
-    return 'Home tasks count. Cooking or tidying can be grounding when you do them without rushing.';
+    return 'One thing I noticed: home tasks can be grounding. Cooking or tidying without rushing is its own kind of care.';
   }
   if (moodLabel === 'Overwhelmed' || moodLabel === 'Heavy') {
-    return 'Emo noticed a heavier mood — keep the list small and add one restful thing on purpose.';
+    return 'One thing I noticed: today feels heavier. A shorter list — with one restful thing on purpose — is still enough.';
   }
-  return 'Pick one meaningful activity first — the rest of the day can orbit around that.';
+  if (moodLabel === 'Grateful' || moodLabel === 'Peaceful') {
+    return 'One thing I noticed: you checked in from a softer place today. Let that tone guide what you choose next.';
+  }
+  if (summary.total === 0) {
+    return "One thing I noticed: your day is open. That space is yours — follow what you need, not what you owe.";
+  }
+  return 'One thing I noticed: one meaningful step first — the rest of the day can orbit around that with less pressure.';
+}
+
+/** Hero observation for Today — warm, present-moment, non-clinical. */
+export function buildTodayHeroInsight(tasks, moodLabel) {
+  const summary = summarizeTodayTasks(tasks);
+  const heavy = moodLabel === 'Overwhelmed' || moodLabel === 'Heavy' || moodLabel === 'Anxious';
+
+  if (summary.total === 0 && !moodLabel) {
+    return 'A clear day ahead — room to breathe and follow what you need.';
+  }
+  if (heavy && summary.pendingCount >= 3) {
+    return 'Today feels full. You do not have to finish everything to have shown up.';
+  }
+  if (heavy) {
+    return 'On heavier days, a gentler pace is wisdom — not falling behind.';
+  }
+  if (summary.doneCount >= 1 && summary.pendingCount === 0) {
+    return 'You moved through what mattered today. That is worth noticing.';
+  }
+  if (summary.doneCount >= 1) {
+    return "You've already taken care of part of your day — with intention.";
+  }
+  if (summary.byCategory.care > 0) {
+    return "You're making space for yourself today. That counts.";
+  }
+  if (moodLabel === 'Peaceful' || moodLabel === 'Grateful' || moodLabel === 'Hopeful') {
+    return 'A softer mood is with you today — let your list match that kindness.';
+  }
+  if (summary.pendingCount >= 1) {
+    return 'Your intentions for today are here — one step at a time is enough.';
+  }
+  return 'However today unfolds, you can meet it without rushing yourself.';
+}
+
+/** Supportive today lines — no streaks or gamification. */
+export function buildTodayGentleGrowth(tasks) {
+  const summary = summarizeTodayTasks(tasks);
+  if (summary.total === 0) {
+    return {
+      line1: 'Your day is open.',
+      line2: 'Adding one small intention — or none at all — is equally valid.',
+    };
+  }
+  if (summary.doneCount === 0) {
+    return {
+      line1:
+        summary.pendingCount === 1
+          ? 'One intention is waiting for you.'
+          : `${summary.pendingCount} intentions for today.`,
+      line2: 'There is no race — move at the pace that feels honest.',
+    };
+  }
+  const line1 =
+    summary.doneCount === 1
+      ? 'You completed one thing today.'
+      : `You completed ${summary.doneCount} things today.`;
+  let line2 = "You're caring for your day — not performing for it.";
+  if (summary.pendingCount === 0) {
+    line2 = 'Everything on your list found its moment. Rest is allowed now.';
+  } else if (summary.byCategory.care > 0 && summary.doneCount >= 1) {
+    line2 = 'Care for yourself and care for your tasks can coexist.';
+  }
+  return { line1, line2 };
 }
 
 export function categorySubline(task) {

@@ -65,7 +65,7 @@ export const HELPED_CATEGORY_ORDER = [
 ];
 
 /**
- * @typedef {'breathe' | 'journal' | 'talk' | 'checkin' | null} HelpedNavigate
+ * @typedef {'journal' | 'talk' | 'checkin' | null} HelpedNavigate
  */
 
 /**
@@ -113,8 +113,8 @@ export const HELPED_CATALOG = [
     categoryId: 'mind',
     title: 'Deep breathing',
     sub: 'reset your mind',
-    navigate: 'breathe',
-    tip: 'Box breathing (4-4-4-4) is evidence-backed for acute stress. Emo can guide you through a short session.',
+    navigate: 'talk',
+    tip: 'Box breathing (4-4-4-4) is evidence-backed for acute stress. Emo can guide you through a short session in Talk.',
     emoPrompt: 'Guide me through box breathing for anxiety',
   },
   {
@@ -122,8 +122,8 @@ export const HELPED_CATALOG = [
     categoryId: 'mind',
     title: 'Quiet meditation',
     sub: 'found stillness',
-    navigate: 'breathe',
-    tip: 'Even 3 minutes of noticing breath without fixing anything builds emotional resilience over time.',
+    navigate: 'talk',
+    tip: 'Even 3 minutes of noticing breath without fixing anything builds emotional resilience over time. Emo can guide you gently in Talk.',
   },
   {
     id: 'journaling',

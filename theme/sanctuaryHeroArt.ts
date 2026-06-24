@@ -1,29 +1,32 @@
 import type { ImageSourcePropType } from 'react-native';
 import type { CircadianPhase } from './circadianTheme';
+import { BRAND_GRADIENT, BRAND_GRADIENT_DISABLED } from './tokens';
 
 const HERO_DAY: ImageSourcePropType = require('../assets/sanctuary/hero-day.png');
-const HERO_NIGHT: ImageSourcePropType = require('../assets/sanctuary/hero-night.png');
 const TALK_DAY: ImageSourcePropType = require('../assets/sanctuary/talk-day.png');
-const TALK_NIGHT: ImageSourcePropType = require('../assets/sanctuary/talk-night.png');
 
-/** Morning & afternoon use day illustrations; evening & night use night illustrations. */
-export function isSanctuaryDayArt(phase: CircadianPhase): boolean {
-  return phase === 'morning' || phase === 'afternoon';
+/** Sanctuary v1.0 — always light lavender art. */
+export function isSanctuaryDayArt(_phase: CircadianPhase): boolean {
+  return true;
 }
 
-export function getSanctuaryHeroArt(phase: CircadianPhase): ImageSourcePropType {
-  return isSanctuaryDayArt(phase) ? HERO_DAY : HERO_NIGHT;
+export function getSanctuaryHeroArt(_phase: CircadianPhase): ImageSourcePropType {
+  return HERO_DAY;
 }
 
-export function getSanctuaryTalkArt(phase: CircadianPhase): ImageSourcePropType {
-  return isSanctuaryDayArt(phase) ? TALK_DAY : TALK_NIGHT;
+export function getSanctuaryTalkArt(_phase: CircadianPhase): ImageSourcePropType {
+  return TALK_DAY;
 }
 
-export const SANCTUARY_TALK_GRADIENT_DAY = ['#6E58C4', '#8B6ED4', '#A88BF0'] as [string, string, string];
-export const SANCTUARY_TALK_GRADIENT_NIGHT = ['#2E2058', '#453575', '#5E4898'] as [string, string, string];
+export const SANCTUARY_TALK_GRADIENT_DAY = BRAND_GRADIENT;
+export const SANCTUARY_TALK_GRADIENT_NIGHT = BRAND_GRADIENT;
 
-export function getSanctuaryTalkGradient(phase: CircadianPhase): [string, string, string] {
-  return isSanctuaryDayArt(phase) ? SANCTUARY_TALK_GRADIENT_DAY : SANCTUARY_TALK_GRADIENT_NIGHT;
+export function getSanctuaryTalkGradient(_phase: CircadianPhase): [string, string] {
+  return [...BRAND_GRADIENT];
+}
+
+export function getSanctuaryTalkGradientDisabled(_phase: CircadianPhase): [string, string] {
+  return [...BRAND_GRADIENT_DISABLED];
 }
 
 /** Both day and night heroes use full illustrated PNGs. */

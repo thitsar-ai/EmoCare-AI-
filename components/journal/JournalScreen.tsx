@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,25 +13,49 @@ import {
   TouchableOpacity,
   View,
   Alert,
-  type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Bookmark, Lock, MessageCircle, Sparkles } from 'lucide-react-native';
+import { Lock, MessageCircle } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CrisisFooter } from '../shared/CrisisFooter';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { ScreenNavChrome, TAB_BAR_HEIGHT, type MainScreenKey } from '../navigation/AppNavigation';
 import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '../../theme/circadianTheme';
-import { CircadianHeroGlow } from '../shared/CircadianHeroGlow';
-import { PrimaryActionButton } from '../shared/PrimaryActionButton';
-import { hapticMedium } from '../../utils/haptics';
+import { CircadianGlassCard, CircadianHeroGlow, SERIF } from '../shared/CircadianHeroGlow';
+import {
+  getSanctuaryButtonGradient,
+  getSanctuaryButtonGradientDisabled,
+  getSanctuaryButtonGradientPressed,
+  getSanctuaryLabelAccent,
+} from '../../theme/sanctuaryBrand';
+import {
+  primaryButtonInner,
+  primaryButtonLabel,
+  primaryButtonLabelDisabled,
+  primaryButtonShell,
+} from '../../theme/primaryButton';
+import { tokens } from '../../theme/tokens';
+import { hapticLight, hapticMedium } from '../../utils/haptics';
+import { pressPrimaryStyle } from '../../utils/pressFeedback';
 import { getTodayCheckIn } from '../../utils/sanctuaryHome';
 import {
-  JOURNAL_ENTRIES_KEY,
+  buildJourneyLine,
+  JOURNAL_BG,
+  JOURNAL_EDITOR_SURFACE,
+  loadJournalEntries,
+  pickDailyJournalPrompt,
   PENDING_JOURNAL_CONTEXT_KEY,
+  saveJournalEntries,
 } from '../../utils/journalStorage';
+import { moodCheckInCardShadow, selectableCardStyle } from '../../theme/glassSurfaces';
+import { JournalSaveOverlay } from './JournalSaveOverlay';
 
 const H_PAD = 22;
-const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
+const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
+
+const EDITOR_PLACEHOLDER =
+  'Begin wherever feels easiest.\n\nA thought.\nA feeling.\nA moment.\n\nThere is no right way to begin.';
 
 export type JournalEntry = {
   id: number;
@@ -38,67 +64,8 @@ export type JournalEntry = {
   mood: { emoji: string; label: string };
 };
 
-const DAILY_PROMPTS = [
-  'What do you wish someone understood about you today?',
-  'What felt heavy today — and what felt even a little lighter?',
-  'If your heart could speak without fear, what would it say?',
-  'What are you carrying that is not yours to carry?',
-  'Where did you feel most like yourself today?',
-  'What would gentleness look like for you right now?',
-  'What do you need more of — and what do you need less of?',
-];
-
-const CATEGORY_CHIPS = [
-  { label: 'Gratitude', color: '#9B7BFF', starter: 'I am grateful for ' },
-  { label: 'Emotions', color: '#3DBDA8', starter: 'The emotion I am carrying is ' },
-  { label: 'Release', color: '#D46BA8', starter: 'I am ready to release ' },
-  { label: 'Gentle wins', color: '#E89B5C', starter: 'A gentle win today: ' },
-];
-
-function JournalGlassCard({
-  theme,
-  children,
-  style,
-  fill,
-}: {
-  theme: CircadianTheme;
-  children: React.ReactNode;
-  style?: ViewStyle;
-  fill?: string;
-}) {
-  return (
-    <View
-      style={[
-        styles.glassCard,
-        {
-          backgroundColor: fill ?? theme.card,
-          borderColor: theme.border,
-        },
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  );
-}
-
-function moodTagColors(label: string, theme: CircadianTheme) {
-  const map: Record<string, string> = {
-    Peaceful: '#3DBDA8',
-    Light: '#9B7BFF',
-    Grateful: '#E89B5C',
-    Hopeful: '#7BC67E',
-    Heavy: '#D46BA8',
-    Overwhelmed: '#6B7FD7',
-    Anxious: '#B79DFF',
-    Tired: theme.isDark ? theme.secondaryText : '#A99CCF',
-    Neutral: theme.isDark ? theme.secondaryText : theme.mutedText,
-  };
-  return map[label] || theme.accent;
-}
-
-function inputSurface(theme: CircadianTheme) {
-  return theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.82)';
+function moodEmoji(entry: JournalEntry) {
+  return entry.mood?.emoji || '💜';
 }
 
 export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
@@ -106,49 +73,43 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
+  const labelAccent = getSanctuaryLabelAccent(theme);
+
   const [text, setText] = useState('');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [viewingId, setViewingId] = useState<number | null>(null);
   const [todayMood, setTodayMood] = useState<{ emoji: string; label: string } | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
-  const dailyPrompt = useMemo(() => {
-    const dayIndex = Math.floor(
-      (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000,
-    );
-    return DAILY_PROMPTS[dayIndex % DAILY_PROMPTS.length];
-  }, []);
-
+  const dailyPrompt = useMemo(() => pickDailyJournalPrompt(), []);
+  const recentEntries = useMemo(() => entries.slice(0, 3), [entries]);
+  const journeyLine = useMemo(() => buildJourneyLine(entries), [entries]);
   const scrollPad = TAB_BAR_HEIGHT + insets.bottom + 24;
 
-  const composerBottomInset = keyboardVisible
-    ? Math.max(insets.bottom, 10)
-    : TAB_BAR_HEIGHT + insets.bottom;
-
-  const inputMinHeight = keyboardVisible ? 112 : 148;
+  const refreshEntries = useCallback(async () => {
+    const loaded = await loadJournalEntries();
+    setEntries(loaded as JournalEntry[]);
+  }, []);
 
   useEffect(() => {
-    AsyncStorage.getItem(JOURNAL_ENTRIES_KEY).then((d) => {
-      if (d) setEntries(JSON.parse(d));
+    void refreshEntries();
+  }, [refreshEntries]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshEntries();
     });
+    return () => sub.remove();
+  }, [refreshEntries]);
+
+  useEffect(() => {
     AsyncStorage.getItem('checkIns').then((raw) => {
       if (!raw) return;
       try {
         const checkIns = JSON.parse(raw);
         const today = getTodayCheckIn(checkIns);
         if (today?.mood?.label) {
-          setTodayMood({ emoji: today.mood.emoji || '🙂', label: today.mood.label });
+          setTodayMood({ emoji: today.mood.emoji || '💜', label: today.mood.label });
         }
       } catch {}
     });
@@ -164,11 +125,23 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
     onNav('talk');
   };
 
+  const reflectWithEmo = async () => {
+    void hapticLight();
+    const draft = text.trim();
+    const prompt = draft
+      ? `I'm journaling and could use help finding the words. Here's what I have so far:\n\n"${draft}"\n\nCan you guide me gently?`
+      : `I'd like help finding the words for my journal today. The reflection prompt is: "${dailyPrompt}"\n\nCan you guide me gently?`;
+    try {
+      await AsyncStorage.setItem(PENDING_TALK_QUERY_KEY, prompt);
+    } catch {}
+    onNav('talk');
+  };
+
   const save = async () => {
     if (!text.trim()) return;
     void hapticMedium();
     Keyboard.dismiss();
-    const mood = todayMood || { emoji: '○', label: 'Reflective' };
+    const mood = todayMood || { emoji: '💜', label: 'Reflective' };
     const entry: JournalEntry = {
       id: Date.now(),
       date: new Date().toISOString(),
@@ -177,22 +150,16 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
     };
     const updated = [entry, ...entries];
     setEntries(updated);
-    await AsyncStorage.setItem(JOURNAL_ENTRIES_KEY, JSON.stringify(updated));
+    await saveJournalEntries(updated);
     setText('');
+    setShowSaved(true);
   };
 
   const deleteEntry = async (id: number) => {
     const updated = entries.filter((e) => e.id !== id);
     setEntries(updated);
-    await AsyncStorage.setItem(JOURNAL_ENTRIES_KEY, JSON.stringify(updated));
+    await saveJournalEntries(updated);
   };
-
-  const dateLine = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
-  const moodLabel = todayMood ? todayMood.label.toUpperCase() : 'NOT CHECKED IN YET';
 
   useEffect(() => {
     if (viewingId === null) return;
@@ -208,24 +175,28 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   if (viewingEntry) {
     const e = viewingEntry;
     return (
-      <View style={styles.flex}>
+      <View style={[styles.flex, { backgroundColor: JOURNAL_BG }]}>
         <CircadianHeroGlow theme={theme} />
         <ScreenSafeArea extraTop={4}>
-          <View style={[styles.detailHeader, { borderBottomColor: theme.border }]}>
+          <View style={[styles.detailHeader, { borderBottomColor: tokens.border.standard }]}>
             <TouchableOpacity onPress={() => setViewingId(null)} style={styles.backBtn}>
               <Text style={[styles.backGlyph, { color: theme.accent }]}>←</Text>
             </TouchableOpacity>
             <View style={styles.flex}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>
-                {new Date(e.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              <Text style={[styles.detailTitle, { color: theme.text }]}>
+                {new Date(e.date).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                })}
               </Text>
-              <Text style={[styles.moodEyebrow, { color: theme.secondaryText }]}>
-                MOOD · {e.mood.label.toUpperCase()}
+              <Text style={[styles.detailMood, { color: theme.secondaryText }]}>
+                {moodEmoji(e)} {e.mood?.label ?? 'Reflective'}
               </Text>
             </View>
             <TouchableOpacity
               onPress={() => {
-                Alert.alert('Delete this entry?', 'This cannot be undone.', [
+                Alert.alert('Delete this reflection?', 'This cannot be undone.', [
                   { text: 'Cancel', style: 'cancel' },
                   {
                     text: 'Delete',
@@ -239,19 +210,35 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               }}
               style={styles.deleteBtn}
             >
-              <Text style={[styles.deleteText, { color: theme.isDark ? '#F472B6' : '#D46BA8' }]}>Delete</Text>
+              <Text style={[styles.deleteText, { color: theme.isDark ? '#F472B6' : '#D46BA8' }]}>
+                Delete
+              </Text>
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ padding: H_PAD, paddingBottom: scrollPad }}>
-            <Text style={[styles.journalReadText, { color: theme.text }]}>{e.text}</Text>
-            <TouchableOpacity
-              style={[styles.askEmoBtn, { backgroundColor: theme.accent }]}
-              activeOpacity={0.88}
+            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.readCard}>
+              <Text style={[styles.journalReadText, { color: theme.text }]}>{e.text}</Text>
+            </CircadianGlassCard>
+            <Pressable
               onPress={() => void askEmoAboutEntry(e)}
+              style={({ pressed }) => [primaryButtonShell, styles.askEmoBtn, pressPrimaryStyle(theme, pressed)]}
             >
-              <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
-              <Text style={styles.askEmoBtnText}>Ask Emo about this</Text>
-            </TouchableOpacity>
+              {({ pressed }) => (
+                <LinearGradient
+                  colors={
+                    pressed
+                      ? getSanctuaryButtonGradientPressed(theme.phase)
+                      : getSanctuaryButtonGradient(theme.phase)
+                  }
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={[primaryButtonInner, styles.askEmoGradient]}
+                >
+                  <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
+                  <Text style={primaryButtonLabel}>Reflect with Emo</Text>
+                </LinearGradient>
+              )}
+            </Pressable>
           </ScrollView>
         </ScreenSafeArea>
       </View>
@@ -259,7 +246,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   }
 
   return (
-    <View style={styles.flex}>
+    <View style={[styles.flex, { backgroundColor: JOURNAL_BG }]}>
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <KeyboardAvoidingView
@@ -268,13 +255,13 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
           keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 52 : 0}
         >
           <View style={styles.chromeWrap}>
-            <ScreenNavChrome theme={theme} title="My Journal" titleFontSize={15} />
+            <ScreenNavChrome theme={theme} />
           </View>
 
           <View style={styles.headerBlock}>
-            <Text style={[styles.dateLine, { color: theme.text }]}>{dateLine}</Text>
-            <Text style={[styles.moodEyebrow, { color: theme.secondaryText, marginBottom: 0 }]}>
-              MOOD TODAY · {moodLabel}
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Your Journal</Text>
+            <Text style={[styles.headerSubtitle, { color: theme.mutedText }]}>
+              A private space for reflection, growth, and self-discovery.
             </Text>
           </View>
 
@@ -283,153 +270,164 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
             style={styles.flex}
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: keyboardVisible ? 12 : 16 },
+              { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 20 },
             ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
           >
-            {!keyboardVisible ? (
-              <View style={styles.pastSection}>
-                {entries.length > 0 ? (
-                  <>
-                    <Text style={[styles.sectionLabel, { color: theme.mutedText }]}>PAST ENTRIES</Text>
-                    {entries.map((e, i) => {
-                      const shortDate = new Date(e.date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      });
-                      const tagColor = moodTagColors(e.mood.label, theme);
-                      const preview =
-                        e.text.length > 72 ? `"${e.text.slice(0, 72).trim()}…"` : `"${e.text.trim()}"`;
+            {/* Today's Reflection */}
+            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
+              <Text style={[styles.heroEyebrow, { color: tokens.text.secondary }]}>✨ Today's Reflection</Text>
+              <Text style={[styles.heroPrompt, { color: theme.text }]}>{dailyPrompt}</Text>
+            </CircadianGlassCard>
 
-                      return (
-                        <TouchableOpacity key={e.id} activeOpacity={0.88} onPress={() => setViewingId(e.id)}>
-                          <JournalGlassCard theme={theme} style={styles.entryCard}>
-                            <View style={styles.entryTop}>
-                              <Text style={[styles.entryDate, { color: theme.text }]}>
-                                {shortDate} · {e.mood.label}
-                              </Text>
-                              <View style={[styles.moodTag, { borderColor: `${tagColor}66` }]}>
-                                <Bookmark size={10} color={tagColor} strokeWidth={2.4} />
-                                <Text style={[styles.moodTagText, { color: tagColor }]}>{e.mood.label}</Text>
-                              </View>
-                            </View>
-                            <Text
-                              style={[styles.entryPreview, { color: theme.secondaryText }]}
-                              numberOfLines={2}
-                            >
-                              {preview}
-                            </Text>
-                          </JournalGlassCard>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </>
-                ) : (
-                  <Text style={[styles.emptyPastHint, { color: theme.mutedText }]}>
-                    Your saved entries will appear here.
-                  </Text>
-                )}
-              </View>
-            ) : null}
-          </ScrollView>
-
-          <View
-            style={[
-              styles.composerDock,
-              {
-                borderTopColor: theme.border,
-                backgroundColor: theme.isDark ? 'rgba(18,10,36,0.98)' : 'rgba(245,240,252,0.98)',
-                paddingBottom: composerBottomInset,
-              },
-            ]}
-          >
-            {!keyboardVisible ? (
-              <>
-                <JournalGlassCard theme={theme} style={styles.promptCard}>
-                  <Text style={[styles.promptLabel, { color: theme.mutedText }]}>TODAY&apos;S PROMPT</Text>
-                  <Text style={[styles.promptText, { color: theme.text }]}>{dailyPrompt}</Text>
-                </JournalGlassCard>
-
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  keyboardShouldPersistTaps="always"
-                  contentContainerStyle={styles.chipRow}
-                  style={styles.chipScroll}
-                >
-                  {CATEGORY_CHIPS.map((chip) => (
-                    <TouchableOpacity
-                      key={chip.label}
-                      style={[styles.categoryChip, { borderColor: chip.color }]}
-                      onPress={() =>
-                        setText((prev) => (prev.trim() ? `${prev}\n\n${chip.starter}` : chip.starter))
-                      }
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[styles.categoryChipText, { color: chip.color }]}>{chip.label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            ) : (
-              <View style={[styles.promptStrip, { borderBottomColor: theme.border, backgroundColor: theme.card }]}>
-                <Sparkles size={13} color={theme.accent} strokeWidth={2.2} />
-                <Text style={[styles.promptStripLabel, { color: theme.mutedText }]}>Prompt</Text>
-                <Text style={[styles.promptStripText, { color: theme.secondaryText }]} numberOfLines={1}>
-                  {dailyPrompt}
-                </Text>
-              </View>
-            )}
-
+            {/* Editor */}
             <View
               style={[
-                styles.inputShell,
+                styles.editorShell,
                 {
-                  borderColor: theme.isDark ? 'rgba(183,157,255,0.45)' : 'rgba(123,111,232,0.35)',
-                  backgroundColor: inputSurface(theme),
-                  minHeight: inputMinHeight,
+                  borderColor: tokens.border.standard,
+                  backgroundColor: JOURNAL_EDITOR_SURFACE,
                 },
               ]}
             >
-              <Text style={[styles.inputEyebrow, { color: theme.mutedText }]}>YOUR ENTRY</Text>
               <TextInput
                 ref={inputRef}
-                style={[styles.journalInput, { color: theme.text, minHeight: inputMinHeight - 42 }]}
+                style={[styles.journalInput, { color: theme.text }]}
                 multiline
-                placeholder="Write what your heart wants to release today…"
+                placeholder={EDITOR_PLACEHOLDER}
                 placeholderTextColor={theme.mutedText}
                 value={text}
                 onChangeText={setText}
                 textAlignVertical="top"
                 blurOnSubmit={false}
-                returnKeyType="default"
-                scrollEnabled
               />
             </View>
 
-            <View style={styles.composeFooter}>
-              <PrimaryActionButton
-                label="Save this entry"
-                theme={theme}
-                onPress={() => void save()}
-                disabled={!text.trim()}
-                disabledHint="Write something to save this entry."
-              />
-
-              {!keyboardVisible ? (
-                <View style={[styles.privacyRow, { borderColor: theme.border, backgroundColor: theme.card }]}>
-                  <Lock size={14} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
-                  <Text style={[styles.privacyText, { color: theme.mutedText }]}>
-                    Stored privately on this device only.
+            <Pressable
+              onPress={() => void save()}
+              disabled={!text.trim()}
+              style={({ pressed }) => [
+                primaryButtonShell,
+                styles.saveBtnWrap,
+                !text.trim() && styles.saveBtnDisabled,
+                text.trim() && pressPrimaryStyle(theme, pressed),
+              ]}
+            >
+              {({ pressed }) => (
+                <LinearGradient
+                  colors={
+                    !text.trim()
+                      ? getSanctuaryButtonGradientDisabled(theme.phase)
+                      : pressed
+                        ? getSanctuaryButtonGradientPressed(theme.phase)
+                        : getSanctuaryButtonGradient(theme.phase)
+                  }
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={[primaryButtonInner, styles.saveBtn]}
+                >
+                  <Text style={[primaryButtonLabel, !text.trim() && primaryButtonLabelDisabled]}>
+                    Save Reflection
                   </Text>
-                </View>
-              ) : null}
+                </LinearGradient>
+              )}
+            </Pressable>
+
+            {/* Reflect with Emo */}
+            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.reflectCard}>
+              <Text style={[styles.reflectEyebrow, { color: labelAccent }]}>
+                💜 Need help finding the words?
+              </Text>
+              <Pressable
+                onPress={() => void reflectWithEmo()}
+                style={({ pressed }) => [
+                  styles.reflectBtn,
+                  { borderColor: tokens.border.strong },
+                  pressed && { opacity: 0.88 },
+                ]}
+              >
+                <MessageCircle size={16} color={theme.accent} strokeWidth={2.2} />
+                <Text style={[styles.reflectBtnText, { color: theme.text }]}>Reflect with Emo</Text>
+              </Pressable>
+            </CircadianGlassCard>
+
+            {/* Recent reflections */}
+            <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>Recent Reflections</Text>
+            {recentEntries.length === 0 ? (
+              <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.emptyCard}>
+                <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
+                  Your recent reflections will appear here — one honest moment at a time.
+                </Text>
+              </CircadianGlassCard>
+            ) : (
+              recentEntries.map((entry) => {
+                const shortDate = new Date(entry.date).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                });
+                const preview =
+                  entry.text.length > 64 ? `${entry.text.slice(0, 64).trim()}…` : entry.text.trim();
+                return (
+                  <Pressable
+                    key={entry.id}
+                    onPress={() => {
+                      void hapticLight();
+                      setViewingId(entry.id);
+                    }}
+                    style={({ pressed }) => [
+                      styles.recentCard,
+                      selectableCardStyle(pressed),
+                      moodCheckInCardShadow(pressed),
+                      pressed && styles.recentCardPressed,
+                    ]}
+                  >
+                    <View style={styles.recentTop}>
+                      <Text
+                        style={[
+                          styles.recentMood,
+                          { color: theme.text },
+                        ]}
+                      >
+                        {moodEmoji(entry)} {entry.mood?.label ?? 'Reflective'}
+                      </Text>
+                      <Text style={[styles.recentDate, { color: theme.mutedText }]}>{shortDate}</Text>
+                    </View>
+                    <Text style={[styles.recentPreview, { color: theme.secondaryText }]} numberOfLines={2}>
+                      {preview}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+
+            {/* Your Journey */}
+            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.journeyCard}>
+              <Text style={[styles.journeyTitle, { color: theme.text }]}>Your Journey</Text>
+              <Text style={[styles.journeyLine, { color: theme.secondaryText }]}>{journeyLine}</Text>
+            </CircadianGlassCard>
+
+            <View style={styles.privacyRow}>
+              <Lock size={14} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
+              <Text style={[styles.privacyText, { color: theme.mutedText }]}>
+                Stored privately on this device only.
+              </Text>
             </View>
-          </View>
+            <CrisisFooter theme={theme} variant="compact" style={styles.crisisFooter} />
+          </ScrollView>
         </KeyboardAvoidingView>
       </ScreenSafeArea>
+
+      <JournalSaveOverlay
+        visible={showSaved}
+        theme={theme}
+        onContinueWriting={() => setShowSaved(false)}
+        onReturnHome={() => {
+          setShowSaved(false);
+          onNav('home');
+        }}
+      />
     </View>
   );
 }
@@ -437,205 +435,169 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   chromeWrap: { paddingHorizontal: 8, paddingBottom: 4 },
-  headerBlock: { paddingHorizontal: H_PAD, paddingTop: 4, paddingBottom: 16, gap: 8 },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: H_PAD,
-  },
-  chromeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: H_PAD,
+  headerBlock: {
+    paddingHorizontal: 28,
     paddingTop: 4,
-    paddingBottom: 8,
-    gap: 8,
-  },
-  chromeSpacer: { flex: 1 },
-  chromeBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 0.5,
+    paddingBottom: 12,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  chromeBtnDisabled: { opacity: 0.45 },
-  chromeBtnPressed: { opacity: 0.82 },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingTop: 6,
-    marginBottom: 10,
-    gap: 16,
-  },
-  headerCopy: { flex: 1, minWidth: 0, gap: 6 },
-  menuBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 0.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    flexShrink: 0,
-  },
-  glassCard: {
-    borderRadius: 22,
-    borderWidth: 0.5,
-    overflow: 'hidden',
-  },
-  heroTitle: {
+  headerTitle: {
     fontFamily: SERIF,
-    fontSize: 28,
-    fontWeight: '600',
-    lineHeight: 34,
-    letterSpacing: 0.2,
+    fontSize: tokens.typography.pageTitle.fontSize,
+    lineHeight: tokens.typography.pageTitle.lineHeight,
+    fontWeight: tokens.typography.pageTitle.fontWeight,
+    marginBottom: 8,
+    textAlign: 'center',
   },
-  dateLine: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '600',
+  headerSubtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
-  moodEyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.3,
-    marginBottom: 24,
-  },
-  composeColumn: {
-    flexGrow: 1,
-    justifyContent: 'flex-start',
-  },
-  composerDock: {
-    borderTopWidth: StyleSheet.hairlineWidth,
+  scrollContent: {
     paddingHorizontal: H_PAD,
-    paddingTop: 14,
     gap: 14,
   },
-  promptCard: {
-    padding: 18,
-    marginBottom: 0,
+  heroCard: {
+    paddingVertical: 22,
+    paddingHorizontal: 20,
   },
-  promptLabel: {
-    fontSize: 10,
+  heroEyebrow: {
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.6,
-    marginBottom: 10,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 14,
   },
-  promptText: {
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
-    fontSize: 17,
-    lineHeight: 26,
-    fontWeight: '400',
+  heroPrompt: {
+    fontFamily: SERIF,
+    fontSize: 22,
+    lineHeight: 32,
   },
-  promptStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  promptStripLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  promptStripText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-    fontStyle: 'italic',
-  },
-  chipScroll: { flexGrow: 0, marginBottom: 0 },
-  chipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingRight: 4,
-  },
-  categoryChip: {
-    borderWidth: 1.5,
-    borderRadius: 999,
+  editorShell: {
+    borderWidth: 1,
+    borderRadius: 20,
+    minHeight: 220,
     paddingHorizontal: 16,
-    paddingVertical: 9,
-  },
-  categoryChipText: { fontSize: 13, fontWeight: '600' },
-  inputShell: {
-    borderWidth: 1.5,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  inputEyebrow: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.4,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 6,
-  },
-  composeFooter: {
-    gap: 12,
-    paddingTop: 2,
+    paddingVertical: 14,
   },
   journalInput: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
     fontSize: 16,
     lineHeight: 26,
+    minHeight: 192,
+    fontFamily: SERIF,
+  },
+  saveBtnWrap: {
+    marginTop: 4,
+  },
+  saveBtnDisabled: {
+    opacity: 1,
+  },
+  saveBtn: {
+    flexDirection: 'row',
+  },
+  reflectCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+  },
+  reflectEyebrow: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  reflectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+  },
+  reflectBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sectionEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: 4,
+    marginBottom: -4,
+    paddingHorizontal: 4,
+  },
+  emptyCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+  },
+  emptyCopy: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  recentCard: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  recentCardPressed: {
+    opacity: 0.96,
+  },
+  recentTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  recentMood: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  recentDate: {
+    fontSize: 12,
+  },
+  recentPreview: {
+    fontFamily: SERIF,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  journeyCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+  },
+  journeyTitle: {
+    fontFamily: SERIF,
+    fontSize: 17,
+    marginBottom: 8,
+  },
+  journeyLine: {
+    fontSize: 15,
+    lineHeight: 23,
   },
   privacyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderWidth: 0.5,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
-  pastSection: {
-    marginTop: 4,
-    paddingTop: 4,
+  privacyText: {
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
   },
-  emptyPastHint: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    paddingVertical: 12,
+  crisisFooter: { marginTop: 8, marginBottom: 4 },
+  readCard: {
+    padding: 18,
   },
-  privacyText: { fontSize: 13, flex: 1, lineHeight: 18 },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.4,
-    marginBottom: 14,
+  journalReadText: {
+    fontFamily: SERIF,
+    fontSize: 16,
+    lineHeight: 26,
   },
-  entryCard: { padding: 16, marginBottom: 10 },
-  entryTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
-  },
-  entryDate: { fontSize: 13, fontWeight: '600', flex: 1 },
-  moodTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 0.5,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    flexShrink: 0,
-  },
-  moodTagText: { fontSize: 11, fontWeight: '600' },
-  entryPreview: { fontSize: 14, lineHeight: 22, fontStyle: 'italic' },
-  journalReadText: { fontSize: 16, lineHeight: 26 },
-  cardTitle: { fontSize: 16, fontWeight: '600' },
   detailHeader: {
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -644,19 +606,27 @@ const styles = StyleSheet.create({
     gap: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  detailTitle: {
+    fontFamily: SERIF,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  detailMood: {
+    fontSize: 13,
+    marginTop: 2,
+  },
   backBtn: { padding: 4 },
   backGlyph: { fontSize: 20 },
   deleteBtn: { padding: 8 },
   deleteText: { fontSize: 13, fontWeight: '600' },
   askEmoBtn: {
+    alignSelf: 'stretch',
+    marginTop: 16,
+  },
+  askEmoGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginTop: 16,
   },
-  askEmoBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
 });

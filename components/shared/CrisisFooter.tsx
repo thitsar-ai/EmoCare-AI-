@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
   DEFAULT_CRISIS_REGION,
@@ -15,6 +15,7 @@ type CrisisFooterProps = {
   /** US default — pass another region when settings support it. */
   region?: CrisisRegion;
   variant?: 'full' | 'compact';
+  align?: 'left' | 'center';
 };
 
 export function CrisisFooter({
@@ -22,14 +23,16 @@ export function CrisisFooter({
   style,
   region = DEFAULT_CRISIS_REGION,
   variant = 'full',
+  align = 'center',
 }: CrisisFooterProps) {
   const line = getCrisisLine(region);
   const linkColor = theme.accent;
   const hasNumber = Boolean(line.phone);
+  const textAlign = align === 'left' ? 'left' : 'center';
 
   if (variant === 'compact') {
     return (
-      <Text style={[styles.text, styles.compactText, { color: theme.mutedText }, style]}>
+      <Text style={[styles.text, styles.compactText, { color: theme.mutedText, textAlign }, style]}>
         If in crisis, contact emergency services
         {hasNumber ? (
           <>
@@ -51,7 +54,7 @@ export function CrisisFooter({
 
   return (
     <View style={style}>
-      <Text style={[styles.text, { color: theme.mutedText }]}>
+      <Text style={[styles.text, { color: theme.mutedText, textAlign }]}>
         If you are in crisis or may hurt yourself, please contact local emergency services or a crisis
         helpline immediately.
         {hasNumber ? (
@@ -88,7 +91,11 @@ function CrisisLink({
 }) {
   return (
     <Text
-      style={[styles.link, { color }]}
+      style={[
+        styles.link,
+        { color, textDecorationColor: color },
+        Platform.OS === 'android' && styles.linkAndroid,
+      ]}
       onPress={onPress}
       accessibilityRole="link"
       accessibilityHint="Opens your phone to connect with a crisis line"
@@ -101,15 +108,21 @@ function CrisisLink({
 const styles = StyleSheet.create({
   text: {
     fontSize: 11,
-    lineHeight: 18,
+    lineHeight: 22,
     textAlign: 'center',
   },
   compactText: {
     fontSize: 13,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   link: {
     fontWeight: '700',
     textDecorationLine: 'underline',
+    lineHeight: 22,
+    paddingBottom: 2,
+  },
+  linkAndroid: {
+    includeFontPadding: true,
+    textDecorationStyle: 'solid',
   },
 });

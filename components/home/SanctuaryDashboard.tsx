@@ -6,6 +6,8 @@ import {
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,27 +16,27 @@ import {
   Bell,
   BookOpen,
   Brain,
-  ChevronLeft,
   ChevronRight,
   Heart,
-  LayoutGrid,
-  RefreshCw,
+  Menu,
   Sparkles,
   Sun,
-  Wind,
 } from 'lucide-react-native';
 import { BRAND_TAGLINE } from '../../constants/brandCopy';
-import { EmoOrb } from '../shared/EmoOrb';
+import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
+import { SANCTUARY_EMO_STANDARD_SCALE } from '../../theme/sanctuaryEmoFace';
+import { SanctuaryMemoryBadge, memoryMoodFromChipLabel } from './SanctuaryMemoryBadge';
+import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
 import { MoodIconBadge } from '../shared/MoodIcon';
-import { CrisisFooter } from '../shared/CrisisFooter';
+import { DailyReflectionHero } from './DailyReflectionHero';
+import { GentleInsightCard } from './GentleInsightCard';
 import { OB_MOODS } from '../../constants/obMoods';
-import { ScreenSafeArea } from '../shared/ScreenSafeArea';
+import { ScreenSafeArea, NavChromeShell } from '../shared/ScreenSafeArea';
 import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import type { MainScreenKey } from '../navigation/AppNavigation';
 import { NavChromeBtn, useAppNav } from '../navigation/AppNavigation';
 import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '../../theme/circadianTheme';
 import {
-  getSanctuaryTalkGradient,
   isSanctuaryDayArt,
 } from '../../theme/sanctuaryHeroArt';
 import { getSanctuaryIconAccent, getSanctuaryIconLink, getSanctuaryLabelAccent } from '../../theme/sanctuaryBrand';
@@ -48,6 +50,7 @@ import {
 import {
   buildWeekMoodStrip,
   countWeekCheckIns,
+  getTodayCheckIns,
   greetingForCircadianTimezone,
   resolveTimezoneId,
   SANCTUARY_REMINDERS,
@@ -55,14 +58,29 @@ import {
 import { NotificationSheet } from './NotificationSheet';
 import { loadSettings } from '../../utils/settingsStorage';
 import { SanctuaryScenicBackdrop } from './SanctuaryScenicBackdrop';
+import { SanctuaryGlassSurface } from '../shared/SanctuaryGlassSurface';
+import { BRAND_CTA_GRADIENT } from '../../theme/tokens';
+import { primaryButtonInner, primaryButtonLabel } from '../../theme/primaryButton';
+import type { GlassSurfaceVariant } from '../../theme/glassSurfaces';
 
 const SERIF = 'Georgia';
 const NAV_CONTENT_HEIGHT = 72;
 
 type CheckInRow = {
+  id?: number;
   date: string;
+  partOfDay?: string;
   mood?: { emoji?: string; label?: string };
+  note?: string;
 };
+
+function formatJourneyTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
 
 function resolveWeekMood(day: { moodLabel: string | null; moodEmoji: string | null }) {
   if (day.moodLabel) {
@@ -100,7 +118,7 @@ function WeekMoodDot({
         styles.moodDot,
         {
           borderColor: active ? theme.accent : `${theme.accent}40`,
-          backgroundColor: active ? `${theme.accent}10` : theme.card,
+          backgroundColor: active ? `${theme.accent}10` : theme.cardElevated,
           borderWidth: active ? 1.5 : 1,
         },
       ]}
@@ -114,21 +132,17 @@ function SanctuaryGlassCard({
   theme,
   children,
   style,
+  variant = 'primary',
 }: {
   theme: CircadianTheme;
   children: React.ReactNode;
-  style?: object;
+  style?: StyleProp<ViewStyle>;
+  variant?: GlassSurfaceVariant;
 }) {
   return (
-    <View
-      style={[
-        styles.glassCard,
-        { backgroundColor: theme.card, borderColor: theme.border },
-        style,
-      ]}
-    >
+    <SanctuaryGlassSurface variant={variant} style={[styles.glassCard, style]}>
       {children}
-    </View>
+    </SanctuaryGlassSurface>
   );
 }
 
@@ -139,10 +153,14 @@ function SanctuaryHero({
   theme,
   greeting,
   displayName,
+  memoryMood,
+  onMemoryPress,
 }: {
   theme: CircadianTheme;
   greeting: string;
   displayName: string;
+  memoryMood: string | null;
+  onMemoryPress?: () => void;
 }) {
   const dayArt = isSanctuaryDayArt(theme.phase);
   const scrimStrong = dayArt ? 'rgba(237,229,245,0.82)' : 'rgba(10,5,32,0.88)';
@@ -150,7 +168,7 @@ function SanctuaryHero({
   const scrimClear = dayArt ? 'rgba(237,229,245,0)' : 'rgba(10,5,32,0)';
 
   return (
-    <View style={styles.heroSection}>
+    <View style={[styles.heroSection]}>
       <LinearGradient
         colors={
           dayArt
@@ -178,27 +196,28 @@ function SanctuaryHero({
       />
 
       <View style={styles.heroInner}>
-        <View style={styles.heroBrandHeader}>
-          <Text style={[styles.heroWelcomeLine, { color: theme.mutedText }]}>
-            Welcome to your quiet space.
+        <View style={styles.heroGreetingCol}>
+          <Text style={[styles.greetingTitle, { color: theme.text }]}>
+            {greeting},{'\n'}
+            {displayName} 💜
+          </Text>
+          {memoryMood ? (
+            <SanctuaryMemoryBadge
+              theme={theme}
+              moodLabel={memoryMood}
+              onPress={onMemoryPress}
+            />
+          ) : null}
+          <Text style={[styles.greetingSub, { color: theme.secondaryText }]}>
+            This is your sanctuary. ♡
           </Text>
         </View>
 
-        <View style={styles.heroMainRow}>
-          <View style={styles.heroGreetingCol}>
-            <Text style={[styles.heroBrandTagline, { color: theme.mutedText }]}>{BRAND_TAGLINE}</Text>
-            <Text style={[styles.greetingTitle, { color: theme.text }]}>
-              {greeting},{'\n'}
-              {displayName} 💜
-            </Text>
-            <Text style={[styles.greetingSub, { color: theme.secondaryText }]}>
-              This is your sanctuary. ♡
-            </Text>
-          </View>
-          <View style={styles.heroOrbCol} pointerEvents="none">
-            <EmoOrb theme={theme} scale={0.91} faceScale={1.22} />
-          </View>
+        <View style={styles.heroOrbCenter} pointerEvents="none">
+          <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_STANDARD_SCALE} />
         </View>
+
+        <Text style={[styles.heroBrandTagline, { color: theme.mutedText }]}>{BRAND_TAGLINE}</Text>
       </View>
 
       <LinearGradient
@@ -223,12 +242,6 @@ function SanctuaryTalkCard({
   theme: CircadianTheme;
   onPress: () => void;
 }) {
-  const dayArt = isSanctuaryDayArt(theme.phase);
-  const talkGradient = getSanctuaryTalkGradient(theme.phase);
-  const scrimLeft = dayArt
-    ? (['rgba(110,88,196,0.95)', 'rgba(110,88,196,0.68)', 'rgba(110,88,196,0)'] as const)
-    : (['rgba(46,32,88,0.95)', 'rgba(46,32,88,0.68)', 'rgba(46,32,88,0)'] as const);
-
   return (
     <Pressable
       onPress={() => {
@@ -237,47 +250,28 @@ function SanctuaryTalkCard({
       }}
       style={({ pressed }) => [styles.talkHeroWrap, pressHeroCardStyle(pressed)]}
     >
-      <LinearGradient
-        colors={talkGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.talkHero}
-      >
-        <View style={styles.talkOrbWrap} pointerEvents="none">
-          <View style={[styles.talkOrbPlate, { backgroundColor: `${theme.accent}18` }]}>
-            <EmoOrb theme={theme} scale={0.52} pulse={false} />
+      <SanctuaryGlassSurface variant="lavender" style={styles.talkHeroGlass}>
+        <View style={styles.talkHeroRow}>
+          <View style={styles.talkHeroCopy}>
+            <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Talk to Emo 💜</Text>
+            <Text style={[styles.talkHeroBody, { color: theme.secondaryText }]}>
+              Whatever is on your heart, we can begin there.
+            </Text>
+            <LinearGradient
+              colors={[...BRAND_CTA_GRADIENT]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={[primaryButtonInner, styles.talkHeroBtn]}
+            >
+              <Text style={[primaryButtonLabel, styles.talkHeroBtnText]}>Start Conversation</Text>
+              <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} />
+            </LinearGradient>
+          </View>
+          <View style={styles.talkOrbWrap} pointerEvents="none">
+            <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_STANDARD_SCALE} />
           </View>
         </View>
-        <LinearGradient
-          colors={scrimLeft}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 0.6, y: 0.5 }}
-          style={styles.heroVignette}
-          pointerEvents="none"
-        />
-        <LinearGradient
-          colors={
-            dayArt
-              ? ['transparent', 'rgba(139,110,212,0.28)']
-              : ['transparent', 'rgba(69,53,117,0.28)']
-          }
-          start={{ x: 0.5, y: 0.68 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.talkHeroBottomFade}
-          pointerEvents="none"
-        />
-        <View style={styles.talkHeroCopy}>
-          <Text style={styles.talkHeroTitle}>Talk to Emo 💜</Text>
-          <Text style={styles.talkHeroBody}>
-            Your private companion who listens, understands, and supports you — always. Whatever is on
-            your heart, we can begin there.
-          </Text>
-          <View style={styles.talkHeroBtn}>
-            <Text style={styles.talkHeroBtnText}>Start Conversation</Text>
-            <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} />
-          </View>
-        </View>
-      </LinearGradient>
+      </SanctuaryGlassSurface>
     </Pressable>
   );
 }
@@ -303,19 +297,17 @@ function QuickActionCard({
         void hapticLight();
         onPress();
       }}
-      style={({ pressed }) => [
-        styles.quickCard,
-        { backgroundColor: theme.card, borderColor: theme.border },
-        pressCardStyle(theme, pressed, iconColor),
-      ]}
+      style={({ pressed }) => [styles.quickCardWrap, pressCardStyle(theme, pressed, iconColor)]}
     >
-      <View style={[styles.quickIconWrap, { backgroundColor: `${iconColor}18` }]}>
-        <Icon size={18} color={iconColor} strokeWidth={2.2} />
-      </View>
-      <Text style={[styles.quickTitle, { color: theme.text }]}>{title}</Text>
-      <Text style={[styles.quickSub, { color: theme.mutedText }]} numberOfLines={2}>
-        {subtitle}
-      </Text>
+      <SanctuaryGlassSurface variant="lavender" style={styles.quickCard}>
+        <View style={[styles.quickIconWrap, { backgroundColor: `${iconColor}18` }]}>
+          <Icon size={18} color={iconColor} strokeWidth={2.2} />
+        </View>
+        <Text style={[styles.quickTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.quickSub, { color: theme.mutedText }]} numberOfLines={2}>
+          {subtitle}
+        </Text>
+      </SanctuaryGlassSurface>
     </Pressable>
   );
 }
@@ -329,27 +321,11 @@ function SanctuaryHeaderBar({
   notificationsOn: boolean;
   onOpenNotifications: () => void;
 }) {
-  const { goBack, goForward, canGoBack, canGoForward, setMenuOpen } = useAppNav();
-  const muted = getCircadianIconColor(theme, 'muted');
+  const { setMenuOpen } = useAppNav();
 
   return (
     <View style={styles.sanctuaryHeaderRow} pointerEvents="box-none">
-      <View style={[styles.sanctuaryHeaderSide, styles.sanctuaryHeaderSideLeft]} pointerEvents="box-none">
-        <NavChromeBtn
-          theme={theme}
-          onPress={goBack}
-          disabled={!canGoBack}
-          accessibilityLabel="Go back"
-        >
-          <ChevronLeft
-            size={18}
-            color={canGoBack ? theme.text : muted}
-            strokeWidth={2.4}
-          />
-        </NavChromeBtn>
-      </View>
-
-      <View style={styles.sanctuaryHeaderCenter} pointerEvents="none">
+      <View style={styles.sanctuaryHeaderBrand} pointerEvents="none">
         <Text style={[styles.sanctuaryEyebrow, { color: theme.accent }]}>SANCTUARY</Text>
       </View>
 
@@ -367,20 +343,8 @@ function SanctuaryHeaderBar({
               />
             ) : null}
           </NavChromeBtn>
-          <NavChromeBtn
-            theme={theme}
-            onPress={goForward}
-            disabled={!canGoForward}
-            accessibilityLabel="Go forward"
-          >
-            <ChevronRight
-              size={18}
-              color={canGoForward ? theme.text : muted}
-              strokeWidth={2.4}
-            />
-          </NavChromeBtn>
           <NavChromeBtn theme={theme} onPress={() => setMenuOpen(true)} accessibilityLabel="Open app menu">
-            <LayoutGrid size={16} color={theme.text} strokeWidth={2.2} />
+            <Menu size={16} color={theme.text} strokeWidth={2.2} />
           </NavChromeBtn>
         </View>
       </View>
@@ -415,30 +379,30 @@ function SanctuaryListRow({
         void hapticLight();
         onPress();
       }}
-      style={({ pressed }) => [
-        styles.listRow,
-        { backgroundColor: theme.card, borderColor: theme.border },
-        pressCardStyle(theme, pressed, iconColor),
-      ]}
+      style={({ pressed }) => [styles.listRowWrap, pressCardStyle(theme, pressed, iconColor)]}
     >
-      <View style={[styles.listIconWrap, { backgroundColor: `${iconColor}16` }]}>
-        <Icon size={18} color={iconColor} strokeWidth={2.2} />
-      </View>
-      <View style={styles.listBody}>
-        <View style={styles.listTitleRow}>
-          <Text style={[styles.listTitle, { color: theme.text }]}>{title}</Text>
-          {badge ? (
-            <View style={[styles.listBadge, { backgroundColor: `${linkColor}22` }]}>
-              <Text style={[styles.listBadgeText, { color: linkColor }]}>{badge}</Text>
+      <SanctuaryGlassSurface variant="primary" style={styles.listRowOuter}>
+        <View style={styles.listRow}>
+          <View style={[styles.listIconWrap, { backgroundColor: `${iconColor}16` }]}>
+            <Icon size={18} color={iconColor} strokeWidth={2.2} />
+          </View>
+          <View style={styles.listBody}>
+            <View style={styles.listTitleRow}>
+              <Text style={[styles.listTitle, { color: theme.text }]}>{title}</Text>
+              {badge ? (
+                <View style={[styles.listBadge, { backgroundColor: `${linkColor}22` }]}>
+                  <Text style={[styles.listBadgeText, { color: linkColor }]}>{badge}</Text>
+                </View>
+              ) : null}
             </View>
-          ) : null}
+            <Text style={[styles.listCopy, { color: theme.mutedText }]}>{body}</Text>
+          </View>
+          <View style={styles.listLinkCol}>
+            <Text style={[styles.listLink, { color: linkColor }]}>{linkLabel}</Text>
+            <ChevronRight size={14} color={linkColor} strokeWidth={2.4} />
+          </View>
         </View>
-        <Text style={[styles.listCopy, { color: theme.mutedText }]}>{body}</Text>
-      </View>
-      <View style={styles.listLinkCol}>
-        <Text style={[styles.listLink, { color: linkColor }]}>{linkLabel}</Text>
-        <ChevronRight size={14} color={linkColor} strokeWidth={2.4} />
-      </View>
+      </SanctuaryGlassSurface>
     </Pressable>
   );
 }
@@ -451,15 +415,16 @@ export function SanctuaryDashboard({
   onNav: (key: MainScreenKey) => void;
 }) {
   const theme = useCircadianTheme();
-  const { bottom: bottomInset } = useLayoutInsets();
+  const { bottom: bottomInset, top: topInset } = useLayoutInsets();
+  const topPad = topInset + 4;
   const { navigateToCheckIn } = useAppNav();
   const displayName = userName.trim() || 'friend';
   const [checkIns, setCheckIns] = useState<CheckInRow[]>([]);
-  const [reminderIdx, setReminderIdx] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [timezoneId, setTimezoneId] = useState('America/New_York');
   const [localHour, setLocalHour] = useState(new Date().getHours());
+  const [memoryMood, setMemoryMood] = useState<string | null>(null);
 
   const greeting = useMemo(
     () => greetingForCircadianTimezone(timezoneId),
@@ -467,12 +432,23 @@ export function SanctuaryDashboard({
   );
 
   const weekStrip = useMemo(() => buildWeekMoodStrip(checkIns), [checkIns]);
+  const todayJourney = useMemo(() => getTodayCheckIns(checkIns), [checkIns]);
   const weekCount = useMemo(() => countWeekCheckIns(checkIns), [checkIns]);
-  const todayCheckedIn = useMemo(() => weekStrip.some((d) => d.isToday && d.checked), [weekStrip]);
+  const todayCheckedIn = todayJourney.length > 0;
   const showEveningReflection = localHour >= 17;
   const iconAccent = getSanctuaryIconAccent(theme);
   const iconLink = getSanctuaryIconLink(theme);
   const labelAccent = getSanctuaryLabelAccent(theme);
+
+  useEffect(() => {
+    void loadEmoPersonalContext(userName).then(({ active, chipLabel }) => {
+      if (!active) {
+        setMemoryMood(null);
+        return;
+      }
+      setMemoryMood(memoryMoodFromChipLabel(chipLabel));
+    });
+  }, [userName, checkIns]);
 
   useEffect(() => {
     AsyncStorage.getItem('checkIns')
@@ -521,7 +497,7 @@ export function SanctuaryDashboard({
     <View style={styles.flex}>
       <SanctuaryScenicBackdrop theme={theme} />
       <ScreenSafeArea extraTop={0}>
-        <View style={styles.chromeWrap}>
+        <NavChromeShell style={styles.chromeWrap}>
           <SanctuaryGlassCard theme={theme} style={styles.sanctuaryNavCard}>
             <SanctuaryHeaderBar
               theme={theme}
@@ -529,11 +505,12 @@ export function SanctuaryDashboard({
               onOpenNotifications={() => setNotificationsOpen(true)}
             />
           </SanctuaryGlassCard>
-        </View>
+        </NavChromeShell>
 
         <ScrollView
           style={styles.flex}
           contentContainerStyle={{
+            paddingTop: topPad + 8,
             paddingBottom: NAV_CONTENT_HEIGHT + bottomInset + 64,
             paddingHorizontal: 18,
           }}
@@ -544,26 +521,51 @@ export function SanctuaryDashboard({
             theme={theme}
             greeting={greeting}
             displayName={displayName}
+            memoryMood={memoryMood}
+            onMemoryPress={() => onNav('memoryledger')}
           />
 
-          <SanctuaryGlassCard theme={theme} style={styles.moodCard}>
+          <DailyReflectionHero theme={theme} />
+
+          <SanctuaryGlassCard theme={theme} variant="lavender" style={styles.moodCard}>
             <View style={styles.moodHeader}>
               <Text style={[styles.cardTitleSerif, { color: theme.text }]}>
-                How are you feeling today?
+                {todayCheckedIn ? "Today's Journey" : 'How are you feeling today?'}
               </Text>
               <Pressable
                 onPress={() => {
                   void hapticLight();
-                  navigateToCheckIn(todayCheckedIn);
+                  navigateToCheckIn(false);
                 }}
                 hitSlop={8}
                 style={({ pressed }) => pressLinkStyle(theme, pressed)}
               >
-                <Text style={[styles.editLink, { color: theme.accent }]}>
-                  {todayCheckedIn ? 'Edit' : 'Check in'}
-                </Text>
+                <Text style={[styles.editLink, { color: theme.accent }]}>Check in</Text>
               </Pressable>
             </View>
+
+            {todayJourney.length > 0 ? (
+              <View style={styles.journeyRow}>
+                {todayJourney.map((entry: { id?: string; date: string; mood?: { label?: string; emoji?: string } }) => {
+                  const mood = resolveWeekMood({
+                    moodLabel: entry.mood?.label ?? null,
+                    moodEmoji: entry.mood?.emoji ?? null,
+                  });
+                  return (
+                    <View key={entry.id ?? entry.date} style={styles.journeyChip}>
+                      {mood ? <MoodIconBadge mood={mood} variant="week" active /> : null}
+                      <Text style={[styles.journeyMood, { color: theme.text }]} numberOfLines={1}>
+                        {entry.mood?.label ?? 'Check-in'}
+                      </Text>
+                      <Text style={[styles.journeyTime, { color: theme.mutedText }]}>
+                        {formatJourneyTime(entry.date)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+
             <View style={styles.moodRow}>
               {weekStrip.map((day, i) => {
                 const active = day.isToday;
@@ -572,7 +574,7 @@ export function SanctuaryDashboard({
                     key={`${day.label}-${i}`}
                     onPress={() => {
                       void hapticLight();
-                      navigateToCheckIn(todayCheckedIn && active);
+                      navigateToCheckIn(false);
                     }}
                     style={({ pressed }) => [styles.moodCol, pressChipStyle(theme.accent, pressed)]}
                   >
@@ -595,7 +597,7 @@ export function SanctuaryDashboard({
               icon={Heart}
               iconColor="#E97D6A"
               title="Check In"
-              subtitle="How are you feeling now?"
+              subtitle="How are you feeling?"
               onPress={() => navigateToCheckIn(false)}
             />
             <QuickActionCard
@@ -603,18 +605,16 @@ export function SanctuaryDashboard({
               icon={BookOpen}
               iconColor={iconAccent}
               title="Journal"
-              subtitle="Write your thoughts and reflect"
+              subtitle="What's on your heart?"
               onPress={() => onNav('journal')}
             />
-            <QuickActionCard
-              theme={theme}
-              icon={Wind}
-              iconColor="#6B7FD7"
-              title="Breathe"
-              subtitle="Reset your mind and body"
-              onPress={() => onNav('breathe')}
-            />
           </View>
+
+          <GentleInsightCard
+            theme={theme}
+            refreshKey={checkIns.length}
+            onExploreInsights={() => onNav('insights')}
+          />
 
           <View style={styles.listSection}>
             <SanctuaryListRow
@@ -650,54 +650,8 @@ export function SanctuaryDashboard({
                 onPress={() => onNav('journal')}
               />
             ) : null}
-            <Pressable
-              onPress={() => {
-                void hapticLight();
-                setReminderIdx((i) => (i + 1) % SANCTUARY_REMINDERS.length);
-              }}
-              style={({ pressed }) => [
-                styles.listRow,
-                { backgroundColor: theme.card, borderColor: theme.border },
-                pressCardStyle(theme, pressed, iconAccent),
-              ]}
-            >
-              <View style={[styles.listIconWrap, { backgroundColor: `${iconAccent}16` }]}>
-                <Sparkles size={18} color={iconAccent} strokeWidth={2.2} />
-              </View>
-              <View style={styles.listBody}>
-                <Text style={[styles.listTitle, { color: theme.text }]}>Daily Reflection</Text>
-                <Text style={[styles.listCopy, { color: theme.mutedText }]}>
-                  A gentle reminder for today — {SANCTUARY_REMINDERS[reminderIdx]}
-                </Text>
-              </View>
-              <View style={styles.listLinkCol}>
-                <RefreshCw size={14} color={iconLink} strokeWidth={2.2} />
-                <Text style={[styles.listLink, { color: iconLink }]}>Another Reminder</Text>
-              </View>
-            </Pressable>
           </View>
 
-          {weekCount > 0 ? (
-            <Text style={[styles.weekQuiet, { color: theme.mutedText }]}>
-              {weekCount} of 7 days checked in this week
-            </Text>
-          ) : null}
-
-          <Pressable
-            onPress={() => {
-              void hapticLight();
-              onNav('today');
-            }}
-            hitSlop={10}
-            style={({ pressed }) => [styles.todayLinkWrap, pressLinkStyle(theme, pressed)]}
-          >
-            <Text style={[styles.todayLinkHint, { color: theme.mutedText }]}>
-              Tasks & planning live on{' '}
-              <Text style={[styles.todayLinkAccent, { color: iconLink }]}>Today →</Text>
-            </Text>
-          </Pressable>
-
-          <CrisisFooter theme={theme} style={styles.crisisFooterWrap} />
           <View style={{ height: bottomInset > 0 ? 8 : 16 }} />
         </ScrollView>
       </ScreenSafeArea>
@@ -714,28 +668,29 @@ export function SanctuaryDashboard({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  chromeWrap: { paddingHorizontal: 0, marginBottom: 10 },
+  chromeWrap: { paddingHorizontal: 0 },
   sanctuaryNavCard: {
-    paddingVertical: 10,
+    paddingVertical: 6,
     paddingHorizontal: 8,
-    borderRadius: 22,
-    overflow: 'visible',
+    borderRadius: 0,
+    overflow: 'hidden',
+    marginBottom: 0,
   },
   sanctuaryHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     minHeight: 44,
+    position: 'relative',
+  },
+  sanctuaryHeaderBrand: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingLeft: 4,
   },
   sanctuaryHeaderSide: {
     flexShrink: 0,
     zIndex: 2,
-  },
-  sanctuaryHeaderSideLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    minWidth: 44,
-    minHeight: 44,
   },
   sanctuaryHeaderSideRight: {
     flexDirection: 'row',
@@ -743,12 +698,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     minHeight: 44,
     flex: 1,
-  },
-  sanctuaryHeaderCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
   },
   sanctuaryHeaderActions: {
     flexDirection: 'row',
@@ -783,40 +732,36 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 10,
+    marginTop: 2,
+    textAlign: 'center',
+    alignSelf: 'center',
   },
   heroSection: {
     marginHorizontal: -HERO_H_PAD,
     marginBottom: 12,
     position: 'relative',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   heroInner: {
     paddingHorizontal: HERO_H_PAD + 6,
-    paddingTop: 0,
+    paddingTop: 6,
     paddingBottom: 10,
     zIndex: 2,
   },
-  heroBrandHeader: {
+  heroOrbCenter: {
     alignItems: 'center',
-    marginBottom: 6,
-  },
-  heroMainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginTop: -4,
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 2,
+    marginBottom: 8,
+    overflow: 'visible',
+    minHeight: 200,
   },
   heroGreetingCol: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-  },
-  heroOrbCol: {
-    flexShrink: 0,
-    marginTop: -8,
-    marginRight: -6,
+    alignSelf: 'stretch',
+    alignItems: 'flex-start',
+    paddingHorizontal: 2,
+    marginBottom: 4,
   },
   heroBottomFade: {
     position: 'absolute',
@@ -838,6 +783,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '400',
+    textAlign: 'left',
   },
   greetingSub: {
     fontFamily: SERIF,
@@ -845,17 +791,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '400',
-    marginTop: 16,
+    marginTop: 10,
+    textAlign: 'left',
   },
   heroVignette: {
     ...StyleSheet.absoluteFillObject,
   },
   glassCard: {
-    borderRadius: 22,
-    borderWidth: 0.5,
     padding: 16,
   },
   moodCard: { marginTop: -6, marginBottom: 12, paddingVertical: 18 },
+  journeyRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  journeyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(123,77,255,0.08)',
+  },
+  journeyMood: { fontSize: 12, fontWeight: '600', maxWidth: 88 },
+  journeyTime: { fontSize: 11, fontWeight: '500' },
   moodHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -876,62 +838,46 @@ const styles = StyleSheet.create({
   },
   moodPlus: { fontSize: 16, fontWeight: '600' },
   moodDayLabel: { fontSize: 11, fontWeight: '600' },
-  talkHeroWrap: { marginBottom: 12, borderRadius: 22, overflow: 'hidden' },
-  talkHero: {
-    minHeight: 176,
-    overflow: 'hidden',
-    position: 'relative',
-    justifyContent: 'center',
+  talkHeroWrap: { marginBottom: 12 },
+  talkHeroGlass: {
+    minHeight: 200,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  talkHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   talkOrbWrap: {
-    position: 'absolute',
-    right: 10,
-    top: 12,
-    zIndex: 1,
-  },
-  talkOrbPlate: {
-    borderRadius: 999,
-    overflow: 'hidden',
+    flexShrink: 0,
+    marginLeft: 4,
+    overflow: 'visible',
+    minWidth: 200,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  talkHeroBottomFade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 64,
-  },
   talkHeroCopy: {
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    maxWidth: '64%',
-    zIndex: 2,
+    flex: 1,
+    minWidth: 0,
   },
   talkHeroTitle: {
-    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
     fontFamily: SERIF,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   talkHeroBody: {
-    color: 'rgba(255,255,255,0.88)',
     fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 14,
+    lineHeight: 18,
+    marginBottom: 10,
   },
   talkHeroBtn: {
     flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
   },
-  talkHeroBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  talkHeroBtnText: { fontSize: 15 },
   sectionEyebrow: {
     fontSize: 10,
     fontWeight: '700',
@@ -939,10 +885,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   quickRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  quickCardWrap: { flex: 1 },
   quickCard: {
     flex: 1,
-    borderRadius: 16,
-    borderWidth: 0.5,
     paddingHorizontal: 9,
     paddingVertical: 11,
     minHeight: 108,
@@ -958,12 +903,12 @@ const styles = StyleSheet.create({
   quickTitle: { fontSize: 12, fontWeight: '700', marginBottom: 3 },
   quickSub: { fontSize: 9, lineHeight: 12 },
   listSection: { gap: 10, marginBottom: 20 },
+  listRowWrap: {},
+  listRowOuter: {},
   listRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    borderWidth: 0.5,
-    borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
@@ -982,12 +927,4 @@ const styles = StyleSheet.create({
   listCopy: { fontSize: 12, lineHeight: 18 },
   listLinkCol: { alignItems: 'flex-end', gap: 2, maxWidth: 96, flexShrink: 0 },
   listLink: { fontSize: 11, fontWeight: '700', textAlign: 'right' },
-  weekQuiet: { fontSize: 12, textAlign: 'center', marginBottom: 8 },
-  todayLinkWrap: { marginBottom: 16 },
-  todayLinkHint: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
-  todayLinkAccent: { fontWeight: '600' },
-  crisisFooterWrap: {
-    marginTop: 8,
-    paddingHorizontal: 6,
-  },
 });

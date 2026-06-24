@@ -45,7 +45,7 @@ function LaunchFallback() {
         style={StyleSheet.absoluteFillObject}
         pointerEvents="none"
       />
-      <SplashStarField theme={SPLASH_THEME} variant="night" />
+      <SplashStarField theme={SPLASH_THEME} variant="sanctuary" />
       <View style={styles.content}>
         <SanctuarySplashContent
           theme={SPLASH_THEME}
@@ -54,7 +54,7 @@ function LaunchFallback() {
           reduceMotion
         />
       </View>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </View>
   );
 }

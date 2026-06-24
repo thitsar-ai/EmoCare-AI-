@@ -9,6 +9,7 @@ import {
   Sun,
   Waves,
 } from 'phosphor-react-native';
+import { rgba, tokens } from '../theme/tokens';
 
 export interface Mood {
   emoji: string;
@@ -22,93 +23,34 @@ export interface Mood {
   iconWeight?: IconWeight;
 }
 
+function moodEntry(
+  emoji: string,
+  label: keyof typeof tokens.mood,
+  desc: string,
+  Icon: Icon,
+  iconWeight: IconWeight = 'duotone',
+): Mood {
+  const accent = tokens.mood[label];
+  return {
+    emoji,
+    label: label.charAt(0).toUpperCase() + label.slice(1),
+    desc,
+    iconBg: rgba(accent, 0.42),
+    iconColor: '#FFFFFF',
+    accentColor: accent,
+    accentBg: rgba(accent, 0.18),
+    Icon,
+    iconWeight,
+  };
+}
+
 export const OB_MOODS: Mood[] = [
-  {
-    emoji: '🌧️',
-    label: 'Heavy',
-    desc: 'Feeling burdened, exhausted, or low.',
-    iconBg: 'rgba(139,92,246,0.42)',
-    iconColor: '#F5F3FF',
-    accentColor: '#8B5CF6',
-    accentBg: 'rgba(139,92,246,0.18)',
-    Icon: CloudRain,
-    iconWeight: 'duotone',
-  },
-  {
-    emoji: '🌊',
-    label: 'Overwhelmed',
-    desc: 'Too much happening at once.',
-    iconBg: 'rgba(59,130,246,0.4)',
-    iconColor: '#EFF6FF',
-    accentColor: '#3B82F6',
-    accentBg: 'rgba(59,130,246,0.18)',
-    Icon: Waves,
-    iconWeight: 'duotone',
-  },
-  {
-    emoji: '☁️',
-    label: 'Neutral',
-    desc: 'Just getting through the day.',
-    iconBg: 'rgba(167,139,250,0.36)',
-    iconColor: '#FAF5FF',
-    accentColor: '#A78BFA',
-    accentBg: 'rgba(167,139,250,0.18)',
-    Icon: SmileyMeh,
-    iconWeight: 'duotone',
-  },
-  {
-    emoji: '🌱',
-    label: 'Hopeful',
-    desc: 'A gentle optimism ahead.',
-    iconBg: 'rgba(52,211,153,0.4)',
-    iconColor: '#ECFDF5',
-    accentColor: '#34D399',
-    accentBg: 'rgba(52,211,153,0.18)',
-    Icon: Plant,
-    iconWeight: 'duotone',
-  },
-  {
-    emoji: '🌤️',
-    label: 'Light',
-    desc: 'Uplifted, brighter, or a little lighter.',
-    iconBg: 'rgba(251,191,36,0.42)',
-    iconColor: '#FFFBEB',
-    accentColor: '#FBBF24',
-    accentBg: 'rgba(251,191,36,0.2)',
-    Icon: Sun,
-    iconWeight: 'duotone',
-  },
-  {
-    emoji: '🕊️',
-    label: 'Peaceful',
-    desc: 'Calm, grounded, and at ease.',
-    iconBg: 'rgba(56,189,248,0.4)',
-    iconColor: '#F0F9FF',
-    accentColor: '#38BDF8',
-    accentBg: 'rgba(56,189,248,0.18)',
-    Icon: Bird,
-    iconWeight: 'duotone',
-  },
-  {
-    emoji: '💜',
-    label: 'Grateful',
-    desc: 'Noticing something good today.',
-    iconBg: 'rgba(192,132,252,0.4)',
-    iconColor: '#FDF4FF',
-    accentColor: '#C084FC',
-    accentBg: 'rgba(192,132,252,0.18)',
-    Icon: Heart,
-    iconWeight: 'fill',
-  },
-  {
-    emoji: '✨',
-    label: 'Joyful',
-    desc: 'Light-hearted, energized, and alive.',
-    iconBg: 'rgba(251,146,60,0.42)',
-    iconColor: '#FFF7ED',
-    accentColor: '#FB923C',
-    accentBg: 'rgba(251,146,60,0.2)',
-    Icon: Sparkle,
-    iconWeight: 'fill',
-  },
+  moodEntry('🌧️', 'heavy', 'Feeling burdened, exhausted, or low.', CloudRain),
+  moodEntry('🌊', 'overwhelmed', 'Too much happening at once.', Waves),
+  moodEntry('☁️', 'neutral', 'Just getting through the day.', SmileyMeh),
+  moodEntry('🌱', 'hopeful', 'A gentle optimism ahead.', Plant),
+  moodEntry('🌤️', 'light', 'Uplifted, brighter, or a little lighter.', Sun),
+  moodEntry('🕊️', 'peaceful', 'Calm, grounded, and at ease.', Bird),
+  { ...moodEntry('💜', 'grateful', 'Noticing something good today.', Heart, 'fill'), iconWeight: 'fill' },
+  { ...moodEntry('✨', 'joyful', 'Light-hearted, energized, and alive.', Sparkle, 'fill'), iconWeight: 'fill' },
 ];

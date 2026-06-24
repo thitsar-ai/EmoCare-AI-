@@ -22,6 +22,8 @@ export function polishEmoReplyText(text) {
     .filter(Boolean)
     .join('\n\n');
 
+  out = out.replace(/^(Hey|Hi|Hello)( there)?[,!\s—-]+/i, '').trim();
+
   return out;
 }
 

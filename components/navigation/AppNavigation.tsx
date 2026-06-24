@@ -16,7 +16,6 @@ import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticLight } from '../../utils/haptics';
 import {
-  AudioLines,
   BookOpen,
   Brain,
   CalendarDays,
@@ -24,27 +23,24 @@ import {
   ChevronRight,
   Heart,
   Home,
-  LayoutGrid,
+  Menu,
   MessageCircle,
   Settings,
   Shield,
   Sparkles,
   TrendingUp,
   User,
-  Wind,
   type LucideIcon,
 } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { getCircadianIconColor } from '../../theme/circadianTheme';
 import { pressNavChromeStyle } from '../../utils/pressFeedback';
-import { DARK_MENU_SURFACE } from '../../theme/circadianTheme';
+import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
 
 export type MainScreenKey =
   | 'home'
   | 'checkin'
   | 'talk'
-  | 'voice'
-  | 'breathe'
   | 'journal'
   | 'insights'
   | 'memoryledger'
@@ -52,7 +48,7 @@ export type MainScreenKey =
   | 'oracle'
   | 'today';
 
-/** Tab bar order (subset of main screens). Voice/Breathe use nearest tab highlight. */
+/** Tab bar order (subset of main screens). */
 export const TAB_BAR_TAB_ORDER: MainScreenKey[] = [
   'home',
   'checkin',
@@ -62,18 +58,7 @@ export const TAB_BAR_TAB_ORDER: MainScreenKey[] = [
 ];
 
 /** Screens that show the bottom tab bar. */
-export const TAB_BAR_SCREENS: MainScreenKey[] = [
-  ...TAB_BAR_TAB_ORDER,
-  'voice',
-  'breathe',
-];
-
-export function tabBarHighlightKey(screen: MainScreenKey): MainScreenKey {
-  if (screen === 'voice') return 'talk';
-  // Breathe is not a tab root — avoid highlighting Journal when user is in Breathe.
-  if (screen === 'breathe') return 'breathe';
-  return screen;
-}
+export const TAB_BAR_SCREENS: MainScreenKey[] = [...TAB_BAR_TAB_ORDER];
 
 /** Bottom tab bar height (excluding safe area). Keep in sync with App.tsx NavBar. */
 export const TAB_BAR_HEIGHT = 72;
@@ -87,22 +72,29 @@ export type FlowStep =
   | { kind: 'onboarding'; slide: 2 | 4 | 5 }
   | { kind: 'screen'; key: MainScreenKey };
 
-/** Guided tour order for onboarding review + forward chevron (not used for back on main screens). */
+/** Onboarding slides listed in the app menu (age gate slide 3 is first-run only — not in menu). */
+export const ONBOARDING_MENU_SLIDES = [2, 4, 5] as const;
+
+/**
+ * Main-app screens in app menu order (Settings last, below the menu divider).
+ * Back uses visit history; the app menu is the primary way to reach secondary screens.
+ */
+export const MAIN_SCREEN_MENU_ORDER: MainScreenKey[] = [
+  'home',
+  'checkin',
+  'today',
+  'talk',
+  'journal',
+  'oracle',
+  'insights',
+  'memoryledger',
+  'settings',
+];
+
+/** Guided tour order for onboarding review (not exposed as forward UI in production). */
 export const FULL_APP_FLOW: FlowStep[] = [
-  { kind: 'onboarding', slide: 2 },
-  { kind: 'onboarding', slide: 4 },
-  { kind: 'onboarding', slide: 5 },
-  { kind: 'screen', key: 'home' },
-  { kind: 'screen', key: 'checkin' },
-  { kind: 'screen', key: 'today' },
-  { kind: 'screen', key: 'talk' },
-  { kind: 'screen', key: 'voice' },
-  { kind: 'screen', key: 'journal' },
-  { kind: 'screen', key: 'breathe' },
-  { kind: 'screen', key: 'oracle' },
-  { kind: 'screen', key: 'insights' },
-  { kind: 'screen', key: 'memoryledger' },
-  { kind: 'screen', key: 'settings' },
+  ...ONBOARDING_MENU_SLIDES.map((slide) => ({ kind: 'onboarding' as const, slide })),
+  ...MAIN_SCREEN_MENU_ORDER.map((key) => ({ kind: 'screen' as const, key })),
 ];
 
 /** Main-app screens only (excludes onboarding). */
@@ -156,6 +148,13 @@ function getNextScreenInFlow(current: MainScreenKey): MainScreenKey | null {
   return null;
 }
 
+/** Menu jumps build linear history from Home → target so back/forward stay in menu order. */
+function screenHistoryForMenuTarget(key: MainScreenKey): MainScreenKey[] {
+  const idx = MAIN_SCREEN_MENU_ORDER.indexOf(key);
+  if (idx < 0) return [key];
+  return MAIN_SCREEN_MENU_ORDER.slice(0, idx + 1);
+}
+
 export type OnboardingSlideKey = 'ob-welcome' | 'ob-privacy' | 'ob-checkin';
 
 export type NavTarget =
@@ -165,6 +164,8 @@ export type NavTarget =
 type AppNavContextValue = {
   screen: MainScreenKey;
   navigate: (key: MainScreenKey) => void;
+  /** App menu — always lands on the target with linear history for back/forward. */
+  navigateFromMenu: (target: NavTarget) => void;
   /** Open Check In — pass true to load today's saved mood/note for editing. */
   navigateToCheckIn: (editToday?: boolean) => void;
   consumeCheckInPrefill: () => boolean;
@@ -228,15 +229,19 @@ export function AppNavProvider({
   }, []);
 
   const applyFlowStep = useCallback(
-    (index: number) => {
+    (index: number, options?: { fromMenu?: boolean }) => {
       const step = FULL_APP_FLOW[index];
       if (!step) return;
       setMenuOpen(false);
+      setImmersiveChromeHidden(false);
       if (step.kind === 'onboarding') {
         setOnboardingReviewSlide(step.slide);
+        bumpNav();
       } else {
         setOnboardingReviewSlide(null);
-        screenHistoryRef.current = [step.key];
+        screenHistoryRef.current = options?.fromMenu
+          ? screenHistoryForMenuTarget(step.key)
+          : [step.key];
         forwardHistoryRef.current = [];
         setScreen(step.key);
         bumpNav();
@@ -252,9 +257,10 @@ export function AppNavProvider({
 
   const resetNavigation = useCallback(
     (key: MainScreenKey = 'home') => {
-      screenHistoryRef.current = [key];
+      screenHistoryRef.current = screenHistoryForMenuTarget(key);
       forwardHistoryRef.current = [];
       setOnboardingReviewSlide(null);
+      setImmersiveChromeHidden(false);
       setMenuOpen(false);
       setScreen(key);
       bumpNav();
@@ -266,9 +272,16 @@ export function AppNavProvider({
     (key: MainScreenKey) => {
       setMenuOpen(false);
       setOnboardingReviewSlide(null);
+      setImmersiveChromeHidden(false);
       const history = screenHistoryRef.current;
       const current = history[history.length - 1] ?? screen;
-      if (current === key) return;
+      if (current === key) {
+        if (screen !== key) {
+          setScreen(key);
+          bumpNav();
+        }
+        return;
+      }
 
       // Tab switch: jump to an existing tab root instead of stacking duplicates (e.g. home → journal → home).
       if (TAB_BAR_TAB_ORDER.includes(key)) {
@@ -326,7 +339,12 @@ export function AppNavProvider({
   const goForward = useCallback(() => {
     if (onboardingReviewSlide != null) {
       const idx = currentFlowIndex();
-      if (idx < FULL_APP_FLOW.length - 1) applyFlowStep(idx + 1);
+      if (idx < FULL_APP_FLOW.length - 1) {
+        const nextStep = FULL_APP_FLOW[idx + 1];
+        applyFlowStep(idx + 1, {
+          fromMenu: nextStep.kind === 'screen',
+        });
+      }
       return;
     }
 
@@ -363,21 +381,36 @@ export function AppNavProvider({
       if (slide === 1) {
         setMenuOpen(false);
         setOnboardingReviewSlide(null);
+        setImmersiveChromeHidden(false);
         return;
       }
       if (slide === OB_AGE_GATE_SLIDE) {
         setMenuOpen(false);
         setOnboardingReviewSlide(null);
+        setImmersiveChromeHidden(false);
         return;
       }
       const idx = FULL_APP_FLOW.findIndex((s) => s.kind === 'onboarding' && s.slide === slide);
-      if (idx >= 0) applyFlowStep(idx);
+      if (idx >= 0) applyFlowStep(idx, { fromMenu: true });
     },
     [applyFlowStep],
   );
 
+  const navigateFromMenu = useCallback(
+    (target: NavTarget) => {
+      if (target.kind === 'onboarding') {
+        openOnboardingSlide(target.slide);
+        return;
+      }
+      const idx = FULL_APP_FLOW.findIndex((s) => s.kind === 'screen' && s.key === target.key);
+      if (idx >= 0) applyFlowStep(idx, { fromMenu: true });
+    },
+    [applyFlowStep, openOnboardingSlide],
+  );
+
   const closeOnboardingReview = useCallback(() => {
     setOnboardingReviewSlide(null);
+    setImmersiveChromeHidden(false);
   }, []);
 
   useEffect(() => {
@@ -403,6 +436,7 @@ export function AppNavProvider({
     () => ({
       screen,
       navigate,
+      navigateFromMenu,
       navigateToCheckIn,
       consumeCheckInPrefill,
       goBack,
@@ -427,6 +461,7 @@ export function AppNavProvider({
     [
       screen,
       navigate,
+      navigateFromMenu,
       navigateToCheckIn,
       consumeCheckInPrefill,
       goBack,
@@ -450,8 +485,6 @@ export function AppNavProvider({
   return <AppNavContext.Provider value={value}>{children}</AppNavContext.Provider>;
 }
 
-const MENU_SOLID = '#2A1848';
-
 /** Main app destinations — Welcome through Memory (Settings below divider). */
 export const MAIN_APP_MENU: {
   label: string;
@@ -466,10 +499,8 @@ export const MAIN_APP_MENU: {
   { label: 'Check In', Icon: Heart, accent: '#E89B5C', target: { kind: 'screen', key: 'checkin' } },
   { label: 'Today', Icon: CalendarDays, accent: '#2A9D8F', target: { kind: 'screen', key: 'today' } },
   { label: 'Talk', Icon: MessageCircle, accent: '#9B7BFF', target: { kind: 'screen', key: 'talk' } },
-  { label: 'Voice Talk', Icon: AudioLines, accent: '#7BC67E', target: { kind: 'screen', key: 'voice' } },
   { label: 'Journal', Icon: BookOpen, accent: '#D4A574', target: { kind: 'screen', key: 'journal' } },
-  { label: 'Breathe', Icon: Wind, accent: '#6B7FD7', target: { kind: 'screen', key: 'breathe' } },
-  { label: 'Oracle', Icon: Sparkles, accent: '#3DBDA8', target: { kind: 'screen', key: 'oracle' } },
+  { label: 'Oracle', Icon: Sparkles, accent: '#58D6D0', target: { kind: 'screen', key: 'oracle' } },
   { label: 'Insights', Icon: TrendingUp, accent: '#6B7FD7', target: { kind: 'screen', key: 'insights' } },
   { label: 'Memory Ledger', Icon: Brain, accent: '#C4A35A', target: { kind: 'screen', key: 'memoryledger' } },
 ];
@@ -480,6 +511,20 @@ const SETTINGS_MENU_ITEM = {
   accent: '#C4B7FF',
   target: { kind: 'screen' as const, key: 'settings' as MainScreenKey },
 };
+
+if (__DEV__) {
+  const menuScreenKeys = MAIN_APP_MENU.filter(
+    (item): item is (typeof MAIN_APP_MENU)[number] & { target: { kind: 'screen'; key: MainScreenKey } } =>
+      item.target.kind === 'screen',
+  ).map((item) => item.target.key);
+  const expectedMenuKeys = MAIN_SCREEN_MENU_ORDER.filter((key) => key !== 'settings');
+  if (JSON.stringify(menuScreenKeys) !== JSON.stringify(expectedMenuKeys)) {
+    console.warn(
+      '[EmoCare Nav] MAIN_APP_MENU screen order does not match MAIN_SCREEN_MENU_ORDER.',
+      { menuScreenKeys, expectedMenuKeys },
+    );
+  }
+}
 
 const PROFILE_MENU_ITEM = {
   label: 'Your name & profile',
@@ -553,7 +598,7 @@ export function AppMenuSheet({
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.menuHeader}>
-              <LayoutGrid size={16} color={theme.accent} strokeWidth={2.2} />
+              <Menu size={16} color={theme.accent} strokeWidth={2.2} />
               <Text style={[styles.menuHeaderText, { color: DARK_MENU_SURFACE.text }]}>EmoCare</Text>
             </View>
             <ScrollView
@@ -609,7 +654,7 @@ export function ProfileNameSheet({
           >
             <Text style={[styles.profileTitle, { color: DARK_MENU_SURFACE.text }]}>What should Emo call you?</Text>
             <Text style={[styles.profileHint, { color: DARK_MENU_SURFACE.mutedText }]}>
-              Saved on this device only. Emo remembers your name across Talk and Voice Talk.
+              Saved on this device only. Emo remembers your name across Talk.
             </Text>
             <TextInput
               style={[
@@ -636,7 +681,7 @@ export function ProfileNameSheet({
                   onSave(draft.trim());
                   onClose();
                 }}
-                style={[styles.profileBtnSave, { backgroundColor: theme.accent }]}
+                style={[styles.profileBtnSave, { backgroundColor: tokens.brand.ctaStart }]}
               >
                 <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Save</Text>
               </Pressable>
@@ -683,7 +728,7 @@ export function NavChromeBtn({ theme, onPress, disabled, accessibilityLabel, chi
 /** Right-side toolbar: optional screen actions → forward → app menu. Single horizontal row. */
 function NavActionToolbar({
   theme,
-  showForward = true,
+  showForward = false,
   showMenu = true,
   canGoForward,
   onForward,
@@ -722,7 +767,7 @@ function NavActionToolbar({
       ) : null}
       {showMenu ? (
         <NavChromeBtn theme={theme} onPress={handleMenu} accessibilityLabel="Open app menu">
-          <LayoutGrid size={17} color={theme.text} strokeWidth={2.2} />
+          <Menu size={17} color={theme.text} strokeWidth={2.2} />
         </NavChromeBtn>
       ) : null}
     </View>
@@ -732,10 +777,10 @@ function NavActionToolbar({
 export function ScreenNavChrome({
   theme,
   title,
-  titleFontSize = 14,
+  titleFontSize = tokens.typography.navTitle.fontSize,
   titleColor,
-  showBack = true,
-  showForward = true,
+  showBack,
+  showForward = false,
   showMenu = true,
   onBack,
   onForward,
@@ -777,14 +822,15 @@ export function ScreenNavChrome({
   const handleBack = onBack ?? goBack;
   const handleForward = onForward ?? goForward;
   const handleMenu = onMenu ?? (() => setMenuOpen(true));
+  const showBackBtn = showBack ?? backEnabled;
   const hasCenter = Boolean(centerContent || title);
-  const actionsOnly = !showBack && !hasCenter;
+  const actionsOnly = !showBackBtn && !hasCenter;
   const leadingActions = actionsBeforeNav ?? extraRight ?? extraTop;
 
   return (
     <View style={[styles.chromeRow, compact && styles.chromeRowCompact, actionsOnly && styles.chromeRowEnd]}>
       <View style={styles.chromeLeft}>
-        {showBack ? (
+        {showBackBtn ? (
           <NavChromeBtn
             theme={theme}
             onPress={handleBack}
@@ -871,11 +917,11 @@ function useEdgeSwipeResponder(
 const SWIPE_CHROME_CLEARANCE = 80;
 
 export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }) {
-  const { width, height } = useWindowDimensions();
+  const { height } = useWindowDimensions();
   const insets = useLayoutInsets();
-  const { screen, goBack, goForward, canGoBack, canGoForward } = useAppNav();
-  const navRef = useRef({ goBack, goForward, canGoBack, canGoForward });
-  navRef.current = { goBack, goForward, canGoBack, canGoForward };
+  const { screen, goBack, canGoBack } = useAppNav();
+  const navRef = useRef({ goBack, canGoBack });
+  navRef.current = { goBack, canGoBack };
   const showTabBar = TAB_BAR_SCREENS.includes(screen);
   const topOffset = insets.top + SWIPE_CHROME_CLEARANCE;
   const edgeHeight =
@@ -887,14 +933,7 @@ export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }
     navRef.current.goBack();
   }, []);
 
-  const triggerForward = useCallback(() => {
-    if (!navRef.current.canGoForward) return;
-    void hapticLight();
-    navRef.current.goForward();
-  }, []);
-
   const leftResponder = useEdgeSwipeResponder('back', enabled && canGoBack, triggerBack);
-  const rightResponder = useEdgeSwipeResponder('forward', enabled && canGoForward, triggerForward);
 
   if (!enabled) return null;
 
@@ -904,21 +943,6 @@ export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }
         <View
           style={[styles.swipeEdge, { width: SWIPE_EDGE_WIDTH, height: edgeHeight, top: topOffset }]}
           {...leftResponder.panHandlers}
-        />
-      ) : null}
-      {canGoForward ? (
-        <View
-          style={[
-            styles.swipeEdge,
-            styles.swipeEdgeRight,
-            {
-              width: SWIPE_EDGE_WIDTH,
-              height: edgeHeight,
-              top: topOffset,
-              left: width - SWIPE_EDGE_WIDTH,
-            },
-          ]}
-          {...rightResponder.panHandlers}
         />
       ) : null}
     </View>
@@ -949,9 +973,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    borderBottomColor: DARK_MENU_SURFACE.headerBorder,
   },
-  menuHeaderText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
+  menuHeaderText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3, color: DARK_MENU_SURFACE.text },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -961,9 +985,9 @@ const styles = StyleSheet.create({
   },
   menuItemBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    borderBottomColor: DARK_MENU_SURFACE.headerBorder,
   },
-  menuItemPressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  menuItemPressed: { backgroundColor: tokens.surface.pressed },
   menuItemText: { fontSize: 15, fontWeight: '500', flex: 1 },
   menuIconWrap: {
     width: 32,
@@ -975,7 +999,7 @@ const styles = StyleSheet.create({
   },
   menuDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: DARK_MENU_SURFACE.headerBorder,
     marginHorizontal: 18,
     marginVertical: 4,
   },
@@ -993,7 +1017,14 @@ const styles = StyleSheet.create({
   },
   profileActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
   profileBtnGhost: { paddingVertical: 10, paddingHorizontal: 14 },
-  profileBtnSave: { paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999 },
+  profileBtnSave: {
+    minHeight: 56,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chromeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1026,8 +1057,9 @@ const styles = StyleSheet.create({
   chromeTitle: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: tokens.typography.navTitle.fontSize,
+    lineHeight: tokens.typography.navTitle.lineHeight,
+    fontWeight: tokens.typography.navTitle.fontWeight,
     paddingHorizontal: 4,
   },
   chromeTitleSpacer: { flex: 1 },

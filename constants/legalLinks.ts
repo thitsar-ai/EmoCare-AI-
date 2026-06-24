@@ -10,11 +10,28 @@ export const IOS_BUNDLE_ID = 'com.tristarinter.emocare';
 export const PRIVACY_POLICY_URL =
   'https://gilded-cellar-692.notion.site/Privacy-Policy-EmoCare-AI-34d20bec5aae80568727d1c2882788e6';
 
-export function openPrivacyPolicy(): void {
-  Linking.openURL(PRIVACY_POLICY_URL).catch(() => {
-    Alert.alert(
-      'Could not open link',
-      'Please visit our Privacy Policy in your browser.',
-    );
+/** Terms of Service — App Store Connect + onboarding agreement. */
+export const TERMS_OF_SERVICE_URL = 'https://emocareai.com/terms';
+
+/** App Store Connect support URL. */
+export const SUPPORT_URL = 'https://emocareai.com/support';
+
+export const SUPPORT_EMAIL = 'info@emocareai.com';
+
+function openUrl(url: string, fallbackMessage: string): void {
+  Linking.openURL(url).catch(() => {
+    Alert.alert('Could not open link', fallbackMessage);
   });
+}
+
+export function openPrivacyPolicy(): void {
+  openUrl(PRIVACY_POLICY_URL, 'Please visit our Privacy Policy in your browser.');
+}
+
+export function openTermsOfService(): void {
+  openUrl(TERMS_OF_SERVICE_URL, 'Please visit our Terms of Service in your browser.');
+}
+
+export function openSupport(): void {
+  openUrl(SUPPORT_URL, `Please email us at ${SUPPORT_EMAIL} for help.`);
 }
