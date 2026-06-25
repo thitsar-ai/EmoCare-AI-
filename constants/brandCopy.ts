@@ -12,10 +12,21 @@ export const BRAND_SPLASH_FOOTER = 'Your Emotional Sanctuary';
 export const TALK_HEADER_TITLE = 'Emo';
 export const TALK_HEADER_TAGLINE = 'Intelligence with Soul';
 
+/** Talk empty-state hero — sanctuary welcome lines. */
+export function buildTalkHeroLines(userName: string) {
+  const name = userName.trim() || 'friend';
+  return {
+    greeting: `Hello, ${name} 💜`,
+    welcomeBack: 'Welcome back.',
+    presence: 'Emo is with you.',
+    prompt: "What's on your heart today?",
+  };
+}
+
 /** First message when starting a new Talk conversation. */
 export function buildTalkWelcomeMessage(userName: string): string {
-  const name = userName.trim() || 'friend';
-  return `Hello, ${name} 💜\nI'm here.\nWhat's on your heart today?`;
+  const { greeting, welcomeBack, presence, prompt } = buildTalkHeroLines(userName);
+  return `${greeting}\n${welcomeBack}\n${presence}\n${prompt}`;
 }
 
 export const TALK_CONVERSATION_STARTERS = [

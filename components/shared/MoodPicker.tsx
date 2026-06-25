@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
-  Dimensions,
   Easing,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type ViewStyle,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -18,7 +18,6 @@ import { rgba } from '../../theme/tokens';
 import { MoodIconBadge } from './MoodIcon';
 import { hapticLight } from '../../utils/haptics';
 
-const SCREEN_W = Dimensions.get('window').width;
 const SELECT_DURATION = 250;
 
 type MoodPickerProps = {
@@ -47,6 +46,8 @@ function moodSelectionGlowStyle(accent: string, selected: boolean): ViewStyle {
   }) as ViewStyle;
 }
 
+const MOOD_CARD_HEIGHT = 92;
+
 function MoodCheckInGlassCard({
   mood,
   selected,
@@ -55,6 +56,7 @@ function MoodCheckInGlassCard({
   theme,
   animateSelection,
   showSelectionGlow,
+  vividSelection,
 }: {
   mood: Mood;
   selected: boolean;
@@ -63,9 +65,24 @@ function MoodCheckInGlassCard({
   theme: CircadianTheme;
   animateSelection: boolean;
   showSelectionGlow: boolean;
+  vividSelection?: boolean;
 }) {
   const useBlur = Platform.OS === 'ios';
   const accent = mood.accentColor ?? mood.iconColor ?? '#A78BFA';
+  const selectionFillAlpha = vividSelection
+    ? theme.isDark
+      ? 0.32
+      : 0.26
+    : theme.isDark
+      ? 0.28
+      : 0.2;
+  const selectionBgAlpha = vividSelection
+    ? theme.isDark
+      ? 0.18
+      : 0.14
+    : theme.isDark
+      ? 0.14
+      : 0.1;
   const scale = useRef(new Animated.Value(selected && animateSelection ? 1.02 : 1)).current;
 
   useEffect(() => {
@@ -107,7 +124,7 @@ function MoodCheckInGlassCard({
           style={[
             StyleSheet.absoluteFillObject,
             styles.selectionGlowFill,
-            { backgroundColor: rgba(accent, theme.isDark ? 0.28 : 0.2) },
+            { backgroundColor: rgba(accent, selectionFillAlpha) },
           ]}
         />
       ) : null}
@@ -118,7 +135,7 @@ function MoodCheckInGlassCard({
           {
             backgroundColor: selected
               ? showSelectionGlow
-                ? rgba(accent, theme.isDark ? 0.14 : 0.1)
+                ? rgba(accent, selectionBgAlpha)
                 : moodCheckInGlass.backgroundSelected
               : moodCheckInGlass.background,
           },
@@ -127,10 +144,12 @@ function MoodCheckInGlassCard({
       <View style={styles.content}>
         <MoodIconBadge mood={mood} variant="full" active={selected} />
         <View style={styles.cardText}>
-          <Text style={[styles.cardTitle, { color: selectableLabelColor(selected, theme.text) }]}>
+          <Text style={[styles.cardTitle, { color: selectableLabelColor(selected, theme.text) }]} numberOfLines={1}>
             {mood.label}
           </Text>
-          <Text style={[styles.cardDesc, { color: theme.mutedText }]}>{mood.desc}</Text>
+          <Text style={[styles.cardDesc, { color: theme.mutedText }]} numberOfLines={2}>
+            {mood.desc}
+          </Text>
         </View>
       </View>
     </View>
@@ -183,9 +202,11 @@ export function MoodPicker({
   horizontalPadding = 28,
   animateSelection = false,
 }: MoodPickerProps) {
-  const cardWidth = (SCREEN_W - horizontalPadding * 2 - 14) / 2;
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth = (windowWidth - horizontalPadding * 2 - 14) / 2;
   const shouldAnimate = animateSelection || variant === 'checkin';
-  const showSelectionGlow = variant === 'checkin';
+  const showSelectionGlow = variant === 'checkin' || variant === 'onboarding';
+  const vividSelection = variant === 'onboarding';
 
   return (
     <View style={[styles.grid, variant === 'onboarding' ? styles.gridOnboarding : styles.gridCheckin]}>
@@ -200,6 +221,7 @@ export function MoodPicker({
             theme={theme}
             animateSelection={shouldAnimate}
             showSelectionGlow={showSelectionGlow}
+            vividSelection={vividSelection}
             onPress={() => {
               void hapticLight();
               onSelect(m);
@@ -222,7 +244,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   gridOnboarding: {
-    marginBottom: 22,
+    marginBottom: 28,
   },
   pressed: {
     opacity: 0.94,
@@ -248,7 +270,8 @@ const styles = StyleSheet.create({
     borderRadius: moodCheckInGlass.radius,
     borderWidth: 1,
     overflow: 'hidden',
-    minHeight: 74,
+    height: MOOD_CARD_HEIGHT,
+    minHeight: MOOD_CARD_HEIGHT,
   },
   content: {
     flexDirection: 'row',
@@ -257,8 +280,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     gap: 10,
     zIndex: 1,
+    height: MOOD_CARD_HEIGHT,
   },
-  cardText: { flex: 1, paddingTop: 3 },
-  cardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 5, lineHeight: 16 },
-  cardDesc: { fontSize: 11, lineHeight: 16 },
+  cardText: { flex: 1, minWidth: 0, paddingTop: 3 },
+  cardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 5, lineHeight: 16, flexShrink: 1 },
+  cardDesc: { fontSize: 11, lineHeight: 16, flexShrink: 1 },
 });

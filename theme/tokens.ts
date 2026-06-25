@@ -61,7 +61,7 @@ export const tokens = {
     /** Body copy. */
     body: '#4A3B6B',
     /** Labels, eyebrows, captions, placeholders. */
-    secondary: '#7A6A9A',
+    secondary: '#5E4F7A',
     disabled: '#7A6A9A',
     /** Labels on primary CTA buttons. */
     onCta: '#FFFFFF',
@@ -95,8 +95,8 @@ export const tokens = {
     leafGlow: '#FFF9F1',
   },
   oracle: {
-    accent: '#58D6D0',
-    accentSecondary: '#A8F4EF',
+    accent: '#12D4CB',
+    accentSecondary: '#6AF0E8',
   },
   gold: {
     accent: '#D9BE87',
@@ -153,6 +153,14 @@ export const SANCTUARY_CANVAS_GRADIENT: readonly [string, string] = [
 export const BRAND_CTA_GRADIENT: readonly [string, string] = [
   tokens.brand.ctaStart,
   tokens.brand.ctaEnd,
+];
+
+/** User chat bubbles on Talk — vibrant purple → violet → warm coral. */
+export const CHAT_USER_BUBBLE_GRADIENT: readonly [string, string, string, string] = [
+  '#7A59CF',
+  '#8B6BD9',
+  '#B584FF',
+  '#F0A896',
 ];
 
 /** Light decorative gradient — cards, chips (not primary buttons). */

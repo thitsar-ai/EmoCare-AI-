@@ -14,7 +14,7 @@ type CrisisFooterProps = {
   style?: StyleProp<ViewStyle>;
   /** US default — pass another region when settings support it. */
   region?: CrisisRegion;
-  variant?: 'full' | 'compact';
+  variant?: 'full' | 'compact' | 'home';
   align?: 'left' | 'center';
 };
 
@@ -29,6 +29,35 @@ export function CrisisFooter({
   const linkColor = theme.accent;
   const hasNumber = Boolean(line.phone);
   const textAlign = align === 'left' ? 'left' : 'center';
+
+  if (variant === 'home') {
+    return (
+      <View style={[styles.homeWrap, style]}>
+        <Text style={[styles.text, styles.homeLead, { color: theme.mutedText, textAlign }]}>
+          Need immediate help?
+        </Text>
+        <Text style={[styles.text, styles.homeLine, { color: theme.mutedText, textAlign }]}>
+          {hasNumber ? (
+            <>
+              <CrisisLink color={linkColor} onPress={() => openCrisisCall(line.phone)}>
+                Call {line.display}
+              </CrisisLink>
+              {' or '}
+              <CrisisLink color={linkColor} onPress={() => openCrisisText(line.sms)}>
+                text {line.display}
+              </CrisisLink>
+              .
+            </>
+          ) : (
+            <>Reach your local crisis line.</>
+          )}
+        </Text>
+        <Text style={[styles.text, styles.homeDisclaimer, { color: theme.mutedText, textAlign }]}>
+          EmoCare is not emergency care.
+        </Text>
+      </View>
+    );
+  }
 
   if (variant === 'compact') {
     return (
@@ -114,6 +143,25 @@ const styles = StyleSheet.create({
   compactText: {
     fontSize: 13,
     lineHeight: 22,
+  },
+  homeWrap: {
+    marginTop: 4,
+    marginBottom: 8,
+    gap: 2,
+  },
+  homeLead: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  homeLine: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  homeDisclaimer: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
   },
   link: {
     fontWeight: '700',

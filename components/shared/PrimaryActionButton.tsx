@@ -2,15 +2,10 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import {
-  getSanctuaryButtonGradient,
-  getSanctuaryButtonGradientDisabled,
-  getSanctuaryButtonGradientPressed,
-} from '../../theme/sanctuaryBrand';
+import { getSanctuaryButtonGradient } from '../../theme/sanctuaryBrand';
 import {
   primaryButtonInner,
   primaryButtonLabel,
-  primaryButtonLabelDisabled,
   primaryButtonShell,
 } from '../../theme/primaryButton';
 import { hapticLight } from '../../utils/haptics';
@@ -39,10 +34,14 @@ export function PrimaryActionButton({
   style,
   testID,
 }: PrimaryActionButtonProps) {
+  const displayLabel = prefix ? `${prefix}  ${label}` : label;
+  const gradient = getSanctuaryButtonGradient(theme.phase);
+
   return (
     <View style={[styles.wrap, style]}>
       <Pressable
         onPress={() => {
+          if (disabled) return;
           void hapticLight();
           onPress();
         }}
@@ -52,28 +51,27 @@ export function PrimaryActionButton({
         testID={testID}
         style={({ pressed }) => [
           primaryButtonShell,
-          !disabled && primaryRestingShadow(theme),
+          styles.button,
+          styles.buttonVisible,
+          primaryRestingShadow(theme),
           !disabled && pressPrimaryStyle(theme, pressed),
         ]}
       >
-        {({ pressed }) => (
-          <LinearGradient
-            colors={
-              disabled
-                ? getSanctuaryButtonGradientDisabled(theme.phase)
-                : pressed
-                  ? getSanctuaryButtonGradientPressed(theme.phase)
-                  : getSanctuaryButtonGradient(theme.phase)
-            }
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={primaryButtonInner}
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={primaryButtonInner}
+        >
+          <Text
+            style={primaryButtonLabel}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.88}
           >
-            <Text style={[primaryButtonLabel, disabled && primaryButtonLabelDisabled]}>
-              {prefix ? `${prefix}  ${label}` : label}
-            </Text>
-          </LinearGradient>
-        )}
+            {displayLabel}
+          </Text>
+        </LinearGradient>
       </Pressable>
       {disabled && disabledHint ? (
         <Text style={[styles.hint, { color: theme.mutedText }]} accessibilityLiveRegion="polite">
@@ -85,7 +83,10 @@ export function PrimaryActionButton({
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: 4 },
+  wrap: { marginBottom: 4, alignSelf: 'stretch', width: '100%' },
+  button: { width: '100%' },
+  /** Keep full brand purple visible — never fade when disabled or pressed. */
+  buttonVisible: { opacity: 1 },
   hint: {
     marginTop: 8,
     fontSize: 13,

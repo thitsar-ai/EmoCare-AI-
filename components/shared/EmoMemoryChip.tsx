@@ -33,7 +33,7 @@ export function EmoMemoryChip({ theme, label, onPress }: Props) {
     >
       <Sparkles size={11} color={theme.accent} strokeWidth={2.2} />
       <Text style={[styles.chipPrefix, { color: theme.accent }]}>Remembers</Text>
-      <Text style={[styles.chipLabel, { color: theme.secondaryText }]} numberOfLines={1}>
+      <Text style={[styles.chipLabel, { color: theme.secondaryText }]} numberOfLines={2}>
         {label}
       </Text>
     </Pressable>
@@ -44,7 +44,8 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
+    flexWrap: 'wrap',
+    alignSelf: 'flex-start',
     gap: 5,
     maxWidth: '100%',
     paddingHorizontal: 11,

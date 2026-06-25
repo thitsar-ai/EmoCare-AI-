@@ -10,9 +10,9 @@ export const SANCTUARY_EMO_SCALES = {
   splash: 2.05,
   sanctuary: SANCTUARY_EMO_STANDARD_SCALE,
   hero: SANCTUARY_EMO_STANDARD_SCALE,
-  header: SANCTUARY_EMO_STANDARD_SCALE,
-  compact: SANCTUARY_EMO_STANDARD_SCALE,
-  inline: SANCTUARY_EMO_STANDARD_SCALE,
+  header: 0.48,
+  compact: 0.72,
+  inline: 0.56,
 } as const;
 
 export type SanctuaryEmoPresenceSize = keyof typeof SANCTUARY_EMO_SCALES;

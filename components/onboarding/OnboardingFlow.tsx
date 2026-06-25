@@ -28,10 +28,8 @@ import { OB_MOODS, type Mood } from '../../constants/obMoods';
 import { openPrivacyPolicy, openTermsOfService } from '../../constants/legalLinks';
 import { SanctuarySplashContent, SplashStarField } from '../shared/SanctuarySplash';
 import { MoodPicker } from '../shared/MoodPicker';
+import { PrimaryActionButton } from '../shared/PrimaryActionButton';
 import {
-  getSanctuaryButtonGradient,
-  getSanctuaryButtonGradientDisabled,
-  getSanctuaryButtonGradientPressed,
   getSanctuaryLavenderAccent,
   getSanctuaryLavenderBorder,
   getSanctuaryLavenderFieldBg,
@@ -39,12 +37,7 @@ import {
   getSanctuaryIconAccent,
   getSanctuaryLabelAccent,
 } from '../../theme/sanctuaryBrand';
-import {
-  primaryButtonInner,
-  primaryButtonLabel,
-  primaryButtonLabelDisabled,
-  primaryButtonShell,
-} from '../../theme/primaryButton';
+import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
 import {
   getCircadianIconColor,
@@ -155,35 +148,23 @@ function LavenderButton({
   onPress,
   disabled,
   theme,
+  disabledHint,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   theme: CircadianTheme;
+  disabledHint?: string;
 }) {
   return (
-    <Pressable
+    <PrimaryActionButton
+      label={label}
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [primaryButtonShell, styles.ctaWrap, disabled && styles.ctaDisabled]}
-    >
-      {({ pressed }) => (
-        <LinearGradient
-          colors={
-            disabled
-              ? getSanctuaryButtonGradientDisabled(theme.phase)
-              : pressed
-                ? getSanctuaryButtonGradientPressed(theme.phase)
-                : getSanctuaryButtonGradient(theme.phase)
-          }
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={[primaryButtonInner, styles.ctaBtn]}
-        >
-          <Text style={[primaryButtonLabel, disabled && primaryButtonLabelDisabled]}>{label}</Text>
-        </LinearGradient>
-      )}
-    </Pressable>
+      disabledHint={disabledHint}
+      theme={theme}
+      style={styles.ctaWrap}
+    />
   );
 }
 
@@ -211,17 +192,30 @@ function AgeGateSlide({
   const fieldsComplete = month.length >= 1 && day.length >= 1 && year.length === 4;
   const validDate = birthDate != null;
   const eligible = validDate && isAtLeast18(birthDate);
-  const canContinue = ageConfirmed && fieldsComplete && validDate;
+  const canContinue = ageConfirmed || (fieldsComplete && validDate && eligible);
+
+  const continueHint =
+    fieldsComplete && !validDate
+      ? 'Please enter a valid date of birth.'
+      : fieldsComplete && validDate && !eligible && !ageConfirmed
+        ? 'You must be 18 or older to use EmoCare.'
+        : 'Confirm you are 18+ or enter your full date of birth to continue.';
 
   const handleContinue = async () => {
     setAttempted(true);
-    if (!ageConfirmed || !validDate) return;
-    if (!isAtLeast18(birthDate)) {
-      setBlocked(true);
+    if (validDate && birthDate) {
+      if (!isAtLeast18(birthDate)) {
+        setBlocked(true);
+        return;
+      }
+      await persistAgeVerified();
+      onVerified();
       return;
     }
-    await persistAgeVerified();
-    onVerified();
+    if (ageConfirmed) {
+      await persistAgeVerified();
+      onVerified();
+    }
   };
 
   const openResource = (type: 'phone' | 'sms' | 'info', value: string, smsBody?: string) => {
@@ -305,12 +299,16 @@ function AgeGateSlide({
         <View
           style={[
             styles.ageConfirmBox,
-            { borderColor: ageConfirmed ? getSanctuaryIconAccent(theme) : getSanctuaryLavenderBorder(theme.phase) },
-            ageConfirmed && { backgroundColor: `${getSanctuaryLavenderAccent(theme.phase)}28` },
+            {
+              borderColor: ageConfirmed ? getSanctuaryIconAccent(theme) : tokens.border.active,
+              backgroundColor: ageConfirmed
+                ? `${getSanctuaryLavenderAccent(theme.phase)}28`
+                : tokens.surface.inset,
+            },
           ]}
         >
           {ageConfirmed ? (
-            <Check size={14} color={getSanctuaryIconAccent(theme)} strokeWidth={3} />
+            <Check size={15} color={getSanctuaryIconAccent(theme)} strokeWidth={3} />
           ) : null}
         </View>
         <Text style={[styles.ageConfirmText, { color: theme.text }]}>
@@ -395,17 +393,13 @@ function AgeGateSlide({
       ) : null}
 
       <LavenderButton
-        label="Continue"
+        label="Continue →"
         onPress={() => void handleContinue()}
         disabled={!canContinue}
         theme={theme}
+        disabledHint={!canContinue ? continueHint : undefined}
       />
-      {!canContinue ? (
-        <Text style={[styles.ageHint, { color: theme.mutedText }]}>
-          Confirm you are 18+ and enter your full date of birth to continue.
-        </Text>
-      ) : null}
-      {fieldsComplete && validDate && !eligible ? (
+      {attempted && fieldsComplete && validDate && !eligible && !ageConfirmed ? (
         <Text style={[styles.ageHint, { color: theme.mutedText }]}>
           You must be 18 or older to use EmoCare.
         </Text>
@@ -929,11 +923,18 @@ export function OnboardingFlow({
           >
             <ScrollView
               style={styles.flex}
-              contentContainerStyle={[styles.scrollPad, styles.checkinScroll, { paddingBottom: 12 }]}
+              contentContainerStyle={[
+                styles.scrollPad,
+                styles.checkinScroll,
+                { paddingBottom: keyboardVisible ? 16 : 32 },
+              ]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
             >
+              <Text style={[styles.headline, { color: theme.text, marginBottom: 10 }]}>
+                Tell me{'\n'}about you.
+              </Text>
               <Text style={[styles.checkinSub, { color: theme.mutedText }]}>
                 So I can support you in a way that feels personal.
               </Text>
@@ -1283,10 +1284,10 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   ageConfirmBox: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     borderRadius: 6,
-    borderWidth: 1.5,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
