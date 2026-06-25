@@ -434,7 +434,9 @@ function SettingRow({
   return (
     <View style={[styles.settingRow, !last && { borderBottomColor: theme.border, ...styles.settingRowBorder }]}>
       <Text style={[styles.rowLabel, { color: theme.text }]}>{label}</Text>
-      <Text style={[styles.rowValue, { color: theme.mutedText }]}>{value}</Text>
+      <Text style={[styles.rowValue, { color: theme.mutedText }]} numberOfLines={2}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -467,8 +469,8 @@ const styles = StyleSheet.create({
   switchState: { fontSize: 14, fontWeight: '600', minWidth: 28, textAlign: 'right' },
   rowHint: { fontSize: 13, lineHeight: 18, marginTop: 4 },
   reminderHint: { paddingHorizontal: 4, paddingBottom: 10 },
-  rowLabel: { fontSize: 17, lineHeight: 22 },
-  rowValue: { fontSize: 16 },
+  rowLabel: { fontSize: 17, lineHeight: 22, flex: 1, minWidth: 0, paddingRight: 12 },
+  rowValue: { fontSize: 16, flexShrink: 0, maxWidth: '42%', textAlign: 'right' },
   linkRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

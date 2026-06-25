@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
+  buildTalkHeroLines,
   TALK_CONVERSATION_STARTERS,
   TALK_CONVERSATION_SURFACE,
 } from '../../constants/brandCopy';
@@ -24,7 +25,7 @@ type Props = {
 };
 
 export function TalkCompanionPanel({ theme, userName, lastCheckIn, onStarterPress }: Props) {
-  const name = userName.trim() || 'friend';
+  const hero = buildTalkHeroLines(userName);
 
   return (
     <View style={styles.panel}>
@@ -33,11 +34,10 @@ export function TalkCompanionPanel({ theme, userName, lastCheckIn, onStarterPres
       </View>
 
       <View style={styles.welcomeBlock} accessibilityRole="header">
-        <Text style={[styles.welcomeLine1, { color: theme.text }]}>Hello, {name} 💜</Text>
-        <Text style={[styles.welcomeLine2, { color: theme.text }]}>I'm here.</Text>
-        <Text style={[styles.welcomeLine3, { color: theme.secondaryText }]}>
-          What's on your heart today?
-        </Text>
+        <Text style={[styles.welcomeLine1, { color: theme.text }]}>{hero.greeting}</Text>
+        <Text style={[styles.welcomeLineWelcome, { color: theme.secondaryText }]}>{hero.welcomeBack}</Text>
+        <Text style={[styles.welcomeLine2, { color: theme.text }]}>{hero.presence}</Text>
+        <Text style={[styles.welcomeLine3, { color: theme.secondaryText }]}>{hero.prompt}</Text>
       </View>
 
       {lastCheckIn?.label ? (
@@ -104,6 +104,13 @@ const styles = StyleSheet.create({
     lineHeight: 32,
     textAlign: 'center',
   },
+  welcomeLineWelcome: {
+    fontFamily: SERIF,
+    fontSize: 17,
+    lineHeight: 24,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
   welcomeLine2: {
     fontFamily: SERIF,
     fontSize: 20,
@@ -115,7 +122,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 26,
     textAlign: 'center',
-    marginTop: 4,
   },
   checkInCard: {
     marginBottom: 22,

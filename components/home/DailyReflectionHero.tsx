@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { RefreshCw, Sparkles } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { getSanctuaryLabelAccent } from '../../theme/sanctuaryBrand';
@@ -11,10 +11,13 @@ import {
   type DailyReflection,
 } from '../../utils/dailyReflections';
 import { SanctuaryGlassSurface } from '../shared/SanctuaryGlassSurface';
+import { isNarrowPhone } from '../../utils/layoutBreakpoints';
 
 const SERIF = 'Georgia';
 
 export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
+  const { width } = useWindowDimensions();
+  const narrow = isNarrowPhone(width);
   const [reflection, setReflection] = useState<DailyReflection | null>(null);
   const [rotationOffset, setRotationOffset] = useState(0);
   const labelAccent = getSanctuaryLabelAccent(theme);
@@ -47,7 +50,15 @@ export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
         </View>
 
         <View style={styles.body}>
-          <Text style={[styles.mainLine, { color: theme.text }]}>{reflection.text}</Text>
+          <Text
+            style={[
+              styles.mainLine,
+              narrow && styles.mainLineNarrow,
+              { color: theme.text },
+            ]}
+          >
+            {reflection.text}
+          </Text>
           {reflection.sub ? (
             <Text style={[styles.subLine, { color: theme.secondaryText }]}>{reflection.sub}</Text>
           ) : null}
@@ -60,8 +71,8 @@ export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
           accessibilityLabel="Refresh reflection"
           accessibilityRole="button"
         >
-          <RefreshCw size={11} color={theme.mutedText} strokeWidth={2.4} />
-          <Text style={[styles.rotateLabel, { color: theme.mutedText }]}>Refresh Reflection</Text>
+          <RefreshCw size={11} color={theme.secondaryText} strokeWidth={2.4} />
+          <Text style={[styles.rotateLabel, { color: theme.secondaryText }]}>Refresh Reflection</Text>
         </Pressable>
       </SanctuaryGlassSurface>
     </View>
@@ -70,11 +81,11 @@ export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
 
 const styles = StyleSheet.create({
   card: {
-    paddingHorizontal: 32,
-    paddingTop: 28,
-    paddingBottom: 28,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 24,
     marginBottom: 16,
-    minHeight: 188,
+    minHeight: 168,
     alignItems: 'center',
   },
   header: {
@@ -104,6 +115,10 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     textAlign: 'center',
     letterSpacing: 0.15,
+  },
+  mainLineNarrow: {
+    fontSize: 21,
+    lineHeight: 30,
   },
   subLine: {
     fontFamily: SERIF,

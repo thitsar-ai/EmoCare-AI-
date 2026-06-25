@@ -547,9 +547,10 @@ export function AppMenuSheet({
   onOpenProfile: () => void;
 }) {
   const insets = useLayoutInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const menuTop = insets.top + 52;
   const menuMaxHeight = Math.min(windowHeight * 0.62, windowHeight - menuTop - insets.bottom - 20);
+  const menuWidth = Math.min(300, Math.max(272, windowWidth - 28));
 
   const renderMenuItem = (
     item: {
@@ -577,7 +578,7 @@ export function AppMenuSheet({
       <View style={[styles.menuIconWrap, { backgroundColor: `${item.accent}20`, borderColor: `${item.accent}44` }]}>
         <item.Icon size={16} color={item.accent} strokeWidth={2.2} />
       </View>
-      <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]} numberOfLines={1}>
+      <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]} numberOfLines={2}>
         {item.label}
       </Text>
     </Pressable>
@@ -593,7 +594,12 @@ export function AppMenuSheet({
           <Pressable
             style={[
               styles.menuSheet,
-              { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border, maxHeight: menuMaxHeight },
+              {
+                backgroundColor: MENU_SOLID,
+                borderColor: DARK_MENU_SURFACE.border,
+                maxHeight: menuMaxHeight,
+                width: menuWidth,
+              },
             ]}
             onPress={(e) => e.stopPropagation()}
           >
@@ -851,7 +857,9 @@ export function ScreenNavChrome({
       ) : title ? (
         <Text
           style={[styles.chromeTitle, { color: titleColor ?? theme.text, fontSize: titleFontSize }]}
-          numberOfLines={1}
+          numberOfLines={2}
+          adjustsFontSizeToFit={Platform.OS === 'ios'}
+          minimumFontScale={Platform.OS === 'ios' ? 0.85 : undefined}
         >
           {title}
         </Text>
@@ -953,7 +961,6 @@ const styles = StyleSheet.create({
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   menuAnchor: { width: '100%', alignItems: 'flex-end' },
   menuSheet: {
-    width: 272,
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
@@ -988,7 +995,7 @@ const styles = StyleSheet.create({
     borderBottomColor: DARK_MENU_SURFACE.headerBorder,
   },
   menuItemPressed: { backgroundColor: tokens.surface.pressed },
-  menuItemText: { fontSize: 15, fontWeight: '500', flex: 1 },
+  menuItemText: { fontSize: 15, fontWeight: '500', flex: 1, lineHeight: 20 },
   menuIconWrap: {
     width: 32,
     height: 32,
@@ -1056,6 +1063,7 @@ const styles = StyleSheet.create({
   chromeBtnDisabled: { opacity: 0.58 },
   chromeTitle: {
     flex: 1,
+    minWidth: 0,
     textAlign: 'center',
     fontSize: tokens.typography.navTitle.fontSize,
     lineHeight: tokens.typography.navTitle.lineHeight,

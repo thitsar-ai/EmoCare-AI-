@@ -14,11 +14,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   BarChart3,
   Bell,
-  BookOpen,
   Brain,
   ChevronRight,
   Heart,
-  Menu,
   Sparkles,
   Sun,
 } from 'lucide-react-native';
@@ -34,7 +32,7 @@ import { OB_MOODS } from '../../constants/obMoods';
 import { ScreenSafeArea, NavChromeShell } from '../shared/ScreenSafeArea';
 import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import type { MainScreenKey } from '../navigation/AppNavigation';
-import { NavChromeBtn, useAppNav } from '../navigation/AppNavigation';
+import { NavChromeBtn, ScreenNavChrome, useAppNav } from '../navigation/AppNavigation';
 import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '../../theme/circadianTheme';
 import {
   isSanctuaryDayArt,
@@ -60,7 +58,7 @@ import { loadSettings } from '../../utils/settingsStorage';
 import { SanctuaryScenicBackdrop } from './SanctuaryScenicBackdrop';
 import { SanctuaryGlassSurface } from '../shared/SanctuaryGlassSurface';
 import { CrisisFooter } from '../shared/CrisisFooter';
-import { BRAND_CTA_GRADIENT } from '../../theme/tokens';
+import { BRAND_CTA_GRADIENT, tokens } from '../../theme/tokens';
 import { primaryButtonInner, primaryButtonLabel } from '../../theme/primaryButton';
 import type { GlassSurfaceVariant } from '../../theme/glassSurfaces';
 import { isNarrowPhone } from '../../utils/layoutBreakpoints';
@@ -340,34 +338,26 @@ function SanctuaryHeaderBar({
   notificationsOn: boolean;
   onOpenNotifications: () => void;
 }) {
-  const { setMenuOpen } = useAppNav();
-
   return (
-    <View style={styles.sanctuaryHeaderRow} pointerEvents="box-none">
-      <View style={styles.sanctuaryHeaderBrand} pointerEvents="none">
-        <Text style={[styles.sanctuaryEyebrow, { color: theme.accent }]}>SANCTUARY</Text>
-      </View>
-
-      <View style={[styles.sanctuaryHeaderSide, styles.sanctuaryHeaderSideRight]} pointerEvents="box-none">
-        <View style={styles.sanctuaryHeaderActions} pointerEvents="box-none">
-          <NavChromeBtn
-            theme={theme}
-            onPress={onOpenNotifications}
-            accessibilityLabel="Notification settings"
-          >
-            <Bell size={16} color={theme.text} strokeWidth={2.2} />
-            {notificationsOn ? (
-              <View
-                style={[styles.notifDot, { backgroundColor: theme.accent, borderColor: theme.card }]}
-              />
-            ) : null}
-          </NavChromeBtn>
-          <NavChromeBtn theme={theme} onPress={() => setMenuOpen(true)} accessibilityLabel="Open app menu">
-            <Menu size={16} color={theme.text} strokeWidth={2.2} />
-          </NavChromeBtn>
-        </View>
-      </View>
-    </View>
+    <ScreenNavChrome
+      theme={theme}
+      title="Sanctuary"
+      showForward={false}
+      actionsBeforeNav={
+        <NavChromeBtn
+          theme={theme}
+          onPress={onOpenNotifications}
+          accessibilityLabel="Notification settings"
+        >
+          <Bell size={16} color={theme.text} strokeWidth={2.2} />
+          {notificationsOn ? (
+            <View
+              style={[styles.notifDot, { backgroundColor: theme.accent, borderColor: theme.card }]}
+            />
+          ) : null}
+        </NavChromeBtn>
+      }
+    />
   );
 }
 
@@ -623,11 +613,11 @@ export function SanctuaryDashboard({
             />
             <QuickActionCard
               theme={theme}
-              icon={BookOpen}
-              iconColor={iconAccent}
-              title="Journal"
-              subtitle="What's on your heart?"
-              onPress={() => onNav('journal')}
+              icon={Sparkles}
+              iconColor={tokens.oracle.accent}
+              title="Oracle"
+              subtitle="Ask Emo anything"
+              onPress={() => onNav('oracle')}
             />
           </View>
 
@@ -699,42 +689,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 0,
   },
-  sanctuaryHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    position: 'relative',
-  },
-  sanctuaryHeaderBrand: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingLeft: 4,
-  },
-  sanctuaryHeaderSide: {
-    flexShrink: 0,
-    zIndex: 2,
-  },
-  sanctuaryHeaderSideRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    minHeight: 44,
-    flex: 1,
-  },
-  sanctuaryHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 4,
-    flexShrink: 0,
-  },
-  heroWelcomeLine: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
   notifDot: {
     position: 'absolute',
     top: 5,
@@ -744,10 +698,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1.5,
   },
-  sanctuaryEyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 2.2,
+  heroWelcomeLine: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontStyle: 'italic',
     textAlign: 'center',
   },
   heroBrandTagline: {

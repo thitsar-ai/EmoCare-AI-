@@ -27,7 +27,7 @@ import {
   buildOracleSystemPrompt,
 } from '../../utils/oracleChatPrompt';
 import { callAnthropicMessages, describeAnthropicError } from '../../utils/anthropic';
-import { tokens } from '../../theme/tokens';
+import { rgba, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
 import { TalkHeroEmo } from '../talk/TalkHeroEmo';
 import type { CircadianTheme } from '../../theme/circadianTheme';
@@ -44,7 +44,6 @@ import {
   oracleSourcesLabel,
 } from '../../constants/brandCopy';
 import { hapticLight } from '../../utils/haptics';
-import { CrisisFooter } from '../shared/CrisisFooter';
 
 const ORACLE_CHAT_KEY = 'oracleChatCurrent';
 
@@ -407,15 +406,23 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               styles.modeChip,
               compact && styles.modeChipCompact,
               {
-                borderColor: selected ? tokens.border.active : tokens.border.standard,
-                backgroundColor: selected ? tokens.surface.selected : tokens.surface.frosted,
+                borderColor: selected ? tokens.oracle.accent : tokens.border.standard,
+                borderWidth: selected ? 2 : 1,
+                backgroundColor: selected
+                  ? rgba(tokens.oracle.accent, theme.isDark ? 0.28 : 0.22)
+                  : tokens.surface.frosted,
               },
             ]}
             accessibilityRole="button"
             accessibilityState={{ selected }}
             accessibilityLabel={`${item.label}. ${item.hint}`}
           >
-            <Text style={[styles.modeLabel, { color: selected ? tokens.text.primary : theme.text }]}>
+            <Text
+              style={[
+                styles.modeLabel,
+                { color: selected ? tokens.oracle.accent : theme.text },
+              ]}
+            >
               {item.label}
             </Text>
             {!compact ? (
@@ -573,8 +580,6 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                   </Pressable>
                 ))}
               </View>
-
-              <CrisisFooter theme={theme} variant="compact" style={styles.crisisFooter} />
             </ScrollView>
           ) : (
             <>
@@ -645,7 +650,6 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                   <Text style={styles.composerBtnDestructive}>Clear</Text>
                 </Pressable>
               </View>
-              <CrisisFooter theme={theme} variant="compact" style={styles.crisisFooter} />
             </View>
           ) : null}
         </KeyboardAvoidingView>
@@ -851,7 +855,6 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     gap: 10,
   },
-  crisisFooter: { marginTop: 4 },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',

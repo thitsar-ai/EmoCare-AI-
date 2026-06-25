@@ -84,7 +84,7 @@ import { SanctuaryDashboard } from './components/home/SanctuaryDashboard';
 import { PrimaryActionButton } from './components/shared/PrimaryActionButton';
 import { SanctuaryGlassSurface } from './components/shared/SanctuaryGlassSurface';
 import { SanctuaryEmoOrbFace } from './components/shared/SanctuaryEmoOrbFace';
-import { BRAND_CTA_GRADIENT, BRAND_GRADIENT, BRAND_GRADIENT_4, MENU_SOLID, tokens } from './theme/tokens';
+import { BRAND_CTA_GRADIENT, CHAT_USER_BUBBLE_GRADIENT, MENU_SOLID, tokens } from './theme/tokens';
 import {
   AppMenuSheet,
   AppNavProvider,
@@ -141,6 +141,7 @@ import { logOracleInquiry } from './utils/oracleTopicLog';
 import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
+import { TalkHeroEmo } from './components/talk/TalkHeroEmo';
 import { JournalScreen } from './components/journal/JournalScreen';
 import { InsightsScreen } from './components/deep/InsightsScreen';
 import { MemoryLedgerScreen } from './components/deep/MemoryLedgerScreen';
@@ -695,7 +696,7 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
           <Text style={[styles.ciCheckinTitle, { color: theme.text }]}>
             Take a moment with yourself.
           </Text>
-          <Text style={[styles.ciCheckinSub, { color: theme.mutedText }]}>
+          <Text style={[styles.ciCheckinSub, { color: theme.secondaryText }]}>
             What feels most true right now?
           </Text>
 
@@ -723,7 +724,7 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
             <Text style={[styles.cardTitle, { marginBottom: 6, color: theme.text }]}>
               What's on your heart?
             </Text>
-            <Text style={[styles.cardSub, { marginBottom: 12, color: theme.mutedText }]}>
+            <Text style={[styles.cardSub, { marginBottom: 12, color: theme.secondaryText }]}>
               You don't have to explain everything. A few words are enough.
             </Text>
             <TextInput
@@ -745,8 +746,7 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
           </GlassCard>
 
           <PrimaryActionButton
-            label="Save Check-In"
-            prefix="✦"
+            label="Save Check-In →"
             theme={theme}
             onPress={save}
             disabled={!selected}
@@ -809,7 +809,7 @@ function HomeScreen({
  * Chat (text conversation — Talk tab)
  * ------------------------------------------------------------------ */
 
-const CHAT_USER_GRADIENT = [...BRAND_GRADIENT_4.slice(0, 2)] as [string, string];
+const CHAT_USER_GRADIENT = [...CHAT_USER_BUBBLE_GRADIENT] as [string, string, string, string];
 const CHAT_SEND_GRADIENT = [...BRAND_CTA_GRADIENT] as [string, string];
 
 const CHAT_MENU_SOLID = MENU_SOLID;
@@ -1605,13 +1605,21 @@ function ChatScreen({ userName }: { userName: string }) {
               }
             />
             <View style={styles.chatBrandRow}>
-              <View style={styles.chatHeaderTitles}>
-                <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>
-                  {TALK_HEADER_TITLE}
-                </Text>
-                <Text style={[styles.chatHeroSubCompact, { color: theme.secondaryText }]}>
-                  {TALK_HEADER_TAGLINE}
-                </Text>
+              <View style={styles.chatBrandMain}>
+                <TalkHeroEmo theme={theme} size="header" />
+                <View style={styles.chatHeaderTitles}>
+                  <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>
+                    {TALK_HEADER_TITLE}
+                  </Text>
+                  <Text
+                    style={[styles.chatHeroSubCompact, { color: theme.secondaryText }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
+                    {TALK_HEADER_TAGLINE}
+                  </Text>
+                </View>
               </View>
               {memoryChipLabel ? (
                 <View style={styles.chatHeaderChipWrap}>
@@ -1686,8 +1694,9 @@ function ChatScreen({ userName }: { userName: string }) {
                       >
                         <LinearGradient
                           colors={CHAT_USER_GRADIENT}
-                          start={{ x: 0, y: 0.5 }}
-                          end={{ x: 1, y: 0.5 }}
+                          locations={[0, 0.38, 0.72, 1]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
                           style={styles.chatUserBubble}
                         >
                           {m.attachmentUri && m.attachmentKind === 'photo' ? (
@@ -1697,7 +1706,7 @@ function ChatScreen({ userName }: { userName: string }) {
                               resizeMode="cover"
                             />
                           ) : null}
-                          <Text style={[styles.chatUserText, { color: tokens.text.primary }]}>{m.text}</Text>
+                          <Text style={styles.chatUserText}>{m.text}</Text>
                         </LinearGradient>
                       </Pressable>
                       {m.time ? (
@@ -1787,7 +1796,6 @@ function ChatScreen({ userName }: { userName: string }) {
                 Your conversations are private and secure
               </Text>
             </View>
-            <CrisisFooter theme={theme} variant="compact" style={styles.chatCrisisFooter} />
           </View>
         </KeyboardAvoidingView>
       </TopChrome>
@@ -1879,7 +1887,7 @@ function NavBar() {
   const activeKey = screen;
   const tabMeta: Record<MainScreenKey, { label: string; Icon: LucideIcon }> = {
     home: { label: 'Home', Icon: Home },
-    checkin: { label: 'Check In', Icon: Heart },
+    checkin: { label: 'Check-in', Icon: Heart },
     today: { label: 'Today', Icon: CalendarDays },
     talk: { label: 'Talk', Icon: MessageCircle },
     journal: { label: 'Journal', Icon: BookOpen },
@@ -1921,17 +1929,19 @@ function NavBar() {
                 <t.Icon
                   size={20}
                   color={
-                    isActive || pressed ? theme.accent : getCircadianIconColor(theme, 'muted')
+                    isActive || pressed ? theme.accent : getCircadianIconColor(theme, 'secondary')
                   }
                   strokeWidth={isActive || pressed ? 2.4 : 2}
                 />
                 <Text
                   style={[
                     styles.navLabel,
-                    { color: theme.mutedText },
+                    { color: theme.secondaryText },
                     (isActive || pressed) && [styles.navLabelActive, { color: theme.accent }],
                   ]}
-                  numberOfLines={1}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={Platform.OS === 'ios'}
+                  minimumFontScale={Platform.OS === 'ios' ? 0.82 : undefined}
                 >
                   {t.label}
                 </Text>
@@ -3033,7 +3043,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
-  ciSaveWrap: { borderRadius: 18, overflow: 'hidden', marginBottom: 12 },
+  ciSaveWrap: { marginBottom: 12 },
   ciEditBanner: {
     borderWidth: 0.5,
     borderRadius: 14,
@@ -3081,13 +3091,17 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   chatBrandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
     minWidth: 0,
     paddingHorizontal: 14,
     paddingTop: 2,
     paddingBottom: 10,
+  },
+  chatBrandMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 0,
   },
   chatHeaderTitles: {
     minWidth: 0,
@@ -3095,7 +3109,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   chatHeaderChipWrap: {
-    flexShrink: 1,
+    alignSelf: 'flex-end',
+    maxWidth: '100%',
   },
   chatPresenceRow: {
     paddingHorizontal: 14,
@@ -3202,9 +3217,10 @@ const styles = StyleSheet.create({
   },
   chatHeroSubCompact: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
     marginTop: 2,
     letterSpacing: 0.35,
+    flexShrink: 1,
   },
   chatHero: {
     alignItems: 'center',
@@ -3270,6 +3286,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     fontWeight: '500',
+    color: tokens.text.onCta,
   },
   chatMsgTime: {
     fontSize: 10,
@@ -3421,8 +3438,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
-  chatCrisisFooter: { marginTop: 10, paddingHorizontal: 4 },
-
   msgWrap: { maxWidth: '82%', marginBottom: 14 },
   msgWrapUser: { alignSelf: 'flex-end' },
   msgWrapBot: { alignSelf: 'flex-start' },
@@ -3491,11 +3506,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 2,
     minHeight: 44,
     paddingVertical: 4,
-    paddingHorizontal: 2,
+    paddingHorizontal: 1,
   },
-  navLabel: { fontSize: 10 },
-  navLabelActive: { fontWeight: '600' },
+  navLabel: { fontSize: 11, lineHeight: 13, textAlign: 'center', fontWeight: '500' },
+  navLabelActive: { fontWeight: '700' },
 });

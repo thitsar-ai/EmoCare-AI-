@@ -18,26 +18,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Lock, MessageCircle } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CrisisFooter } from '../shared/CrisisFooter';
+import { PrimaryActionButton } from '../shared/PrimaryActionButton';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import { ScreenNavChrome, TAB_BAR_HEIGHT, type MainScreenKey } from '../navigation/AppNavigation';
 import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '../../theme/circadianTheme';
 import { CircadianGlassCard, CircadianHeroGlow, SERIF } from '../shared/CircadianHeroGlow';
 import {
   getSanctuaryButtonGradient,
-  getSanctuaryButtonGradientDisabled,
-  getSanctuaryButtonGradientPressed,
   getSanctuaryLabelAccent,
 } from '../../theme/sanctuaryBrand';
 import {
   primaryButtonInner,
   primaryButtonLabel,
-  primaryButtonLabelDisabled,
   primaryButtonShell,
 } from '../../theme/primaryButton';
 import { tokens } from '../../theme/tokens';
 import { hapticLight, hapticMedium } from '../../utils/haptics';
-import { pressPrimaryStyle } from '../../utils/pressFeedback';
+import { pressPrimaryStyle, primaryRestingShadow } from '../../utils/pressFeedback';
 import { getTodayCheckIn } from '../../utils/sanctuaryHome';
 import {
   buildJourneyLine,
@@ -221,23 +218,22 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
             </CircadianGlassCard>
             <Pressable
               onPress={() => void askEmoAboutEntry(e)}
-              style={({ pressed }) => [primaryButtonShell, styles.askEmoBtn, pressPrimaryStyle(theme, pressed)]}
+              style={({ pressed }) => [
+                primaryButtonShell,
+                styles.askEmoBtn,
+                primaryRestingShadow(theme),
+                pressPrimaryStyle(theme, pressed),
+              ]}
             >
-              {({ pressed }) => (
-                <LinearGradient
-                  colors={
-                    pressed
-                      ? getSanctuaryButtonGradientPressed(theme.phase)
-                      : getSanctuaryButtonGradient(theme.phase)
-                  }
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={[primaryButtonInner, styles.askEmoGradient]}
-                >
-                  <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
-                  <Text style={primaryButtonLabel}>Reflect with Emo</Text>
-                </LinearGradient>
-              )}
+              <LinearGradient
+                colors={getSanctuaryButtonGradient(theme.phase)}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={[primaryButtonInner, styles.askEmoGradient]}
+              >
+                <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
+                <Text style={primaryButtonLabel}>Reflect with Emo</Text>
+              </LinearGradient>
             </Pressable>
           </ScrollView>
         </ScreenSafeArea>
@@ -255,11 +251,10 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
           keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 52 : 0}
         >
           <View style={styles.chromeWrap}>
-            <ScreenNavChrome theme={theme} />
+            <ScreenNavChrome theme={theme} title="Your Journal" />
           </View>
 
           <View style={styles.headerBlock}>
-            <Text style={[styles.headerTitle, { color: theme.text }]}>Your Journal</Text>
             <Text style={[styles.headerSubtitle, { color: theme.mutedText }]}>
               A private space for reflection, growth, and self-discovery.
             </Text>
@@ -305,35 +300,14 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               />
             </View>
 
-            <Pressable
+            <PrimaryActionButton
+              label="Save Reflection →"
+              theme={theme}
               onPress={() => void save()}
               disabled={!text.trim()}
-              style={({ pressed }) => [
-                primaryButtonShell,
-                styles.saveBtnWrap,
-                !text.trim() && styles.saveBtnDisabled,
-                text.trim() && pressPrimaryStyle(theme, pressed),
-              ]}
-            >
-              {({ pressed }) => (
-                <LinearGradient
-                  colors={
-                    !text.trim()
-                      ? getSanctuaryButtonGradientDisabled(theme.phase)
-                      : pressed
-                        ? getSanctuaryButtonGradientPressed(theme.phase)
-                        : getSanctuaryButtonGradient(theme.phase)
-                  }
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={[primaryButtonInner, styles.saveBtn]}
-                >
-                  <Text style={[primaryButtonLabel, !text.trim() && primaryButtonLabelDisabled]}>
-                    Save Reflection
-                  </Text>
-                </LinearGradient>
-              )}
-            </Pressable>
+              disabledHint="Write a few words to save your reflection."
+              style={styles.saveBtnWrap}
+            />
 
             {/* Reflect with Emo */}
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.reflectCard}>
@@ -414,7 +388,6 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                 Stored privately on this device only.
               </Text>
             </View>
-            <CrisisFooter theme={theme} variant="compact" style={styles.crisisFooter} />
           </ScrollView>
         </KeyboardAvoidingView>
       </ScreenSafeArea>
@@ -440,14 +413,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 12,
     alignItems: 'center',
-  },
-  headerTitle: {
-    fontFamily: SERIF,
-    fontSize: tokens.typography.pageTitle.fontSize,
-    lineHeight: tokens.typography.pageTitle.lineHeight,
-    fontWeight: tokens.typography.pageTitle.fontWeight,
-    marginBottom: 8,
-    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 14,
@@ -490,12 +455,7 @@ const styles = StyleSheet.create({
   },
   saveBtnWrap: {
     marginTop: 4,
-  },
-  saveBtnDisabled: {
-    opacity: 1,
-  },
-  saveBtn: {
-    flexDirection: 'row',
+    marginBottom: 4,
   },
   reflectCard: {
     paddingVertical: 18,
@@ -589,7 +549,6 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 18,
   },
-  crisisFooter: { marginTop: 8, marginBottom: 4 },
   readCard: {
     padding: 18,
   },

@@ -157,11 +157,10 @@ export function MemoryLedgerScreen() {
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} />
+          <ScreenNavChrome theme={theme} title="Memory Ledger" />
         </View>
 
         <View style={styles.headerBlock}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>💜 Memory Ledger</Text>
           <Text style={[styles.headerSubtitle, { color: theme.mutedText }]}>
             A record of moments that helped shape your journey.
           </Text>
@@ -336,14 +335,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 12,
     alignItems: 'center',
-  },
-  headerTitle: {
-    fontFamily: SERIF,
-    fontSize: tokens.typography.pageTitle.fontSize,
-    lineHeight: tokens.typography.pageTitle.lineHeight,
-    fontWeight: tokens.typography.pageTitle.fontWeight,
-    marginBottom: 8,
-    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 14,

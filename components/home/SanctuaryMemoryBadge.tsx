@@ -33,7 +33,7 @@ export function SanctuaryMemoryBadge({ theme, moodLabel, onPress }: Props) {
       ]}
     >
       <Sparkles size={11} color={theme.accent} strokeWidth={2.2} />
-      <Text style={[styles.text, { color: theme.secondaryText }]} numberOfLines={1}>
+      <Text style={[styles.text, { color: theme.secondaryText }]} numberOfLines={2}>
         Emo remembers:{' '}
         <Text style={[styles.mood, { color: theme.text }]}>{moodLabel}</Text>
       </Text>
@@ -45,7 +45,8 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
+    flexWrap: 'wrap',
     gap: 6,
     maxWidth: '100%',
     paddingHorizontal: 12,
