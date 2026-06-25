@@ -22,7 +22,7 @@ import {
 } from 'lucide-react-native';
 import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
-import { SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize } from '../../theme/sanctuaryEmoFace';
+import { SANCTUARY_EMO_HOME_SCALE, SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryMemoryBadge, memoryMoodFromChipLabel } from './SanctuaryMemoryBadge';
 import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
 import { MoodIconBadge } from '../shared/MoodIcon';
@@ -147,7 +147,7 @@ function SanctuaryGlassCard({
 }
 
 const HERO_H_PAD = 18;
-const HERO_ORB_STAGE_HEIGHT = getSanctuaryEmoStageSize(SANCTUARY_EMO_STANDARD_SCALE);
+const HERO_ORB_STAGE_HEIGHT = getSanctuaryEmoStageSize(SANCTUARY_EMO_HOME_SCALE);
 
 function SanctuaryHero({
   theme,
@@ -214,7 +214,16 @@ function SanctuaryHero({
         </View>
 
         <View style={styles.heroOrbCenter} pointerEvents="none">
-          <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_STANDARD_SCALE} />
+          <LinearGradient
+            colors={['rgba(246,232,193,0.32)', 'rgba(183,157,255,0.14)', 'transparent']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.emoCrownGlow}
+            pointerEvents="none"
+          />
+          <View style={styles.emoOrbLayer}>
+            <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_HOME_SCALE} />
+          </View>
         </View>
 
         <Text style={[styles.heroBrandTagline, { color: theme.secondaryText }]}>{BRAND_TAGLINE}</Text>
@@ -732,8 +741,23 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 8,
     overflow: 'visible',
-    minHeight: HERO_ORB_STAGE_HEIGHT + 12,
-    paddingTop: 8,
+    minHeight: HERO_ORB_STAGE_HEIGHT + 16,
+    paddingTop: 18,
+  },
+  emoCrownGlow: {
+    position: 'absolute',
+    top: 4,
+    alignSelf: 'center',
+    width: 210,
+    height: 130,
+    borderRadius: 105,
+    zIndex: 0,
+  },
+  emoOrbLayer: {
+    zIndex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
   },
   heroGreetingCol: {
     alignSelf: 'stretch',

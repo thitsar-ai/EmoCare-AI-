@@ -102,6 +102,12 @@ export const tokens = {
     accent: '#D9BE87',
     glow: '#F6E8C1',
   },
+  splash: {
+    /** Loading bar track on launch — darker than border.standard for contrast on lavender. */
+    barTrack: 'rgba(61, 42, 107, 0.32)',
+    /** Loading bar fill — signature CTA purple. */
+    barFill: '#7A59CF',
+  },
   shadow: {
     card: 'rgba(61, 42, 107, 0.06)',
     floating: 'rgba(61, 42, 107, 0.10)',

@@ -66,8 +66,8 @@ const SANCTUARY_LINGUISTIC = {
   navBar: tokens.bg.elevated,
   navBarBorder: tokens.border.standard,
   heroWash: [`${tokens.brand.gradMid2}33`, 'rgba(244, 236, 251, 0)'] as const,
-  barTrack: tokens.border.standard,
-  barFill: tokens.brand.gradEnd,
+  barTrack: tokens.splash.barTrack,
+  barFill: tokens.splash.barFill,
 };
 
 /** Unified canvas — Sanctuary web gradient (#F4ECFB → #E8DBF4). */

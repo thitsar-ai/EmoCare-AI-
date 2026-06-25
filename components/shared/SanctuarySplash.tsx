@@ -86,11 +86,15 @@ export function SanctuarySplashContent({
         {BRAND_TAGLINE}
       </Text>
 
-      <View style={[styles.barTrack, { backgroundColor: theme.barTrack }]}>
+      <View style={[styles.barTrack, { backgroundColor: tokens.splash.barTrack }]}>
         <Animated.View
           style={[
             styles.barFill,
-            { width: barWidth, backgroundColor: theme.barFill, shadowColor: theme.barFill },
+            {
+              width: barWidth,
+              backgroundColor: tokens.splash.barFill,
+              shadowColor: tokens.splash.barFill,
+            },
           ]}
         />
       </View>
@@ -153,7 +157,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 10,
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.5,
   },
   footer: {
     fontSize: 13,

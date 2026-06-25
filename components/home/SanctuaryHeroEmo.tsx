@@ -7,11 +7,17 @@ import {
   View,
 } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { getSanctuaryEmoFace, getSanctuaryEmoStageSize } from '../../theme/sanctuaryEmoFace';
+import {
+  getSanctuaryEmoFace,
+  getSanctuaryEmoStageDimensions,
+  SANCTUARY_EMO_OPTICAL_SHIFT_Y,
+} from '../../theme/sanctuaryEmoFace';
 import { SanctuaryEmoOrbFace } from '../shared/SanctuaryEmoOrbFace';
 
 const BREATHE_MS = 2000;
 const FLOAT_MS = 3400;
+const BREATHE_SCALE_MAX = 1.02;
+const FLOAT_Y_RANGE: [number, number] = [1, -4];
 
 function useReduceMotion(): boolean {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -39,7 +45,7 @@ export function SanctuaryHeroEmo({
   const float = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
   const faceSource = getSanctuaryEmoFace(theme.phase);
-  const stageSize = getSanctuaryEmoStageSize(scale);
+  const { width: stageW, height: stageH, imageSize } = getSanctuaryEmoStageDimensions(scale);
 
   useEffect(() => {
     if (reduceMotion) return;
@@ -88,36 +94,36 @@ export function SanctuaryHeroEmo({
 
   const faceScaleAnim = reduceMotion
     ? 1
-    : breathe.interpolate({ inputRange: [0, 1], outputRange: [1, 1.045] });
+    : breathe.interpolate({ inputRange: [0, 1], outputRange: [1, BREATHE_SCALE_MAX] });
   const translateY = reduceMotion
     ? 0
-    : float.interpolate({ inputRange: [0, 1], outputRange: [2, -7] });
+    : float.interpolate({ inputRange: [0, 1], outputRange: FLOAT_Y_RANGE });
 
   return (
-    <View style={[styles.stage, { width: stageSize, height: stageSize }]}>
+    <View style={[styles.stage, { width: stageW, height: stageH }]}>
       <Animated.View
         style={{
+          width: stageW,
+          height: stageH,
           alignItems: 'center',
           justifyContent: 'center',
           transform: [{ translateY }],
         }}
       >
-        <View
-          style={[
-            styles.orbFrame,
-            {
-              width: stageSize,
-              height: stageSize,
-            },
-          ]}
+        <Animated.View
+          style={{
+            transform: [
+              { translateY: SANCTUARY_EMO_OPTICAL_SHIFT_Y },
+              { scale: faceScaleAnim },
+            ],
+          }}
         >
           <SanctuaryEmoOrbFace
             source={faceSource}
-            size={stageSize}
-            scale={faceScaleAnim}
+            size={imageSize}
             accessibilityLabel="Emo, your companion"
           />
-        </View>
+        </Animated.View>
       </Animated.View>
     </View>
   );
@@ -128,10 +134,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
-  },
-  orbFrame: {
-    overflow: 'visible',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
