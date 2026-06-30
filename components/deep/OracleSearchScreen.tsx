@@ -30,6 +30,8 @@ import { callAnthropicMessages, describeAnthropicError } from '../../utils/anthr
 import { rgba, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
 import { TalkHeroEmo } from '../talk/TalkHeroEmo';
+import { TalkAiConsentSheet } from '../talk/TalkAiConsentSheet';
+import { useAnthropicAiConsent } from '../../hooks/useAnthropicAiConsent';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
   ORACLE_CATEGORIES,
@@ -153,6 +155,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const [mode, setMode] = useState<OracleModeId>('deep');
   const [messages, setMessages] = useState<OracleMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
+    useAnthropicAiConsent();
   const isEmpty = messages.length === 0;
 
   const lastBotId = useMemo(() => {
@@ -183,7 +187,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const submitText = useCallback(
     async (rawText: string, activeMode: OracleModeId = mode) => {
       const trimmed = rawText.trim();
-      if (!trimmed || searching) return;
+      if (!trimmed || searching || showAiConsentSheet) return;
+      if (!(await ensureConsentBeforeSend())) return;
       const name = userName.trim() || 'friend';
       setInput('');
       setSearching(true);
@@ -282,7 +287,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
       }
     },
-    [searching, userName, mode],
+    [searching, showAiConsentSheet, ensureConsentBeforeSend, userName, mode],
   );
 
   const submit = useCallback(() => {
@@ -654,6 +659,12 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           ) : null}
         </KeyboardAvoidingView>
       </ScreenSafeArea>
+
+      <TalkAiConsentSheet
+        visible={showAiConsentSheet}
+        theme={theme}
+        onConsent={() => void handleAiConsent()}
+      />
     </View>
   );
 }
@@ -689,8 +700,8 @@ const styles = StyleSheet.create({
   oracleEmoRow: {
     alignItems: 'center',
     overflow: 'visible',
-    paddingTop: 6,
-    paddingBottom: 2,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   oracleEmoRowCompact: {
     paddingTop: 0,

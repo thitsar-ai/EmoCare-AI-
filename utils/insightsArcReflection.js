@@ -1,4 +1,5 @@
 import { callAnthropicMessages, isAnthropicConfigured } from './anthropic';
+import { hasAiConsent } from './aiConsent';
 
 function buildFallbackReflection(entries) {
   if (!entries?.length) return '';
@@ -21,6 +22,10 @@ export async function generateDayArcReflection(dayLabel, entries) {
   }
 
   if (!isAnthropicConfigured()) {
+    return buildFallbackReflection(entries);
+  }
+
+  if (!(await hasAiConsent())) {
     return buildFallbackReflection(entries);
   }
 

@@ -141,6 +141,8 @@ import { logOracleInquiry } from './utils/oracleTopicLog';
 import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
+import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
+import { useAnthropicAiConsent } from './hooks/useAnthropicAiConsent';
 import { TalkHeroEmo } from './components/talk/TalkHeroEmo';
 import { JournalScreen } from './components/journal/JournalScreen';
 import { InsightsScreen } from './components/deep/InsightsScreen';
@@ -1099,6 +1101,8 @@ function ChatScreen({ userName }: { userName: string }) {
     emoji: string | null;
     relativeTime: string;
   } | null>(null);
+  const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
+    useAnthropicAiConsent();
   const streamDecayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
@@ -1357,6 +1361,7 @@ function ChatScreen({ userName }: { userName: string }) {
   };
 
   const requestEmoReply = async (chatMessages: ChatMessage[]) => {
+    if (!(await ensureConsentBeforeSend())) return;
     if (isWaiting) return;
     setIsWaiting(true);
     setIsSearching(false);
@@ -1518,7 +1523,8 @@ function ChatScreen({ userName }: { userName: string }) {
 
   const send = async () => {
     const trimmed = input.trim();
-    if (!trimmed || isWaiting) return;
+    if (!trimmed || isWaiting || showAiConsentSheet) return;
+    if (!(await ensureConsentBeforeSend())) return;
 
     streamAbortRef.current?.abort();
 
@@ -1548,9 +1554,10 @@ function ChatScreen({ userName }: { userName: string }) {
   };
 
   const sendStarter = (text: string) => {
-    if (isWaiting) return;
+    if (isWaiting || showAiConsentSheet) return;
     setInput(text);
     void (async () => {
+      if (!(await ensureConsentBeforeSend())) return;
       streamAbortRef.current?.abort();
       const trimmed = text.trim();
       if (!trimmed) return;
@@ -1836,6 +1843,12 @@ function ChatScreen({ userName }: { userName: string }) {
         onDelete={() => {
           if (bubbleMenuMsg?.role === 'user') deleteUserMessage(bubbleMenuMsg);
         }}
+      />
+
+      <TalkAiConsentSheet
+        visible={showAiConsentSheet}
+        theme={theme}
+        onConsent={() => void handleAiConsent()}
       />
     </View>
   );
@@ -3094,8 +3107,9 @@ const styles = StyleSheet.create({
     gap: 8,
     minWidth: 0,
     paddingHorizontal: 14,
-    paddingTop: 2,
+    paddingTop: 4,
     paddingBottom: 10,
+    overflow: 'visible',
   },
   chatBrandMain: {
     flexDirection: 'row',

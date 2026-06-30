@@ -110,7 +110,7 @@ const PRIVACY_CARDS: { icon: LucideIcon; title: string; desc: string; color: str
   {
     icon: Sparkles,
     title: 'AI conversations',
-    desc: "AI conversations use Anthropic's API — see our privacy policy for details.",
+    desc: "Your chat messages are processed by Anthropic's AI to generate Emo's replies. Only chat messages are transmitted. Nothing is stored long-term on our servers.",
     color: '#A78BFA',
   },
 ];
@@ -900,9 +900,10 @@ export function OnboardingFlow({
             </View>
 
             <Text style={[styles.privacyClarify, { color: theme.mutedText }]}>
-              Journal entries and Memory Ledger data stay encrypted on your device. When you chat
-              with Emo, messages are processed securely by Anthropic's API for that conversation
-              and are not stored long-term on our servers.
+              Journal entries and Memory Ledger data stay encrypted on your device. When you use Talk
+              or Oracle, your messages are sent to Anthropic's AI to generate replies. Only those
+              messages are transmitted — nothing else — and they are not stored long-term on our
+              servers.
             </Text>
 
             <LavenderButton
