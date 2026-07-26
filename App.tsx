@@ -1957,9 +1957,9 @@ function ChatScreen({ userName }: { userName: string }) {
                       >
                         <LinearGradient
                           colors={CHAT_USER_GRADIENT}
-                          locations={[0, 0.38, 0.72, 1]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
+                          locations={[0, 0.33, 0.67, 1]}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
                           style={styles.chatUserBubble}
                         >
                           {m.attachmentUri && m.attachmentKind === 'photo' ? (

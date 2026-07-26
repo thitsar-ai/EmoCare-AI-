@@ -161,12 +161,12 @@ export const BRAND_CTA_GRADIENT: readonly [string, string] = [
   tokens.brand.ctaEnd,
 ];
 
-/** User chat bubbles on Talk — vibrant purple → violet → warm coral. */
+/** User chat bubbles on Talk — even magenta → violet (mockup parity). */
 export const CHAT_USER_BUBBLE_GRADIENT: readonly [string, string, string, string] = [
-  '#7A59CF',
-  '#8B6BD9',
-  '#B584FF',
-  '#F0A896',
+  '#E85BC8',
+  '#D46BE8',
+  '#B87AF0',
+  '#9B6DF3',
 ];
 
 /** Light decorative gradient — cards, chips (not primary buttons). */
