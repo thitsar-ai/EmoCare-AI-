@@ -1,5 +1,5 @@
 import { loadEmoStorageBlocks } from './emoAnalytics';
-import { buildPersonalContextItems } from './memoryLedger';
+import { loadConfirmedUsableMemories, PERSONAL_MEMORY_CATEGORIES } from './personalMemories';
 
 function truncate(text, max) {
   const t = String(text || '')
@@ -17,8 +17,9 @@ function formatShortDate(iso) {
   }
 }
 
-function buildChipLabel(recentCheckIns, journalEntries) {
+function buildChipLabel(recentCheckIns, journalEntries, personalCount) {
   const parts = [];
+  if (personalCount > 0) parts.push(`${personalCount} remembered`);
   const latest = recentCheckIns[0];
   if (latest?.mood?.label) parts.push(latest.mood.label);
   if (journalEntries.length) parts.push(`${journalEntries.length} journal`);
@@ -28,57 +29,84 @@ function buildChipLabel(recentCheckIns, journalEntries) {
 }
 
 /**
- * Level-2 RAG-lite: on-device check-ins, journal, memory ledger for Talk + Voice.
+ * Level-2 RAG-lite with memory trust tiers.
+ * Confirmed memories may use "I remember…"; everything else is soft or omitted.
  * @param {string} [userName]
  * @returns {Promise<{ active: boolean; chipLabel: string | null; systemBlock: string }>}
  */
 export async function loadEmoPersonalContext(userName) {
-  const [{ checkIns, journalEntries }, contextItems] = await Promise.all([
+  const [{ checkIns, journalEntries }, confirmedMemories] = await Promise.all([
     loadEmoStorageBlocks(),
-    buildPersonalContextItems(userName),
+    loadConfirmedUsableMemories(),
   ]);
 
   const lines = [
-    '## PERSONAL CONTEXT (private — on this device only)',
-    'Use naturally when it helps you be present. Never say "according to my records", "your data shows", or paste this block.',
-    'Do not quote journal entries verbatim unless the user asks. Honor psychological safety first.',
+    '## MEMORY TRUST RULES (critical — follow exactly)',
+    'Only say "I remember you told me…", "I remember you mentioned…", or similar CONFIDENT recall for items listed under CONFIRMED MEMORIES.',
+    'Never invent names, relationships, or preferences. Never confidently recall something that is not in CONFIRMED MEMORIES.',
+    'For TEMPORARY SESSION CONTEXT: do not say "I remember". If useful, soft phrasing only: "You previously shared something about…" or "I may be remembering this incorrectly, but did you mention…?" — usually prefer omitting uncertain details rather than asking for correction.',
+    'Check-In mood/note is temporary session context unless the user later saved it as a confirmed memory.',
+    'Use at most ONE memory detail per reply. Do not stack memories. Do not quote journal entries verbatim unless asked.',
+    'Never say "according to my records", "your data shows", or claim closeness the user did not define.',
+    'Never re-summarize a summary into a new "fact". Prefer the short confirmed fact text as written.',
     '',
   ];
 
   let hasContent = false;
 
+  if (confirmedMemories.length) {
+    hasContent = true;
+    lines.push('## CONFIRMED MEMORIES (user-approved — confident "I remember…" allowed)');
+    for (const m of confirmedMemories.slice(0, 12)) {
+      const catLabel =
+        PERSONAL_MEMORY_CATEGORIES.find((c) => c.id === m.category)?.label || 'Memory';
+      const date = formatShortDate(m.date);
+      lines.push(`- Fact: ${truncate(m.text, 160)}`);
+      lines.push(`  Category: ${catLabel}${date ? ` · Saved: ${date}` : ''}`);
+      if (m.sourceText && m.sourceText !== m.text) {
+        lines.push(`  Source text: ${truncate(m.sourceText, 120)}`);
+      }
+    }
+    lines.push('');
+  }
+
   const recentCheckIns = [...checkIns]
     .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 7);
-  if (recentCheckIns.length) {
-    hasContent = true;
-    lines.push('Recent check-ins:');
-    for (const c of recentCheckIns) {
-      const mood = c.mood?.label || 'Unlabeled';
-      const note = c.note?.trim() ? ` — ${truncate(c.note, 90)}` : '';
-      lines.push(`- ${formatShortDate(c.date)}: ${mood}${note}`);
-    }
-    lines.push('');
-  }
-
-  const recentJournal = [...journalEntries]
-    .sort((a, b) => new Date(b.date) - new Date(b.date))
     .slice(0, 3);
-  if (recentJournal.length) {
+  const latest = recentCheckIns[0];
+  if (latest?.mood?.label) {
     hasContent = true;
-    lines.push('Recent journal (themes only — treat as sacred):');
-    for (const e of recentJournal) {
-      const mood = e.mood?.label ? ` · mood ${e.mood.label}` : '';
-      lines.push(`- ${formatShortDate(e.date)}${mood}: ${truncate(e.text, 180)}`);
-    }
+    lines.push('## TEMPORARY SESSION CONTEXT (not confirmed memory — soft language only, or omit)');
+    const note = latest.note?.trim() ? ` Note: ${truncate(latest.note, 80)}` : '';
+    lines.push(
+      `- Latest check-in (${formatShortDate(latest.date)}): feeling ${latest.mood.label}.${note}`,
+    );
+    lines.push(
+      '- This check-in is temporary. Do not treat it as a lasting personal fact unless it appears under CONFIRMED MEMORIES.',
+    );
     lines.push('');
   }
 
-  const ctxTexts = contextItems.filter((i) => i.id !== 'ctx-empty').map((i) => i.text);
-  if (ctxTexts.length) {
+  // Soft journal themes: omit by default for trust. Include at most one truncated theme if present.
+  const recentJournal = [...journalEntries]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 1);
+  if (recentJournal[0]?.text?.trim() && confirmedMemories.length === 0) {
     hasContent = true;
-    lines.push('Gentle patterns Emo holds:');
-    for (const t of ctxTexts) lines.push(`- ${t}`);
+    lines.push('## SOFT CONTEXT (usually omit — never use "I remember…")');
+    lines.push(
+      `- Recent journal theme (${formatShortDate(recentJournal[0].date)}): ${truncate(recentJournal[0].text, 100)}`,
+    );
+    lines.push(
+      '- If you reference this, use uncertain phrasing or skip it. Prefer asking rather than asserting.',
+    );
+    lines.push('');
+  }
+
+  const name = userName?.trim();
+  if (name) {
+    hasContent = true;
+    lines.push(`## NAME (safe to use): ${name}`);
     lines.push('');
   }
 
@@ -88,7 +116,7 @@ export async function loadEmoPersonalContext(userName) {
 
   return {
     active: true,
-    chipLabel: buildChipLabel(recentCheckIns, journalEntries),
+    chipLabel: buildChipLabel(recentCheckIns, journalEntries, confirmedMemories.length),
     systemBlock: lines.join('\n').trim(),
   };
 }

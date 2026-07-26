@@ -3,6 +3,13 @@ import { formatTimezoneLabel } from './settingsStorage';
 import { INITIAL_CHECKIN_PAYLOAD_KEY } from './onboardingLanding';
 import { JOURNAL_ENTRIES_KEY, PENDING_JOURNAL_CONTEXT_KEY } from './journalStorage';
 import { loadOracleSavedInsights, ORACLE_SAVED_INSIGHTS_KEY } from './oracleSavedInsights';
+import {
+  clearPersonalMemories,
+  deletePersonalMemory,
+  loadPersonalMemories,
+  PERSONAL_MEMORIES_KEY,
+  PERSONAL_MEMORY_CATEGORIES,
+} from './personalMemories';
 
 export const MEMORY_LEDGER_KEY = 'emoMemoryLedger';
 export const MEMORY_CONTEXT_KEY = 'emoMemoryContextItems';
@@ -467,17 +474,18 @@ export function buildMemoryTimeline(checkIns, journalEntries, milestones, oracle
 
   for (const ctx of context) {
     if (ctx.id === 'ctx-empty') continue;
+    const isPersonal = Boolean(ctx.personalMemory);
     items.push({
       id: ctx.id,
-      date: new Date().toISOString(),
-      dayLabel: formatDayLabel(new Date().toISOString()),
-      monthKey: formatMonthKey(new Date().toISOString()),
-      moodLabel: 'Context',
-      emoji: '💜',
+      date: ctx.date || new Date().toISOString(),
+      dayLabel: formatDayLabel(ctx.date || new Date().toISOString()),
+      monthKey: formatMonthKey(ctx.date || new Date().toISOString()),
+      moodLabel: isPersonal ? ctx.label || 'Remembered' : 'Context',
+      emoji: isPersonal ? '💜' : '💜',
       quote: ctx.text,
-      category: inferCategory({ text: ctx.text, kind: 'context' }),
-      kind: 'context',
-      title: 'Personal context',
+      category: ctx.ledgerCategory || inferCategory({ text: ctx.text, kind: 'context' }),
+      kind: isPersonal ? 'remembered' : 'context',
+      title: isPersonal ? 'You asked Emo to remember' : 'Personal context',
       sourceItem: ctx,
     });
   }
@@ -632,13 +640,46 @@ function countCategoryItems(timeline) {
   return counts;
 }
 
+function enrichPersonalMemoryItem(memory) {
+  const catMeta = PERSONAL_MEMORY_CATEGORIES.find((c) => c.id === memory.category);
+  const dateLabel = formatShortDate(memory.date);
+  const sourceLine = memory.sourceLabel
+    ? `${memory.sourceLabel}${dateLabel ? ` · ${dateLabel}` : ''}`
+    : dateLabel || 'Talk conversation';
+  return {
+    id: memory.id,
+    text: memory.text,
+    date: memory.date,
+    kind: 'context',
+    label: memory.text,
+    detail: memory.text,
+    usage:
+      'Confirmed by you. Edit or turn off “Emo may use this” anytime. Deleted memories are never retrieved.',
+    erasable: true,
+    personalMemory: true,
+    editable: true,
+    confirmedByUser: memory.confirmedByUser !== false,
+    emoMayUse: memory.emoMayUse !== false,
+    category: memory.category,
+    categoryLabel: catMeta?.label || 'Remembered',
+    sourceText: memory.sourceText || memory.text,
+    sourceLabel: memory.sourceLabel || 'Talk conversation',
+    sourceLine,
+    ledgerCategory: catMeta?.ledgerCategory || 'reflection',
+  };
+}
+
 export async function loadMemoryLedgerBundle(userName) {
-  const [page, stats, sources] = await Promise.all([
+  const [page, stats, sources, personalMemories] = await Promise.all([
     loadMemoryLedgerPage(userName),
     loadMemoryStats(),
     loadTimelineSources(),
+    loadPersonalMemories(),
   ]);
-  const context = page.context.map(enrichContextItem);
+  const remembered = personalMemories
+    .filter((m) => m?.text?.trim())
+    .map(enrichPersonalMemoryItem);
+  const context = [...remembered, ...page.context.map(enrichContextItem)];
   const milestones = page.milestones.map(enrichMilestoneItem);
   const savedCount = context.filter((c) => c.erasable).length + milestones.length;
 
@@ -709,6 +750,10 @@ export async function dismissMemoryItem(itemId) {
 }
 
 export async function dismissContextItem(itemId) {
+  if (String(itemId || '').startsWith('mem-')) {
+    await deletePersonalMemory(itemId);
+    return;
+  }
   const raw = await AsyncStorage.getItem(MEMORY_CONTEXT_KEY);
   const dismissed = parseJson(raw, []);
   if (!dismissed.includes(itemId)) {
@@ -758,7 +803,9 @@ export async function clearAllMemoryItems() {
     'oracleChatCurrent',
     'oracleTopicLog',
     PENDING_JOURNAL_CONTEXT_KEY,
+    PERSONAL_MEMORIES_KEY,
   ]);
+  await clearPersonalMemories();
 }
 
 export async function loadMemoryLedger() {

@@ -74,6 +74,11 @@ import { FeelingIntensityPicker } from './components/checkin/FeelingIntensityPic
 import { CheckInCompleteOverlay } from './components/checkin/CheckInCompleteOverlay';
 import { MoodPicker } from './components/shared/MoodPicker';
 import { getTodayCheckIns, appendTodayCheckIn, deleteTodayCheckIn } from './utils/sanctuaryHome';
+import {
+  PENDING_CHECKIN_TALK_KEY,
+  queueCheckInForTalk,
+  buildCheckInTalkIntro,
+} from './utils/pendingCheckInTalk';
 import { readAgeVerified } from './utils/ageVerification';
 import { isPasscodeEnabled, setPasscodeChangeListener } from './utils/passcodeLock';
 import { setAppResetHandler } from './utils/appReset';
@@ -142,6 +147,13 @@ import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
 import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
+import { SaveMemoryPrompt } from './components/talk/SaveMemoryPrompt';
+import { TalkFeelingCheck } from './components/talk/TalkFeelingCheck';
+import {
+  buildMemorySuggestion,
+  savePersonalMemory,
+  shouldOfferSaveMemory,
+} from './utils/personalMemories';
 import { useAnthropicAiConsent } from './hooks/useAnthropicAiConsent';
 import { TalkHeroEmo } from './components/talk/TalkHeroEmo';
 import { JournalScreen } from './components/journal/JournalScreen';
@@ -608,12 +620,21 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
   const [note, setNote] = useState('');
   const [todayEntryCount, setTodayEntryCount] = useState(0);
   const [completeVisible, setCompleteVisible] = useState(false);
+  const [savedMoodLabel, setSavedMoodLabel] = useState<string | null>(null);
+  const [savedForTalk, setSavedForTalk] = useState<{
+    moodLabel: string;
+    moodEmoji?: string;
+    intensity: number;
+    note: string;
+  } | null>(null);
 
   const resetForm = useCallback(() => {
     setSelected(null);
     setIntensity(3);
     setNote('');
     setCompleteVisible(false);
+    setSavedMoodLabel(null);
+    setSavedForTalk(null);
   }, []);
 
   const handleMoodSelect = useCallback((mood: Mood) => {
@@ -638,9 +659,24 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
 
   const finishCheckIn = useCallback(() => {
     setCompleteVisible(false);
+    setSavedMoodLabel(null);
+    setSavedForTalk(null);
     if (canGoBack) goBack();
     else navigate('home');
   }, [canGoBack, goBack, navigate]);
+
+  const talkAboutCheckIn = useCallback(() => {
+    const payload = savedForTalk;
+    setCompleteVisible(false);
+    setSavedMoodLabel(null);
+    setSavedForTalk(null);
+    void (async () => {
+      if (payload) {
+        await queueCheckInForTalk(payload);
+      }
+      navigate('talk');
+    })();
+  }, [navigate, savedForTalk]);
 
   const deleteToday = () => {
     Alert.alert(
@@ -670,6 +706,13 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
     void hapticMedium();
     try {
       await appendTodayCheckIn({ mood: selected, note, intensity });
+      setSavedMoodLabel(selected.label);
+      setSavedForTalk({
+        moodLabel: selected.label,
+        moodEmoji: selected.emoji,
+        intensity,
+        note,
+      });
       setCompleteVisible(true);
     } catch {}
   };
@@ -782,6 +825,8 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
       <CheckInCompleteOverlay
         theme={theme}
         visible={completeVisible}
+        moodLabel={savedMoodLabel}
+        onTalkWithEmo={talkAboutCheckIn}
         onContinue={finishCheckIn}
       />
     </View>
@@ -1009,6 +1054,7 @@ function ChatBubbleMenuSheet({
   onPaste,
   onEdit,
   onDelete,
+  onRemember,
 }: {
   visible: boolean;
   theme: CircadianTheme;
@@ -1019,6 +1065,7 @@ function ChatBubbleMenuSheet({
   onPaste: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onRemember?: () => void;
 }) {
   const items =
     variant === 'user'
@@ -1031,6 +1078,7 @@ function ChatBubbleMenuSheet({
         ]
       : [
           { label: 'Copy', action: onCopy },
+          ...(onRemember ? [{ label: 'Remember this', action: onRemember }] : []),
           { label: 'Cancel', cancel: true },
         ];
 
@@ -1101,12 +1149,20 @@ function ChatScreen({ userName }: { userName: string }) {
     emoji: string | null;
     relativeTime: string;
   } | null>(null);
+  const [savePromptText, setSavePromptText] = useState<string | null>(null);
+  const [feelingCheckVisible, setFeelingCheckVisible] = useState(false);
+  const [sessionMoodBefore, setSessionMoodBefore] = useState<string | null>(null);
   const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
     useAnthropicAiConsent();
   const streamDecayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
+  const saveOfferedRef = useRef(false);
+  const feelingDoneRef = useRef(false);
+  const feelingOfferedRef = useRef(false);
+  const exchangeCountRef = useRef(0);
+  const offerFeelingAfterSaveRef = useRef(false);
 
   const bumpStreamLevel = () => {
     setStreamLevel(1);
@@ -1175,10 +1231,58 @@ function ChatScreen({ userName }: { userName: string }) {
         emoji: latest.emoji,
         relativeTime: latest.relativeTime,
       });
+      setSessionMoodBefore((prev) => prev || latest.label);
     } else {
       setLastCheckIn(null);
     }
   }, []);
+
+  const maybeOfferFeelingCheck = useCallback(() => {
+    if (feelingDoneRef.current || feelingOfferedRef.current) return;
+    if (exchangeCountRef.current < 1) return;
+    feelingOfferedRef.current = true;
+    setFeelingCheckVisible(true);
+  }, []);
+
+  const dismissSavePrompt = useCallback((offerFeeling: boolean) => {
+    setSavePromptText(null);
+    if (offerFeeling && offerFeelingAfterSaveRef.current) {
+      offerFeelingAfterSaveRef.current = false;
+      maybeOfferFeelingCheck();
+    } else {
+      offerFeelingAfterSaveRef.current = false;
+    }
+  }, [maybeOfferFeelingCheck]);
+
+  const afterTalkExchange = useCallback(
+    (chatMessages: ChatMessage[]) => {
+      exchangeCountRef.current += 1;
+      const lastUser = [...chatMessages].reverse().find((m) => m.role === 'user');
+      const userText = lastUser?.text?.trim() || '';
+      const crisis = userText ? detectCrisisSignals(userText) : { inCrisis: false };
+
+      if (
+        shouldOfferSaveMemory({
+          userText,
+          exchangeCount: exchangeCountRef.current,
+          alreadyOffered: saveOfferedRef.current,
+          inCrisis: crisis.inCrisis,
+        })
+      ) {
+        const suggestion = buildMemorySuggestion(userText);
+        if (suggestion) {
+          saveOfferedRef.current = true;
+          offerFeelingAfterSaveRef.current = true;
+          setFeelingCheckVisible(false);
+          setSavePromptText(suggestion);
+          return;
+        }
+      }
+
+      if (!feelingDoneRef.current) maybeOfferFeelingCheck();
+    },
+    [maybeOfferFeelingCheck],
+  );
 
   useEffect(() => {
     void refreshLastCheckIn();
@@ -1208,6 +1312,34 @@ function ChatScreen({ userName }: { userName: string }) {
   }, []);
 
   useEffect(() => {
+    AsyncStorage.getItem(PENDING_CHECKIN_TALK_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        try {
+          const ctx = JSON.parse(raw) as {
+            moodLabel?: string;
+            intensityLabel?: string | null;
+            note?: string;
+          };
+          const intro = buildCheckInTalkIntro(ctx);
+          if (!intro) return;
+          if (ctx.moodLabel) setSessionMoodBefore(ctx.moodLabel);
+          const botMsg: ChatMessage = {
+            id: `checkin-ctx-${Date.now()}`,
+            role: 'bot',
+            text: intro,
+            time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          };
+          setMessages((prev) =>
+            prev.length <= 1 ? [prev[0] ?? makeWelcomeMessage(userName), botMsg] : [...prev, botMsg],
+          );
+        } catch {}
+        return AsyncStorage.removeItem(PENDING_CHECKIN_TALK_KEY);
+      })
+      .catch(() => {});
+  }, [userName]);
+
+  useEffect(() => {
     AsyncStorage.getItem(PENDING_JOURNAL_CONTEXT_KEY)
       .then((raw) => {
         if (!raw) return;
@@ -1215,8 +1347,8 @@ function ChatScreen({ userName }: { userName: string }) {
           const ctx = JSON.parse(raw) as { text?: string; mood?: { label?: string } };
           const moodLine = ctx.mood?.label ? ` You checked in as ${ctx.mood.label}.` : '';
           const intro = ctx.text?.trim()
-            ? `I read what you wrote in your journal.${moodLine}\n\n"${ctx.text.trim()}"\n\nWhat feels most alive in that for you right now?`
-            : `I am here with what you wrote in your journal.${moodLine} What would you like to explore together?`;
+            ? `I read what you wrote in your journal.${moodLine}\n\n"${ctx.text.trim()}"\n\nWhat feels most useful to talk about in that?`
+            : `I'm here with what you wrote in your journal.${moodLine} What would you like to explore?`;
           const botMsg: ChatMessage = {
             id: `journal-ctx-${Date.now()}`,
             role: 'bot',
@@ -1363,6 +1495,8 @@ function ChatScreen({ userName }: { userName: string }) {
   const requestEmoReply = async (chatMessages: ChatMessage[]) => {
     if (!(await ensureConsentBeforeSend())) return;
     if (isWaiting) return;
+    setSavePromptText(null);
+    setFeelingCheckVisible(false);
     setIsWaiting(true);
     setIsSearching(false);
 
@@ -1440,6 +1574,7 @@ function ChatScreen({ userName }: { userName: string }) {
             prev.map((m) => (m.id === streamId ? { ...m, text: replyText } : m)),
           );
           setStreamLevel(0);
+          afterTalkExchange(chatMessages);
         },
         onError: (message: string) => {
           setStreamLevel(0);
@@ -1752,6 +1887,46 @@ function ChatScreen({ userName }: { userName: string }) {
             </View>
           ) : null}
 
+          <SaveMemoryPrompt
+            visible={Boolean(savePromptText) && !isWaiting}
+            theme={theme}
+            suggestedText={savePromptText || ''}
+            onNotNow={() => dismissSavePrompt(true)}
+            onRemember={(text, category) => {
+              void (async () => {
+                const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+                const saved = await savePersonalMemory({
+                  text,
+                  category,
+                  source: 'talk',
+                  sourceText: lastUser?.text?.trim() || text,
+                  sourceLabel: 'Talk conversation',
+                  confirmedByUser: true,
+                  emoMayUse: true,
+                });
+                if (saved) {
+                  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+                  void refreshMemoryChip();
+                }
+                dismissSavePrompt(true);
+              })();
+            }}
+          />
+
+          <TalkFeelingCheck
+            visible={feelingCheckVisible && !savePromptText && !isWaiting}
+            theme={theme}
+            moodBefore={sessionMoodBefore}
+            onSkip={() => {
+              feelingDoneRef.current = true;
+              setFeelingCheckVisible(false);
+            }}
+            onComplete={() => {
+              feelingDoneRef.current = true;
+              setFeelingCheckVisible(false);
+            }}
+          />
+
           <View
             style={[
               styles.chatComposerWrap,
@@ -1843,6 +2018,22 @@ function ChatScreen({ userName }: { userName: string }) {
         onDelete={() => {
           if (bubbleMenuMsg?.role === 'user') deleteUserMessage(bubbleMenuMsg);
         }}
+        onRemember={
+          bubbleMenuMsg?.role === 'bot'
+            ? () => {
+                const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+                const suggestion =
+                  buildMemorySuggestion(lastUser?.text || '') ||
+                  buildMemorySuggestion(bubbleMenuMsg.text) ||
+                  bubbleMenuMsg.text.trim().slice(0, 140);
+                if (suggestion) {
+                  saveOfferedRef.current = true;
+                  setFeelingCheckVisible(false);
+                  setSavePromptText(suggestion);
+                }
+              }
+            : undefined
+        }
       />
 
       <TalkAiConsentSheet

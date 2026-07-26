@@ -19,6 +19,10 @@ import {
   dismissMemoryItem,
   loadMemoryLedgerBundle,
 } from '../../utils/memoryLedger';
+import {
+  setPersonalMemoryEmoMayUse,
+  updatePersonalMemory,
+} from '../../utils/personalMemories';
 import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
 import { ScreenNavChrome, useAppNav } from '../navigation/AppNavigation';
@@ -148,6 +152,42 @@ export function MemoryLedgerScreen() {
           },
         },
       ]);
+    },
+    [refresh],
+  );
+
+  const handleSaveEdit = useCallback(
+    async (item: MemoryDetailItem, text: string) => {
+      if (!item.personalMemory) return;
+      const updated = await updatePersonalMemory(item.id, { text, confirmedByUser: true });
+      if (!updated) {
+        Alert.alert('Could not save', 'Please keep the memory at least a few words long.');
+        return;
+      }
+      setSelected((prev) =>
+        prev && prev.id === item.id
+          ? {
+              ...prev,
+              text: updated.text,
+              label: updated.text,
+              detail: updated.text,
+            }
+          : prev,
+      );
+      void refresh();
+    },
+    [refresh],
+  );
+
+  const handleToggleEmoMayUse = useCallback(
+    async (item: MemoryDetailItem, emoMayUse: boolean) => {
+      if (!item.personalMemory) return;
+      const updated = await setPersonalMemoryEmoMayUse(item.id, emoMayUse);
+      if (!updated) return;
+      setSelected((prev) =>
+        prev && prev.id === item.id ? { ...prev, emoMayUse: updated.emoMayUse } : prev,
+      );
+      void refresh();
     },
     [refresh],
   );
@@ -322,6 +362,8 @@ export function MemoryLedgerScreen() {
         item={selected}
         onClose={() => setSelected(null)}
         onForget={handleForget}
+        onSaveEdit={handleSaveEdit}
+        onToggleEmoMayUse={handleToggleEmoMayUse}
       />
     </View>
   );

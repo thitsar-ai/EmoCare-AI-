@@ -11,11 +11,19 @@ const SERIF = 'Georgia';
 type Props = {
   theme: CircadianTheme;
   visible: boolean;
+  moodLabel?: string | null;
+  onTalkWithEmo: () => void;
   onContinue: () => void;
 };
 
-/** Warm completion moment after a check-in is saved. */
-export function CheckInCompleteOverlay({ theme, visible, onContinue }: Props) {
+/** Warm completion moment after a check-in is saved — offer Talk with context. */
+export function CheckInCompleteOverlay({
+  theme,
+  visible,
+  moodLabel,
+  onTalkWithEmo,
+  onContinue,
+}: Props) {
   const fade = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(16)).current;
 
@@ -44,13 +52,12 @@ export function CheckInCompleteOverlay({ theme, visible, onContinue }: Props) {
 
   if (!visible) return null;
 
+  const talkHint = moodLabel?.trim()
+    ? `You checked in as ${moodLabel.trim()}. Would you like to talk about this with Emo?`
+    : 'Would you like to talk about this with Emo?';
+
   return (
-    <Animated.View
-      style={[
-        styles.backdrop,
-        { opacity: fade },
-      ]}
-    >
+    <Animated.View style={[styles.backdrop, { opacity: fade }]}>
       <Animated.View style={[styles.cardWrap, { opacity: fade, transform: [{ translateY: rise }] }]}>
         <View style={[styles.card, { borderColor: tokens.border.standard }]}>
           <Text style={styles.sparkle}>✨</Text>
@@ -58,20 +65,39 @@ export function CheckInCompleteOverlay({ theme, visible, onContinue }: Props) {
           <Text style={[styles.completeSub, { color: theme.secondaryText }]}>
             You took a moment for yourself today.
           </Text>
-          <View style={[styles.emoBubble, { backgroundColor: tokens.surface.tint, borderColor: tokens.border.medium }]}>
-            <Text style={[styles.emoLine, { color: theme.text }]}>
-              💜 Thank you for checking in. I'm here whenever you need me.
-            </Text>
+          <View
+            style={[
+              styles.emoBubble,
+              { backgroundColor: tokens.surface.tint, borderColor: tokens.border.medium },
+            ]}
+          >
+            <Text style={[styles.emoLine, { color: theme.text }]}>{talkHint}</Text>
           </View>
-          <Pressable onPress={onContinue} accessibilityRole="button" accessibilityLabel="Return to Sanctuary">
+
+          <Pressable
+            onPress={onTalkWithEmo}
+            accessibilityRole="button"
+            accessibilityLabel="Talk about this with Emo"
+          >
             <LinearGradient
               colors={[...BRAND_CTA_GRADIENT]}
               start={{ x: 0, y: 0.5 }}
               end={{ x: 1, y: 0.5 }}
               style={[primaryButtonShell, primaryButtonInner, styles.continueBtn]}
             >
-              <Text style={[primaryButtonLabel, styles.continueText]}>Return to Sanctuary</Text>
+              <Text style={[primaryButtonLabel, styles.continueText]}>Talk with Emo</Text>
             </LinearGradient>
+          </Pressable>
+
+          <Pressable
+            onPress={onContinue}
+            style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.75 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Return to Sanctuary"
+          >
+            <Text style={[styles.secondaryText, { color: theme.secondaryText }]}>
+              Return to Sanctuary
+            </Text>
           </Pressable>
         </View>
       </Animated.View>
@@ -131,15 +157,23 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   emoLine: {
-    fontFamily: SERIF,
     fontSize: 15,
     lineHeight: 23,
     textAlign: 'center',
-    fontStyle: 'italic',
   },
   continueBtn: {
     alignSelf: 'stretch',
     minWidth: 220,
   },
   continueText: {},
+  secondaryBtn: {
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  secondaryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 });

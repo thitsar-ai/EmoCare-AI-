@@ -22,7 +22,7 @@ import {
 } from 'lucide-react-native';
 import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
-import { SANCTUARY_EMO_HOME_SCALE, SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize } from '../../theme/sanctuaryEmoFace';
+import { SANCTUARY_EMO_HOME_SCALE, SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize, getSanctuaryEmoTopClipGuard } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryMemoryBadge, memoryMoodFromChipLabel } from './SanctuaryMemoryBadge';
 import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
 import { MoodIconBadge } from '../shared/MoodIcon';
@@ -214,16 +214,7 @@ function SanctuaryHero({
         </View>
 
         <View style={styles.heroOrbCenter} pointerEvents="none">
-          <LinearGradient
-            colors={['rgba(246,232,193,0.32)', 'rgba(183,157,255,0.14)', 'transparent']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.emoCrownGlow}
-            pointerEvents="none"
-          />
-          <View style={styles.emoOrbLayer}>
-            <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_HOME_SCALE} />
-          </View>
+          <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_HOME_SCALE} />
         </View>
 
         <Text style={[styles.heroBrandTagline, { color: theme.secondaryText }]}>{BRAND_TAGLINE}</Text>
@@ -254,6 +245,7 @@ function SanctuaryTalkCard({
   narrow: boolean;
 }) {
   const orbScale = narrow ? SANCTUARY_EMO_STANDARD_SCALE * 0.72 : SANCTUARY_EMO_STANDARD_SCALE;
+  const orbTopGuard = getSanctuaryEmoTopClipGuard(orbScale);
   return (
     <Pressable
       onPress={() => {
@@ -262,7 +254,10 @@ function SanctuaryTalkCard({
       }}
       style={({ pressed }) => [styles.talkHeroWrap, pressHeroCardStyle(pressed)]}
     >
-      <SanctuaryGlassSurface variant="lavender" style={styles.talkHeroGlass}>
+      <SanctuaryGlassSurface
+        variant="lavender"
+        style={[styles.talkHeroGlass, { paddingTop: 14 + orbTopGuard }]}
+      >
         <View style={[styles.talkHeroRow, narrow && styles.talkHeroRowNarrow]}>
           <View style={styles.talkHeroCopy}>
             <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Talk to Emo 💜</Text>
@@ -545,8 +540,6 @@ export function SanctuaryDashboard({
             onMemoryPress={() => onNav('memoryledger')}
           />
 
-          <DailyReflectionHero theme={theme} />
-
           <SanctuaryGlassCard theme={theme} variant="lavender" style={styles.moodCard}>
             <View style={styles.moodHeader}>
               <Text style={[styles.cardTitleSerif, { color: theme.text }]}>
@@ -609,6 +602,8 @@ export function SanctuaryDashboard({
           </SanctuaryGlassCard>
 
           <SanctuaryTalkCard theme={theme} narrow={narrow} onPress={() => onNav('talk')} />
+
+          <DailyReflectionHero theme={theme} />
 
           <Text style={[styles.sectionEyebrow, { color: labelAccent }]}>QUICK ACTIONS</Text>
           <View style={styles.quickRow}>
@@ -733,6 +728,7 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 10,
     zIndex: 2,
+    overflow: 'visible',
   },
   heroOrbCenter: {
     alignItems: 'center',
@@ -741,23 +737,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 8,
     overflow: 'visible',
-    minHeight: HERO_ORB_STAGE_HEIGHT + 16,
-    paddingTop: 18,
-  },
-  emoCrownGlow: {
-    position: 'absolute',
-    top: 4,
-    alignSelf: 'center',
-    width: 210,
-    height: 130,
-    borderRadius: 105,
-    zIndex: 0,
-  },
-  emoOrbLayer: {
-    zIndex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
+    minHeight: HERO_ORB_STAGE_HEIGHT + 8,
+    paddingTop: 8,
   },
   heroGreetingCol: {
     alignSelf: 'stretch',
