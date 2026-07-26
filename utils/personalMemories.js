@@ -1,23 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  MEMORY_CATEGORIES,
+  PERSONAL_MEMORY_CATEGORIES,
+  resolveMemoryCategory,
+} from './memoryCategories.js';
+import { clearMemoryDiagnostics, removeDiagnosticsForMemoryId } from './memoryDiagnostics.js';
+import {
+  finishFirstPersonMemory,
+  isNearDuplicateMemory,
+  MEMORY_DEDUP_THRESHOLD,
+  tokenSetRatio,
+} from './memoryText.js';
+
+export { MEMORY_CATEGORIES, PERSONAL_MEMORY_CATEGORIES, resolveMemoryCategory };
+export { MEMORY_DEDUP_THRESHOLD, tokenSetRatio, isNearDuplicateMemory };
 
 /** Permission-based personal memories the user asked Emo to keep. */
 export const PERSONAL_MEMORIES_KEY = 'emoPersonalMemories';
 
 const MAX_ENTRIES = 60;
-const MIN_SUGGEST_LEN = 28;
-
-export const PERSONAL_MEMORY_CATEGORIES = [
-  { id: 'people', label: 'People who matter', ledgerCategory: 'relationships' },
-  { id: 'helps', label: 'What helps me', ledgerCategory: 'growth' },
-  { id: 'overwhelms', label: 'What overwhelms me', ledgerCategory: 'challenges' },
-  { id: 'working_on', label: "Things I'm working on", ledgerCategory: 'growth' },
-];
 
 const SOURCE_LABELS = {
-  talk: 'Talk conversation',
+  talk: 'Talk',
+  manual: 'Manual save',
   checkin: 'Check-In',
   journal: 'Journal',
-  manual: 'Saved by you',
+  onboarding: 'Onboarding',
 };
 
 function parseList(raw) {
@@ -32,22 +40,18 @@ function parseList(raw) {
 
 function normalizeMemory(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const text = String(raw.text || raw.fact || '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = finishFirstPersonMemory(raw.text || raw.fact || '');
   if (!text) return null;
+  const cat = resolveMemoryCategory(raw.category) || resolveMemoryCategory('helps');
   const source = raw.source || 'talk';
   return {
     id: raw.id || `mem-${Date.now()}`,
-    /** Short, clear fact Emo may recall. */
-    text: text.slice(0, 280),
-    /** Original supporting text — never re-summarize away from this. */
+    text: text.slice(0, 120),
     sourceText: String(raw.sourceText || raw.originalText || text).slice(0, 600),
     source,
-    sourceLabel: raw.sourceLabel || SOURCE_LABELS[source] || 'Talk conversation',
-    category: PERSONAL_MEMORY_CATEGORIES.some((c) => c.id === raw.category)
-      ? raw.category
-      : 'helps',
+    sourceLabel: raw.sourceLabel || SOURCE_LABELS[source] || 'Talk',
+    category: cat.id,
+    categoryLabel: cat.label,
     date: raw.date || new Date().toISOString(),
     confirmedByUser: raw.confirmedByUser !== false,
     emoMayUse: raw.emoMayUse !== false,
@@ -61,10 +65,17 @@ export async function loadPersonalMemories() {
     .filter(Boolean);
 }
 
-/** Only memories the user confirmed and allowed Emo to use. */
 export async function loadConfirmedUsableMemories() {
   const all = await loadPersonalMemories();
   return all.filter((m) => m.confirmedByUser && m.emoMayUse);
+}
+
+export function findNearDuplicate(text, memories, threshold = MEMORY_DEDUP_THRESHOLD) {
+  return (memories || []).find((m) => isNearDuplicateMemory(text, m.text, threshold)) || null;
+}
+
+export function isNearDuplicateOfAny(text, memories, threshold = MEMORY_DEDUP_THRESHOLD) {
+  return Boolean(findNearDuplicate(text, memories, threshold));
 }
 
 /**
@@ -76,6 +87,8 @@ export async function loadConfirmedUsableMemories() {
  *   sourceLabel?: string;
  *   confirmedByUser?: boolean;
  *   emoMayUse?: boolean;
+ *   allowDuplicate?: boolean;
+ *   replaceId?: string | null;
  * }} args
  */
 export async function savePersonalMemory({
@@ -86,25 +99,30 @@ export async function savePersonalMemory({
   sourceLabel,
   confirmedByUser = true,
   emoMayUse = true,
+  allowDuplicate = false,
+  replaceId = null,
 }) {
-  const trimmed = String(text || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (trimmed.length < 8) return null;
+  const trimmed = finishFirstPersonMemory(text);
+  if (trimmed.length < 6) return null;
 
-  const supporting = String(sourceText || trimmed)
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 600);
+  let list = await loadPersonalMemories();
+  if (replaceId) {
+    list = list.filter((m) => m.id !== replaceId);
+  }
 
-  const list = await loadPersonalMemories();
+  const dup = findNearDuplicate(trimmed, list);
+  if (dup && !allowDuplicate && !replaceId) {
+    return { duplicate: true, existing: dup };
+  }
+
+  const cat = resolveMemoryCategory(category) || resolveMemoryCategory('helps');
   const entry = normalizeMemory({
     id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    text: trimmed.slice(0, 280),
-    sourceText: supporting,
+    text: trimmed,
+    sourceText: String(sourceText || trimmed).slice(0, 600),
     source: source || 'talk',
-    sourceLabel: sourceLabel || SOURCE_LABELS[source] || 'Talk conversation',
-    category,
+    sourceLabel: sourceLabel || SOURCE_LABELS[source] || 'Talk',
+    category: cat.id,
     date: new Date().toISOString(),
     confirmedByUser: confirmedByUser !== false,
     emoMayUse: emoMayUse !== false,
@@ -116,10 +134,6 @@ export async function savePersonalMemory({
   return entry;
 }
 
-/**
- * @param {string} id
- * @param {{ text?: string; category?: string; emoMayUse?: boolean; confirmedByUser?: boolean }} patch
- */
 export async function updatePersonalMemory(id, patch) {
   const list = await loadPersonalMemories();
   const idx = list.findIndex((m) => m.id === id);
@@ -127,20 +141,21 @@ export async function updatePersonalMemory(id, patch) {
 
   const current = list[idx];
   const nextText =
-    patch.text != null
-      ? String(patch.text)
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 280)
-      : current.text;
-  if (nextText.length < 8) return null;
+    patch.text != null ? finishFirstPersonMemory(patch.text) : current.text;
+  if (nextText.length < 6) return null;
 
+  const others = list.filter((m) => m.id !== id);
+  if (isNearDuplicateOfAny(nextText, others)) {
+    return { duplicate: true };
+  }
+
+  const cat = resolveMemoryCategory(patch.category || current.category) || resolveMemoryCategory(current.category);
   const updated = normalizeMemory({
     ...current,
     ...patch,
     text: nextText,
-    // Keep original source text; do not replace with a re-summary of a summary.
     sourceText: current.sourceText,
+    category: cat.id,
     confirmedByUser: patch.confirmedByUser != null ? patch.confirmedByUser : current.confirmedByUser,
     emoMayUse: patch.emoMayUse != null ? patch.emoMayUse : current.emoMayUse,
   });
@@ -157,51 +172,29 @@ export async function deletePersonalMemory(id) {
   const list = await loadPersonalMemories();
   const next = list.filter((m) => m.id !== id);
   await AsyncStorage.setItem(PERSONAL_MEMORIES_KEY, JSON.stringify(next));
+  await removeDiagnosticsForMemoryId(id);
   return next;
 }
 
 export async function clearPersonalMemories() {
   await AsyncStorage.removeItem(PERSONAL_MEMORIES_KEY);
-}
-
-/** Short candidate from what the user shared — never invents details. */
-export function buildMemorySuggestion(userText) {
-  const cleaned = String(userText || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (cleaned.length < MIN_SUGGEST_LEN) return null;
-  if (cleaned.length <= 140) return cleaned;
-  return `${cleaned.slice(0, 139)}…`;
+  await clearMemoryDiagnostics();
 }
 
 export function inferPersonalMemoryCategory(text) {
   const lower = String(text || '').toLowerCase();
-  if (/\b(mom|dad|mother|father|friend|partner|family|sister|brother|wife|husband|kids?|child|son|daughter)\b/.test(lower)) {
-    return 'people';
-  }
-  if (/\b(overwhelm|stress|anxious|anxiety|too much|hard when|trigger|panic|exhaust)\b/.test(lower)) {
-    return 'overwhelms';
-  }
-  if (/\b(help|helps|calm|better when|easier when|prefer|like|quiet|breath|ground|rest)\b/.test(lower)) {
-    return 'helps';
-  }
-  return 'working_on';
-}
-
-/**
- * Offer save once after a meaningful Talk exchange.
- * @param {{ userText: string; exchangeCount: number; alreadyOffered: boolean; inCrisis?: boolean }} args
- */
-export function shouldOfferSaveMemory({ userText, exchangeCount, alreadyOffered, inCrisis }) {
-  if (alreadyOffered || inCrisis) return false;
-  if (exchangeCount < 1) return false;
-  return Boolean(buildMemorySuggestion(userText));
+  if (/\b(sister|brother|mom|dad|friend|partner|family)\b/.test(lower)) return 'people';
+  if (/\b(prefer|advice|listen)\b/.test(lower)) return 'communicate';
+  if (/\b(help|calm|quiet|walk)\b/.test(lower)) return 'helps';
+  if (/\b(hard|overwhelm|trigger|stress)\b/.test(lower)) return 'hard';
+  if (/\b(interview|friday|appointment|exam)\b/.test(lower)) return 'events';
+  if (/\b(goal|working on|want to)\b/.test(lower)) return 'working_on';
+  if (/\b(love|hate|like|dislike|prefer)\b/.test(lower)) return 'likes';
+  return 'helps';
 }
 
 export function personalCategoryToLedger(categoryId) {
-  return (
-    PERSONAL_MEMORY_CATEGORIES.find((c) => c.id === categoryId)?.ledgerCategory || 'reflection'
-  );
+  return resolveMemoryCategory(categoryId)?.ledgerCategory || 'reflection';
 }
 
 export function formatMemorySourceLine(memory) {
@@ -215,23 +208,36 @@ export function formatMemorySourceLine(memory) {
   } catch {
     dateLabel = '';
   }
-  const source = memory.sourceLabel || SOURCE_LABELS[memory.source] || 'Talk conversation';
+  const source = memory.sourceLabel || SOURCE_LABELS[memory.source] || 'Talk';
   return dateLabel ? `${source} · ${dateLabel}` : source;
 }
 
-/**
- * Neutral mood reflection — observes change, never claims Emo caused it.
- * Unchanged mood is awareness, not failure.
- */
 export function formatMoodDeltaObservation(moodBefore, moodAfter) {
   const before = String(moodBefore || '').trim();
   const after = String(moodAfter || '').trim();
   if (!after) return '';
-  if (!before) {
-    return `You're feeling ${after} right now.`;
-  }
+  if (!before) return `You're feeling ${after} right now.`;
   if (before.toLowerCase() === after.toLowerCase()) {
     return `You still feel ${after}. That's okay—feelings do not always change immediately.`;
   }
   return `You started feeling ${before} and now feel ${after}.`;
+}
+
+/** @deprecated — use classifyMemoryEligibility */
+export function buildMemorySuggestion(userText) {
+  return finishFirstPersonMemory(userText);
+}
+
+/** @deprecated — use classifyMemoryEligibility */
+export function evaluateMemoryEligibility() {
+  return { eligible: false, proposedFact: null, category: 'helps' };
+}
+
+/** @deprecated */
+export function shouldOfferSaveMemory() {
+  return false;
+}
+
+export function proposeMemoryFact(userText) {
+  return finishFirstPersonMemory(userText);
 }

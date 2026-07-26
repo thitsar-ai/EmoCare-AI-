@@ -1,5 +1,6 @@
-import { loadEmoStorageBlocks } from './emoAnalytics';
-import { loadConfirmedUsableMemories, PERSONAL_MEMORY_CATEGORIES } from './personalMemories';
+import { loadEmoStorageBlocks } from './emoAnalytics.js';
+import { buildMemoryInjectionBlock } from './memoryInjection.js';
+import { loadConfirmedUsableMemories } from './personalMemories.js';
 
 function truncate(text, max) {
   const t = String(text || '')
@@ -17,56 +18,39 @@ function formatShortDate(iso) {
   }
 }
 
-function buildChipLabel(recentCheckIns, journalEntries, personalCount) {
+/**
+ * Chip: temporary feeling distinct from persistent memory count.
+ * Example: "Feeling hopeful · 1 memory"
+ */
+function buildChipLabel(latestMoodLabel, memoryCount) {
   const parts = [];
-  if (personalCount > 0) parts.push(`${personalCount} remembered`);
-  const latest = recentCheckIns[0];
-  if (latest?.mood?.label) parts.push(latest.mood.label);
-  if (journalEntries.length) parts.push(`${journalEntries.length} journal`);
-  else if (recentCheckIns.length > 1) parts.push(`${recentCheckIns.length} check-ins`);
-  if (!parts.length) return 'Your journey on this device';
-  return parts.slice(0, 2).join(' · ');
+  if (latestMoodLabel) {
+    parts.push(`Feeling ${String(latestMoodLabel).toLowerCase()}`);
+  }
+  if (memoryCount > 0) {
+    parts.push(memoryCount === 1 ? '1 memory' : `${memoryCount} memories`);
+  }
+  if (!parts.length) return null;
+  return parts.join(' · ');
 }
 
 /**
- * Level-2 RAG-lite with memory trust tiers.
- * Confirmed memories may use "I remember…"; everything else is soft or omitted.
  * @param {string} [userName]
- * @returns {Promise<{ active: boolean; chipLabel: string | null; systemBlock: string }>}
+ * @param {string} [userMessage] current user message for retrieval ranking
  */
-export async function loadEmoPersonalContext(userName) {
-  const [{ checkIns, journalEntries }, confirmedMemories] = await Promise.all([
+export async function loadEmoPersonalContext(userName, userMessage = '') {
+  const [{ checkIns }, injection, confirmed] = await Promise.all([
     loadEmoStorageBlocks(),
+    buildMemoryInjectionBlock(userName, userMessage),
     loadConfirmedUsableMemories(),
   ]);
 
-  const lines = [
-    '## MEMORY TRUST RULES (critical — follow exactly)',
-    'Only say "I remember you told me…", "I remember you mentioned…", or similar CONFIDENT recall for items listed under CONFIRMED MEMORIES.',
-    'Never invent names, relationships, or preferences. Never confidently recall something that is not in CONFIRMED MEMORIES.',
-    'For TEMPORARY SESSION CONTEXT: do not say "I remember". If useful, soft phrasing only: "You previously shared something about…" or "I may be remembering this incorrectly, but did you mention…?" — usually prefer omitting uncertain details rather than asking for correction.',
-    'Check-In mood/note is temporary session context unless the user later saved it as a confirmed memory.',
-    'Use at most ONE memory detail per reply. Do not stack memories. Do not quote journal entries verbatim unless asked.',
-    'Never say "according to my records", "your data shows", or claim closeness the user did not define.',
-    'Never re-summarize a summary into a new "fact". Prefer the short confirmed fact text as written.',
-    '',
-  ];
-
+  const lines = [];
   let hasContent = false;
 
-  if (confirmedMemories.length) {
+  if (injection.systemBlock) {
     hasContent = true;
-    lines.push('## CONFIRMED MEMORIES (user-approved — confident "I remember…" allowed)');
-    for (const m of confirmedMemories.slice(0, 12)) {
-      const catLabel =
-        PERSONAL_MEMORY_CATEGORIES.find((c) => c.id === m.category)?.label || 'Memory';
-      const date = formatShortDate(m.date);
-      lines.push(`- Fact: ${truncate(m.text, 160)}`);
-      lines.push(`  Category: ${catLabel}${date ? ` · Saved: ${date}` : ''}`);
-      if (m.sourceText && m.sourceText !== m.text) {
-        lines.push(`  Source text: ${truncate(m.sourceText, 120)}`);
-      }
-    }
+    lines.push(injection.systemBlock);
     lines.push('');
   }
 
@@ -76,53 +60,48 @@ export async function loadEmoPersonalContext(userName) {
   const latest = recentCheckIns[0];
   if (latest?.mood?.label) {
     hasContent = true;
-    lines.push('## TEMPORARY SESSION CONTEXT (not confirmed memory — soft language only, or omit)');
+    lines.push('## TEMPORARY CHECK-IN CONTEXT (not persistent memory)');
+    lines.push('Use: "You checked in as…" / "You wrote that…". Do NOT use "I remember…".');
     const note = latest.note?.trim() ? ` Note: ${truncate(latest.note, 80)}` : '';
     lines.push(
       `- Latest check-in (${formatShortDate(latest.date)}): feeling ${latest.mood.label}.${note}`,
     );
     lines.push(
-      '- This check-in is temporary. Do not treat it as a lasting personal fact unless it appears under CONFIRMED MEMORIES.',
+      '- Temporary unless the user explicitly saved it as a confirmed memory.',
     );
     lines.push('');
   }
 
-  // Soft journal themes: omit by default for trust. Include at most one truncated theme if present.
-  const recentJournal = [...journalEntries]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 1);
-  if (recentJournal[0]?.text?.trim() && confirmedMemories.length === 0) {
+  if (!hasContent && userName?.trim()) {
     hasContent = true;
-    lines.push('## SOFT CONTEXT (usually omit — never use "I remember…")');
-    lines.push(
-      `- Recent journal theme (${formatShortDate(recentJournal[0].date)}): ${truncate(recentJournal[0].text, 100)}`,
-    );
-    lines.push(
-      '- If you reference this, use uncertain phrasing or skip it. Prefer asking rather than asserting.',
-    );
-    lines.push('');
+    lines.push(`## NAME (safe to use): ${userName.trim()}`);
   }
 
-  const name = userName?.trim();
-  if (name) {
-    hasContent = true;
-    lines.push(`## NAME (safe to use): ${name}`);
-    lines.push('');
-  }
+  const chipLabel = buildChipLabel(latest?.mood?.label, confirmed.length);
 
   if (!hasContent) {
-    return { active: false, chipLabel: null, systemBlock: '' };
+    return {
+      active: false,
+      chipLabel: null,
+      systemBlock: '',
+      memory_ids_injected: [],
+      categories_injected: [],
+      injectedMemories: [],
+    };
   }
 
   return {
     active: true,
-    chipLabel: buildChipLabel(recentCheckIns, journalEntries, confirmedMemories.length),
+    chipLabel,
     systemBlock: lines.join('\n').trim(),
+    memory_ids_injected: injection.memory_ids_injected || [],
+    categories_injected: injection.categories_injected || [],
+    injectedMemories: injection.memories || [],
   };
 }
 
 /** @param {string} [userName] */
-export async function buildEmoPersonalContextBlock(userName) {
-  const { systemBlock } = await loadEmoPersonalContext(userName);
+export async function buildEmoPersonalContextBlock(userName, userMessage = '') {
+  const { systemBlock } = await loadEmoPersonalContext(userName, userMessage);
   return systemBlock;
 }

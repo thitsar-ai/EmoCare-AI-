@@ -149,11 +149,15 @@ import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
 import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
 import { SaveMemoryPrompt } from './components/talk/SaveMemoryPrompt';
 import { TalkFeelingCheck } from './components/talk/TalkFeelingCheck';
+import { classifyMemoryEligibility } from './utils/memoryEligibilityClassifier';
+import { validateMemoryRecallResponse } from './utils/memoryFabricationGuard';
+import { logMemoryDiagnostic } from './utils/memoryDiagnostics';
 import {
-  buildMemorySuggestion,
+  findNearDuplicate,
+  loadPersonalMemories,
   savePersonalMemory,
-  shouldOfferSaveMemory,
 } from './utils/personalMemories';
+import { finishFirstPersonMemory } from './utils/memoryText';
 import { useAnthropicAiConsent } from './hooks/useAnthropicAiConsent';
 import { TalkHeroEmo } from './components/talk/TalkHeroEmo';
 import { JournalScreen } from './components/journal/JournalScreen';
@@ -1149,7 +1153,14 @@ function ChatScreen({ userName }: { userName: string }) {
     emoji: string | null;
     relativeTime: string;
   } | null>(null);
-  const [savePromptText, setSavePromptText] = useState<string | null>(null);
+  const [savePrompt, setSavePrompt] = useState<{
+    text: string;
+    category: string;
+    explicitRemember: boolean;
+    anchorUserId: string;
+    userMsgCountAtOffer: number;
+    manual?: boolean;
+  } | null>(null);
   const [feelingCheckVisible, setFeelingCheckVisible] = useState(false);
   const [sessionMoodBefore, setSessionMoodBefore] = useState<string | null>(null);
   const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
@@ -1158,11 +1169,23 @@ function ChatScreen({ userName }: { userName: string }) {
   const streamAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
-  const saveOfferedRef = useRef(false);
+  const autoPromptUsedRef = useRef(false);
+  const autoPromptSuppressedRef = useRef(false);
   const feelingDoneRef = useRef(false);
   const feelingOfferedRef = useRef(false);
   const exchangeCountRef = useRef(0);
   const offerFeelingAfterSaveRef = useRef(false);
+  const talkSessionIdRef = useRef(`talk-${Date.now()}`);
+  const injectedMemoriesRef = useRef<Array<{ id: string; text: string }>>([]);
+  const memoryIdsInjectedRef = useRef<Array<string>>([]);
+  const talkMountedRef = useRef(true);
+
+  useEffect(() => {
+    talkMountedRef.current = true;
+    return () => {
+      talkMountedRef.current = false;
+    };
+  }, []);
 
   const bumpStreamLevel = () => {
     setStreamLevel(1);
@@ -1244,42 +1267,95 @@ function ChatScreen({ userName }: { userName: string }) {
     setFeelingCheckVisible(true);
   }, []);
 
-  const dismissSavePrompt = useCallback((offerFeeling: boolean) => {
-    setSavePromptText(null);
-    if (offerFeeling && offerFeelingAfterSaveRef.current) {
-      offerFeelingAfterSaveRef.current = false;
-      maybeOfferFeelingCheck();
-    } else {
-      offerFeelingAfterSaveRef.current = false;
-    }
-  }, [maybeOfferFeelingCheck]);
+  const dismissSavePrompt = useCallback(
+    (offerFeeling: boolean, outcome: 'accepted' | 'declined' | 'discarded' = 'declined') => {
+      setSavePrompt(null);
+      void logMemoryDiagnostic({
+        type: 'memory_prompt',
+        sessionId: talkSessionIdRef.current,
+        prompt_outcome: outcome,
+      });
+      if (offerFeeling && offerFeelingAfterSaveRef.current) {
+        offerFeelingAfterSaveRef.current = false;
+        maybeOfferFeelingCheck();
+      } else {
+        offerFeelingAfterSaveRef.current = false;
+      }
+    },
+    [maybeOfferFeelingCheck],
+  );
 
   const afterTalkExchange = useCallback(
     (chatMessages: ChatMessage[]) => {
-      exchangeCountRef.current += 1;
-      const lastUser = [...chatMessages].reverse().find((m) => m.role === 'user');
-      const userText = lastUser?.text?.trim() || '';
-      const crisis = userText ? detectCrisisSignals(userText) : { inCrisis: false };
+      void (async () => {
+        exchangeCountRef.current += 1;
+        const lastUser = [...chatMessages].reverse().find((m) => m.role === 'user');
+        const userText = lastUser?.text?.trim() || '';
+        const userMsgCount = chatMessages.filter((m) => m.role === 'user').length;
+        const crisis = userText ? detectCrisisSignals(userText) : { inCrisis: false };
 
-      if (
-        shouldOfferSaveMemory({
-          userText,
-          exchangeCount: exchangeCountRef.current,
-          alreadyOffered: saveOfferedRef.current,
-          inCrisis: crisis.inCrisis,
-        })
-      ) {
-        const suggestion = buildMemorySuggestion(userText);
-        if (suggestion) {
-          saveOfferedRef.current = true;
-          offerFeelingAfterSaveRef.current = true;
-          setFeelingCheckVisible(false);
-          setSavePromptText(suggestion);
+        if (
+          crisis.inCrisis ||
+          autoPromptUsedRef.current ||
+          autoPromptSuppressedRef.current
+        ) {
+          if (!feelingDoneRef.current) maybeOfferFeelingCheck();
           return;
         }
-      }
 
-      if (!feelingDoneRef.current) maybeOfferFeelingCheck();
+        const classified = await classifyMemoryEligibility(userText, {
+          sessionId: talkSessionIdRef.current,
+        });
+
+        if (!talkMountedRef.current) {
+          void logMemoryDiagnostic({
+            type: 'memory_prompt',
+            sessionId: talkSessionIdRef.current,
+            classifier_parse_ok: classified.eligible != null,
+            prompt_outcome: 'discarded',
+          });
+          return;
+        }
+
+        if (!classified.eligible || !classified.memory_text || !classified.category) {
+          if (!feelingDoneRef.current) maybeOfferFeelingCheck();
+          return;
+        }
+
+        const existing = await loadPersonalMemories();
+        const dup = findNearDuplicate(classified.memory_text, existing);
+        if (dup) {
+          void logMemoryDiagnostic({
+            type: 'memory_prompt',
+            sessionId: talkSessionIdRef.current,
+            dedup_result: 'duplicate_skip',
+            prompt_outcome: 'discarded',
+          });
+          if (!feelingDoneRef.current) maybeOfferFeelingCheck();
+          return;
+        }
+
+        if (!talkMountedRef.current) return;
+
+        // Budget not consumed until shown
+        autoPromptUsedRef.current = true;
+        offerFeelingAfterSaveRef.current = true;
+        setFeelingCheckVisible(false);
+        setSavePrompt({
+          text: classified.memory_text,
+          category: classified.category,
+          explicitRemember: Boolean(classified.explicitRemember),
+          anchorUserId: lastUser?.id || `u-${Date.now()}`,
+          userMsgCountAtOffer: userMsgCount,
+        });
+        void logMemoryDiagnostic({
+          type: 'memory_prompt',
+          sessionId: talkSessionIdRef.current,
+          classifier_parse_ok: true,
+          prompt_outcome: 'shown',
+          categories_injected: [classified.category],
+        });
+      })();
     },
     [maybeOfferFeelingCheck],
   );
@@ -1495,7 +1571,22 @@ function ChatScreen({ userName }: { userName: string }) {
   const requestEmoReply = async (chatMessages: ChatMessage[]) => {
     if (!(await ensureConsentBeforeSend())) return;
     if (isWaiting) return;
-    setSavePromptText(null);
+    // Late auto-prompt discard: user sent 2+ additional messages after the trigger
+    setSavePrompt((prev) => {
+      if (!prev || prev.manual) return prev;
+      const userCount = chatMessages.filter((m) => m.role === 'user').length;
+      if (userCount >= prev.userMsgCountAtOffer + 2) {
+        void logMemoryDiagnostic({
+          type: 'memory_prompt',
+          sessionId: talkSessionIdRef.current,
+          prompt_outcome: 'discarded',
+        });
+        // Discarded late prompts do not consume the automatic prompt budget
+        autoPromptUsedRef.current = false;
+        return null;
+      }
+      return prev;
+    });
     setFeelingCheckVisible(false);
     setIsWaiting(true);
     setIsSearching(false);
@@ -1533,8 +1624,19 @@ function ChatScreen({ userName }: { userName: string }) {
         }
       }
 
-      const personalContext = await loadEmoPersonalContext(userName);
+      const personalContext = await loadEmoPersonalContext(userName, lastUserMsg?.text || '');
       setMemoryChipLabel(personalContext.active && personalContext.chipLabel ? personalContext.chipLabel : null);
+      memoryIdsInjectedRef.current = personalContext.memory_ids_injected || [];
+      injectedMemoriesRef.current = (personalContext.injectedMemories || []).map((m: { id: string; text: string }) => ({
+        id: m.id,
+        text: m.text,
+      }));
+      void logMemoryDiagnostic({
+        type: 'memory_inject',
+        sessionId: talkSessionIdRef.current,
+        memory_ids_injected: memoryIdsInjectedRef.current,
+        categories_injected: personalContext.categories_injected || [],
+      });
 
       const system = [
         getChatSystemPrompt(userName),
@@ -1568,7 +1670,26 @@ function ChatScreen({ userName }: { userName: string }) {
           scrollRef.current?.scrollToEnd({ animated: true });
         },
         onDone: (fullText: string) => {
-          const replyText = polishEmoReplyText(fullText);
+          const polished = polishEmoReplyText(fullText);
+          const validated = validateMemoryRecallResponse({
+            response: polished,
+            memory_ids_injected: [...memoryIdsInjectedRef.current],
+            injectedMemories: [...injectedMemoriesRef.current],
+          }) as {
+            ok: boolean;
+            response: string;
+            memory_ids_used: string[];
+            recall_phrase_detected: boolean;
+          };
+          void logMemoryDiagnostic({
+            type: 'memory_recall_validate',
+            sessionId: talkSessionIdRef.current,
+            memory_ids_injected: memoryIdsInjectedRef.current,
+            memory_ids_used: validated.memory_ids_used,
+            recall_phrase_detected: validated.recall_phrase_detected,
+            validation_passed: validated.ok,
+          });
+          const replyText = validated.ok ? validated.response : validated.response;
           setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
           setMessages((prev) =>
             prev.map((m) => (m.id === streamId ? { ...m, text: replyText } : m)),
@@ -1888,33 +2009,93 @@ function ChatScreen({ userName }: { userName: string }) {
           ) : null}
 
           <SaveMemoryPrompt
-            visible={Boolean(savePromptText) && !isWaiting}
+            visible={Boolean(savePrompt) && !isWaiting}
             theme={theme}
-            suggestedText={savePromptText || ''}
-            onNotNow={() => dismissSavePrompt(true)}
-            onRemember={(text, category) => {
+            suggestedText={savePrompt?.text || ''}
+            categoryLabel={savePrompt?.category}
+            explicitRemember={Boolean(savePrompt?.explicitRemember)}
+            onNotNow={() => {
+              if (!savePrompt?.manual) autoPromptSuppressedRef.current = true;
+              dismissSavePrompt(true, 'declined');
+            }}
+            onRemember={(text, categoryId) => {
               void (async () => {
                 const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+                const existing = await loadPersonalMemories();
+                const dup = findNearDuplicate(text, existing);
+                if (dup && savePrompt?.manual) {
+                  Alert.alert(
+                    'This is close to a memory you already saved.',
+                    dup.text,
+                    [
+                      { text: 'Keep existing', style: 'cancel', onPress: () => dismissSavePrompt(true, 'declined') },
+                      {
+                        text: 'Replace existing',
+                        onPress: () => {
+                          void (async () => {
+                            await savePersonalMemory({
+                              text,
+                              category: categoryId,
+                              source: 'manual',
+                              sourceText: lastUser?.text?.trim() || text,
+                              sourceLabel: 'Manual save',
+                              replaceId: dup.id,
+                            });
+                            void refreshMemoryChip();
+                            dismissSavePrompt(true, 'accepted');
+                          })();
+                        },
+                      },
+                      {
+                        text: 'Save separately',
+                        onPress: () => {
+                          void (async () => {
+                            await savePersonalMemory({
+                              text,
+                              category: categoryId,
+                              source: savePrompt?.manual ? 'manual' : 'talk',
+                              sourceText: lastUser?.text?.trim() || text,
+                              sourceLabel: savePrompt?.manual ? 'Manual save' : 'Talk',
+                              allowDuplicate: true,
+                            });
+                            void refreshMemoryChip();
+                            dismissSavePrompt(true, 'accepted');
+                          })();
+                        },
+                      },
+                      { text: 'Cancel', style: 'cancel' },
+                    ],
+                  );
+                  return;
+                }
                 const saved = await savePersonalMemory({
                   text,
-                  category,
-                  source: 'talk',
+                  category: categoryId,
+                  source: savePrompt?.manual ? 'manual' : 'talk',
                   sourceText: lastUser?.text?.trim() || text,
-                  sourceLabel: 'Talk conversation',
+                  sourceLabel: savePrompt?.manual ? 'Manual save' : 'Talk',
                   confirmedByUser: true,
                   emoMayUse: true,
                 });
+                if (saved && 'duplicate' in saved && saved.duplicate) {
+                  Alert.alert(
+                    'Already remembered',
+                    'You already have something very similar saved. You can edit it in Memory Ledger.',
+                  );
+                  dismissSavePrompt(true, 'declined');
+                  return;
+                }
                 if (saved) {
                   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
                   void refreshMemoryChip();
                 }
-                dismissSavePrompt(true);
+                dismissSavePrompt(true, 'accepted');
               })();
             }}
           />
 
           <TalkFeelingCheck
-            visible={feelingCheckVisible && !savePromptText && !isWaiting}
+            visible={feelingCheckVisible && !savePrompt && !isWaiting}
             theme={theme}
             moodBefore={sessionMoodBefore}
             onSkip={() => {
@@ -2022,15 +2203,23 @@ function ChatScreen({ userName }: { userName: string }) {
           bubbleMenuMsg?.role === 'bot'
             ? () => {
                 const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-                const suggestion =
-                  buildMemorySuggestion(lastUser?.text || '') ||
-                  buildMemorySuggestion(bubbleMenuMsg.text) ||
-                  bubbleMenuMsg.text.trim().slice(0, 140);
-                if (suggestion) {
-                  saveOfferedRef.current = true;
+                void (async () => {
+                  const classified = await classifyMemoryEligibility(lastUser?.text || '');
+                  const suggestion =
+                    classified.memory_text ||
+                    finishFirstPersonMemory(lastUser?.text || '') ||
+                    finishFirstPersonMemory(bubbleMenuMsg.text);
+                  if (!suggestion) return;
                   setFeelingCheckVisible(false);
-                  setSavePromptText(suggestion);
-                }
+                  setSavePrompt({
+                    text: suggestion,
+                    category: classified.category || 'What helps me',
+                    explicitRemember: Boolean(classified.explicitRemember),
+                    anchorUserId: lastUser?.id || bubbleMenuMsg.id,
+                    userMsgCountAtOffer: messages.filter((m) => m.role === 'user').length,
+                    manual: true,
+                  });
+                })();
               }
             : undefined
         }

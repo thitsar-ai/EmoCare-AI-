@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
-import {
-  inferPersonalMemoryCategory,
-  PERSONAL_MEMORY_CATEGORIES,
-} from '../../utils/personalMemories';
+import { MEMORY_CATEGORIES, resolveMemoryCategory } from '../../utils/memoryCategories';
 import { SERIF } from '../shared/CircadianHeroGlow';
 
 type Props = {
   visible: boolean;
   theme: CircadianTheme;
   suggestedText: string;
-  onRemember: (text: string, category: string) => void;
+  categoryLabel?: string | null;
+  /** Explicit "Remember that…" request uses softer title. */
+  explicitRemember?: boolean;
+  onRemember: (text: string, categoryId: string) => void;
   onNotNow: () => void;
 };
 
@@ -21,81 +21,85 @@ export function SaveMemoryPrompt({
   visible,
   theme,
   suggestedText,
+  categoryLabel,
+  explicitRemember = false,
   onRemember,
   onNotNow,
 }: Props) {
+  const initialCat = resolveMemoryCategory(categoryLabel || 'helps') || MEMORY_CATEGORIES[2];
   const [text, setText] = useState(suggestedText);
-  const [category, setCategory] = useState(inferPersonalMemoryCategory(suggestedText));
+  const [categoryId, setCategoryId] = useState(initialCat.id);
   const [editing, setEditing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setText(suggestedText);
-    setCategory(inferPersonalMemoryCategory(suggestedText));
+    const cat = resolveMemoryCategory(categoryLabel || 'helps') || MEMORY_CATEGORIES[2];
+    setCategoryId(cat.id);
     setEditing(false);
-  }, [visible, suggestedText]);
+    setPickerOpen(false);
+  }, [visible, suggestedText, categoryLabel]);
 
   if (!visible) return null;
+
+  const cat = resolveMemoryCategory(categoryId) || MEMORY_CATEGORIES[2];
+  const title = explicitRemember
+    ? 'Of course. Save this memory?'
+    : 'Would you like me to remember this?';
 
   return (
     <View
       style={[
         styles.wrap,
         {
-          backgroundColor: theme.isDark ? 'rgba(255,253,250,0.08)' : 'rgba(255,253,250,0.92)',
+          backgroundColor: '#FFFCFA',
           borderColor: tokens.glass.cardBorder,
         },
       ]}
       accessibilityRole="summary"
     >
-      <Text style={[styles.title, { color: theme.text }]}>Would you like me to remember this?</Text>
+      <Text style={[styles.title, { color: theme.text }]}>
+        <Text style={styles.sparkle}>✨ </Text>
+        {title}
+      </Text>
+
       {editing ? (
         <TextInput
           value={text}
           onChangeText={setText}
           style={[styles.input, { color: theme.text, borderColor: tokens.border.medium }]}
           multiline
-          maxLength={280}
+          maxLength={120}
           autoFocus
-          accessibilityLabel="Memory text"
+          accessibilityLabel="Proposed memory"
         />
       ) : (
-        <Pressable onPress={() => setEditing(true)} accessibilityRole="button" accessibilityLabel="Edit memory text">
-          <Text style={[styles.suggestion, { color: theme.secondaryText }]} numberOfLines={3}>
-            {text}
+        <Pressable
+          onPress={() => setEditing(true)}
+          style={styles.quoteBox}
+          accessibilityRole="button"
+          accessibilityLabel="Edit proposed memory"
+        >
+          <Text style={[styles.quote, { color: theme.text }]} numberOfLines={3}>
+            “{text}”
           </Text>
-          <Text style={[styles.editHint, { color: theme.accent }]}>Edit</Text>
         </Pressable>
       )}
 
-      <View style={styles.cats}>
-        {PERSONAL_MEMORY_CATEGORIES.map((cat) => {
-          const active = cat.id === category;
-          return (
-            <Pressable
-              key={cat.id}
-              onPress={() => {
-                void hapticLight();
-                setCategory(cat.id);
-              }}
-              style={[
-                styles.catChip,
-                {
-                  backgroundColor: active ? 'rgba(61,42,107,0.12)' : 'transparent',
-                  borderColor: active ? tokens.brand.accent : tokens.border.standard,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-              accessibilityLabel={cat.label}
-            >
-              <Text style={[styles.catLabel, { color: active ? theme.text : theme.secondaryText }]}>
-                {cat.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <Pressable
+        onPress={() => {
+          void hapticLight();
+          setPickerOpen(true);
+        }}
+        style={styles.catRow}
+        accessibilityRole="button"
+        accessibilityLabel={`${cat.label}, change category`}
+      >
+        <Text style={[styles.catLine, { color: tokens.brand.accent }]}>
+          {cat.label} · Edit
+        </Text>
+      </Pressable>
 
       <View style={styles.actions}>
         <Pressable
@@ -103,16 +107,20 @@ export function SaveMemoryPrompt({
             void hapticLight();
             onNotNow();
           }}
-          style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.7 }]}
+          style={({ pressed }) => [
+            styles.secondaryBtn,
+            { borderColor: tokens.brand.accent },
+            pressed && { opacity: 0.75 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Not now"
         >
-          <Text style={[styles.secondaryLabel, { color: theme.secondaryText }]}>Not now</Text>
+          <Text style={[styles.secondaryLabel, { color: tokens.brand.accent }]}>Not now</Text>
         </Pressable>
         <Pressable
           onPress={() => {
             void hapticLight();
-            onRemember(text.trim(), category);
+            onRemember(text.trim(), categoryId);
           }}
           style={({ pressed }) => [
             styles.primaryBtn,
@@ -127,6 +135,31 @@ export function SaveMemoryPrompt({
           <Text style={styles.primaryLabel}>Remember</Text>
         </Pressable>
       </View>
+
+      <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
+        <Pressable style={styles.pickerOverlay} onPress={() => setPickerOpen(false)}>
+          <View style={[styles.pickerCard, { backgroundColor: '#FFFCFA' }]}>
+            <Text style={[styles.pickerTitle, { color: theme.text }]}>Choose a category</Text>
+            <ScrollView style={styles.pickerScroll}>
+              {MEMORY_CATEGORIES.map((c) => (
+                <Pressable
+                  key={c.id}
+                  onPress={() => {
+                    void hapticLight();
+                    setCategoryId(c.id);
+                    setPickerOpen(false);
+                  }}
+                  style={styles.pickerItem}
+                >
+                  <Text style={{ color: theme.text, fontWeight: c.id === categoryId ? '700' : '500' }}>
+                    {c.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -143,59 +176,57 @@ const styles = StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 17,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 10,
     letterSpacing: 0.15,
   },
-  suggestion: {
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 4,
+  sparkle: {
+    fontSize: 15,
   },
-  editHint: {
+  quoteBox: {
+    backgroundColor: 'rgba(61,42,107,0.06)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  quote: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
+  },
+  catRow: {
+    marginBottom: 14,
+  },
+  catLine: {
     fontSize: 13,
     fontWeight: '600',
-    marginBottom: 10,
   },
   input: {
-    minHeight: 64,
+    minHeight: 56,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 10,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 8,
     textAlignVertical: 'top',
-  },
-  cats: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 14,
-  },
-  catChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  catLabel: {
-    fontSize: 11,
-    fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 12,
+    gap: 10,
   },
   secondaryBtn: {
+    borderWidth: 1.5,
+    borderRadius: 999,
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
   },
   secondaryLabel: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   primaryBtn: {
     borderRadius: 999,
@@ -209,5 +240,30 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.45,
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  pickerCard: {
+    borderRadius: 18,
+    maxHeight: '70%',
+    padding: 16,
+  },
+  pickerTitle: {
+    fontFamily: SERIF,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  pickerScroll: {
+    maxHeight: 360,
+  },
+  pickerItem: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(61,42,107,0.12)',
   },
 });

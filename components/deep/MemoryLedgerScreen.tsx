@@ -164,13 +164,18 @@ export function MemoryLedgerScreen() {
         Alert.alert('Could not save', 'Please keep the memory at least a few words long.');
         return;
       }
+      if ('duplicate' in updated && updated.duplicate) {
+        Alert.alert('Already remembered', 'That is too similar to another saved memory.');
+        return;
+      }
+      const memory = updated as { text: string };
       setSelected((prev) =>
         prev && prev.id === item.id
           ? {
               ...prev,
-              text: updated.text,
-              label: updated.text,
-              detail: updated.text,
+              text: memory.text,
+              label: memory.text,
+              detail: memory.text,
             }
           : prev,
       );
@@ -183,9 +188,10 @@ export function MemoryLedgerScreen() {
     async (item: MemoryDetailItem, emoMayUse: boolean) => {
       if (!item.personalMemory) return;
       const updated = await setPersonalMemoryEmoMayUse(item.id, emoMayUse);
-      if (!updated) return;
+      if (!updated || ('duplicate' in updated && updated.duplicate)) return;
+      const memory = updated as { emoMayUse: boolean };
       setSelected((prev) =>
-        prev && prev.id === item.id ? { ...prev, emoMayUse: updated.emoMayUse } : prev,
+        prev && prev.id === item.id ? { ...prev, emoMayUse: memory.emoMayUse } : prev,
       );
       void refresh();
     },

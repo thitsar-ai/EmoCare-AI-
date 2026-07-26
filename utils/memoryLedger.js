@@ -3,13 +3,16 @@ import { formatTimezoneLabel } from './settingsStorage';
 import { INITIAL_CHECKIN_PAYLOAD_KEY } from './onboardingLanding';
 import { JOURNAL_ENTRIES_KEY, PENDING_JOURNAL_CONTEXT_KEY } from './journalStorage';
 import { loadOracleSavedInsights, ORACLE_SAVED_INSIGHTS_KEY } from './oracleSavedInsights';
+import { MEMORY_CATEGORIES, resolveMemoryCategory } from './memoryCategories.js';
+import { clearMemoryDiagnostics } from './memoryDiagnostics.js';
 import {
   clearPersonalMemories,
   deletePersonalMemory,
   loadPersonalMemories,
   PERSONAL_MEMORIES_KEY,
-  PERSONAL_MEMORY_CATEGORIES,
-} from './personalMemories';
+} from './personalMemories.js';
+
+const PERSONAL_MEMORY_CATEGORIES = MEMORY_CATEGORIES;
 
 export const MEMORY_LEDGER_KEY = 'emoMemoryLedger';
 export const MEMORY_CONTEXT_KEY = 'emoMemoryContextItems';
@@ -641,11 +644,11 @@ function countCategoryItems(timeline) {
 }
 
 function enrichPersonalMemoryItem(memory) {
-  const catMeta = PERSONAL_MEMORY_CATEGORIES.find((c) => c.id === memory.category);
+  const catMeta = resolveMemoryCategory(memory.category) || resolveMemoryCategory(memory.categoryLabel);
   const dateLabel = formatShortDate(memory.date);
   const sourceLine = memory.sourceLabel
     ? `${memory.sourceLabel}${dateLabel ? ` · ${dateLabel}` : ''}`
-    : dateLabel || 'Talk conversation';
+    : dateLabel || 'Talk';
   return {
     id: memory.id,
     text: memory.text,
@@ -661,9 +664,9 @@ function enrichPersonalMemoryItem(memory) {
     confirmedByUser: memory.confirmedByUser !== false,
     emoMayUse: memory.emoMayUse !== false,
     category: memory.category,
-    categoryLabel: catMeta?.label || 'Remembered',
+    categoryLabel: catMeta?.label || memory.categoryLabel || 'Remembered',
     sourceText: memory.sourceText || memory.text,
-    sourceLabel: memory.sourceLabel || 'Talk conversation',
+    sourceLabel: memory.sourceLabel || 'Talk',
     sourceLine,
     ledgerCategory: catMeta?.ledgerCategory || 'reflection',
   };
@@ -806,6 +809,7 @@ export async function clearAllMemoryItems() {
     PERSONAL_MEMORIES_KEY,
   ]);
   await clearPersonalMemories();
+  await clearMemoryDiagnostics();
 }
 
 export async function loadMemoryLedger() {

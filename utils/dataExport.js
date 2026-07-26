@@ -4,7 +4,8 @@ import { AGE_VERIFIED_KEY } from './ageVerification';
 import { ORACLE_SAVED_INSIGHTS_KEY } from './oracleSavedInsights';
 import { JOURNAL_ENTRIES_KEY, PENDING_JOURNAL_CONTEXT_KEY } from './journalStorage';
 import { PENDING_CHECKIN_TALK_KEY } from './pendingCheckInTalk';
-import { PERSONAL_MEMORIES_KEY } from './personalMemories';
+import { MEMORY_DIAGNOSTICS_KEY } from './memoryDiagnostics.js';
+import { PERSONAL_MEMORIES_KEY } from './personalMemories.js';
 import {
   HOME_LANDING_MODE_KEY,
   INITIAL_CHECKIN_PAYLOAD_KEY,
@@ -32,6 +33,7 @@ const EXPORT_KEYS = [
   'pendingTalkQuery',
   PENDING_CHECKIN_TALK_KEY,
   PERSONAL_MEMORIES_KEY,
+  MEMORY_DIAGNOSTICS_KEY,
   PENDING_JOURNAL_CONTEXT_KEY,
   HELPED_STORAGE_KEY,
   HOME_LANDING_MODE_KEY,
