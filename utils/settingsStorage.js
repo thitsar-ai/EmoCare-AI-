@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DEFAULT_CHAT_LANGUAGE, normalizeChatLanguage } from './chatLanguage';
 
 export const SETTINGS_STORAGE_KEY = 'emoAppSettings';
 
@@ -9,13 +10,20 @@ export const DEFAULT_SETTINGS = {
   circadianAuto: true,
   themeMode: 'auto',
   biometricUnlockEnabled: false,
+  /** @type {import('./chatLanguage').ChatLanguageId} */
+  chatLanguage: DEFAULT_CHAT_LANGUAGE,
 };
 
 export async function loadSettings() {
   try {
     const raw = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
     if (raw) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        chatLanguage: normalizeChatLanguage(parsed?.chatLanguage),
+      };
     }
   } catch {}
   return { ...DEFAULT_SETTINGS };
@@ -24,6 +32,9 @@ export async function loadSettings() {
 export async function saveSettings(partial) {
   const current = await loadSettings();
   const next = { ...current, ...partial };
+  if (partial && Object.prototype.hasOwnProperty.call(partial, 'chatLanguage')) {
+    next.chatLanguage = normalizeChatLanguage(partial.chatLanguage);
+  }
   try {
     await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
   } catch {}

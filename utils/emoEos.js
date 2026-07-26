@@ -3,6 +3,8 @@
  * "Intelligence with Soul"
  */
 
+import { getChatLanguageAppendix, normalizeChatLanguage } from './chatLanguage';
+
 export const EOS_TAGLINE = 'Intelligence with Soul';
 
 export const EOS_CORE = `# EMO PERSONALITY
@@ -14,7 +16,8 @@ You are not a therapist, counselor, life coach, or motivational speaker. You are
 
 ## COMMUNICATION STYLE
 
-Speak naturally, using clear everyday English that most people can easily understand.
+Speak naturally, using clear everyday language that most people can easily understand.
+Follow the LANGUAGE section for which language to use.
 
 Your tone should be:
 - Calm
@@ -166,28 +169,34 @@ const OPENING_CHANNEL_RULES = `## CHANNEL: Opening greeting
 export function getIntentModeAppendix(mode) {
   if (mode === 'oracle') {
     return `## ACTIVE MODE: Oracle
-Answer first in plain English. Then a short Why. Then Practical Meaning. Keep most replies under 200 words. Explain like an excellent teacher — clear enough for a teenager. Leave them smarter, not overloaded.`;
+Answer first in plain language. Then a short Why. Then Practical Meaning. Keep most replies under 200 words. Explain like an excellent teacher — clear enough for a teenager. Leave them smarter, not overloaded.`;
   }
   return `## ACTIVE MODE: Sanctuary
 Listen first. Acknowledge feelings briefly. Offer clear, practical insight. Ask at most ONE gentle follow-up if it helps. Do not force the conversation to continue. Leave them calmer than before.
 If a CONFIRMED MEMORY clearly relates to what they are saying, weave in at most one accurate detail with good timing — so they feel known, not analyzed. If they only want to be heard, listen; do not turn memory into unsolicited advice.`;
 }
 
-/** @param {string} [userName] */
-export function getChatSystemPrompt(userName) {
+/**
+ * @param {string} [userName]
+ * @param {import('./chatLanguage').ChatLanguageId | string} [chatLanguage]
+ */
+export function getChatSystemPrompt(userName, chatLanguage = 'auto') {
   const nameLine = userName?.trim()
     ? `\nThe user's name is ${userName.trim()}. Use it naturally, not in every sentence.`
     : '';
-  return `${EOS_CORE}\n\n${CHAT_CHANNEL_RULES}${nameLine}`;
+  const language = getChatLanguageAppendix(normalizeChatLanguage(chatLanguage));
+  return `${EOS_CORE}\n\n${CHAT_CHANNEL_RULES}${nameLine}\n\n${language}`;
 }
 
 /**
  * @param {'sanctuary' | 'oracle'} [mode]
  * @param {string} [userName]
+ * @param {import('./chatLanguage').ChatLanguageId | string} [chatLanguage]
  */
-export function getVoiceSystemPrompt(mode = 'sanctuary', userName) {
+export function getVoiceSystemPrompt(mode = 'sanctuary', userName, chatLanguage = 'auto') {
   const nameLine = userName?.trim() ? `\nUser name: ${userName.trim()}.` : '';
-  return `${EOS_CORE}\n\n${VOICE_CHANNEL_RULES}${nameLine}\n\n${getIntentModeAppendix(mode)}`;
+  const language = getChatLanguageAppendix(normalizeChatLanguage(chatLanguage));
+  return `${EOS_CORE}\n\n${VOICE_CHANNEL_RULES}${nameLine}\n\n${getIntentModeAppendix(mode)}\n\n${language}`;
 }
 
 /** @param {'voice' | 'chat'} [channel] */

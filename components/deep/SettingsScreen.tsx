@@ -12,6 +12,7 @@ import {
   loadSettings,
   saveSettings,
 } from '../../utils/settingsStorage';
+import { CHAT_LANGUAGE_OPTIONS } from '../../utils/chatLanguage';
 import { exportUserData, deleteAllUserData } from '../../utils/dataExport';
 import { triggerAppReset } from '../../utils/appReset';
 import { isPasscodeEnabled } from '../../utils/passcodeLock';
@@ -185,7 +186,50 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
-          <SettingRow theme={theme} label="Timezone" value={settings.timezone} last />
+          <SettingRow theme={theme} label="Timezone" value={settings.timezone} />
+          <View style={styles.languageBlock}>
+            <Text style={[styles.rowLabel, { color: theme.text, flex: 0, paddingRight: 0 }]}>
+              Emo language
+            </Text>
+              <Text style={[styles.rowHint, { color: theme.mutedText }]}>
+                Talk and Oracle use this setting. EN · မြန်မာ understands Burmese and replies in warm English.
+                App screens stay in English for now.
+              </Text>
+            <View style={styles.languageChipRow}>
+              {CHAT_LANGUAGE_OPTIONS.map((option) => {
+                const selected = (settings.chatLanguage || 'auto') === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    onPress={() => {
+                      void hapticLight();
+                      void patch({ chatLanguage: option.id });
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`Emo language ${option.label}`}
+                    style={[
+                      styles.languageChip,
+                      {
+                        borderColor: selected ? tokens.brand.ctaStart : theme.border,
+                        backgroundColor: selected ? `${tokens.brand.ctaStart}22` : 'transparent',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: selected ? tokens.brand.ctaStart : theme.mutedText,
+                        fontWeight: selected ? '700' : '500',
+                        fontSize: 13,
+                      }}
+                    >
+                      {option.shortLabel}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
         </SettingsSection>
 
         {isWebInstallSupported() ? (
@@ -523,6 +567,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingTop: 4,
     paddingBottom: 10,
+  },
+  languageBlock: {
+    paddingHorizontal: 4,
+    paddingTop: 14,
+    paddingBottom: 10,
+  },
+  languageChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  languageChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   safetyNote: {
     fontSize: 13,

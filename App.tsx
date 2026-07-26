@@ -136,6 +136,7 @@ import { hapticLight, hapticMedium } from './utils/haptics';
 import { pressCardStyle, pressTabStyle } from './utils/pressFeedback';
 import { buildAnthropicMessagesFromChat } from './utils/chatMedia';
 import { getChatSystemPrompt, getCrisisSafetyAppendix, getIntentModeAppendix } from './utils/emoEos';
+import { loadSettings } from './utils/settingsStorage';
 import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
 import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
@@ -1638,8 +1639,9 @@ function ChatScreen({ userName }: { userName: string }) {
         categories_injected: personalContext.categories_injected || [],
       });
 
+      const { chatLanguage } = await loadSettings();
       const system = [
-        getChatSystemPrompt(userName),
+        getChatSystemPrompt(userName, chatLanguage),
         personalContext.systemBlock,
         crisis.inCrisis ? getCrisisSafetyAppendix() : getIntentModeAppendix(intent.mode),
         researchBlock,

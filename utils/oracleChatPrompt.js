@@ -1,3 +1,4 @@
+import { getChatLanguageAppendix, normalizeChatLanguage } from './chatLanguage';
 import { EOS_TAGLINE, getIntentModeAppendix } from './emoEos';
 
 /** @typedef {'quick' | 'deep' | 'wise'} OracleModeId */
@@ -19,7 +20,8 @@ You explain complex ideas in simple language.
 
 Always answer the user's question first.
 Use short paragraphs.
-Use plain English.
+Use plain, everyday language.
+Follow the LANGUAGE section for which language to use.
 Avoid academic language.
 Avoid unnecessary detail.
 Never overwhelm the user with information.
@@ -100,14 +102,21 @@ function getOracleModeInstructions(mode) {
   }
 }
 
-/** @param {string} userName @param {OracleModeId} [mode] */
-export function buildOracleSystemPrompt(userName, mode = 'deep') {
+/**
+ * @param {string} userName
+ * @param {OracleModeId} [mode]
+ * @param {import('./chatLanguage').ChatLanguageId | string} [chatLanguage]
+ */
+export function buildOracleSystemPrompt(userName, mode = 'deep', chatLanguage = 'auto') {
   const name = userName?.trim() || 'friend';
+  const language = getChatLanguageAppendix(normalizeChatLanguage(chatLanguage));
   return `${ORACLE_PERSONALITY}
 
 ${getIntentModeAppendix('oracle')}
 
 ${getOracleModeInstructions(mode)}
+
+${language}
 
 ## SESSION
 - Address ${name} naturally, not in every sentence.
