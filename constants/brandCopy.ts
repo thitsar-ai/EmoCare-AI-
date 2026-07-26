@@ -51,14 +51,6 @@ export const ORACLE_INPUT_PLACEHOLDER = 'Ask Emo anything…';
 export const ORACLE_STATUS_MESSAGE = 'Searching trusted sources and synthesizing…';
 export const ORACLE_STATUS_SHORT = 'Researching…';
 
-export const ORACLE_EXAMPLE_PROMPTS = [
-  'Why do people procrastinate?',
-  'Help me understand grief.',
-  'Research AI ethics.',
-  'Create a business strategy.',
-  'Explain quantum computing.',
-] as const;
-
 export type OracleCategoryId =
   | 'knowledge'
   | 'learning'

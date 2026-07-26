@@ -35,7 +35,6 @@ import { useAnthropicAiConsent } from '../../hooks/useAnthropicAiConsent';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
   ORACLE_CATEGORIES,
-  ORACLE_EXAMPLE_PROMPTS,
   ORACLE_HEADER_TAGLINE,
   ORACLE_HEADER_TITLE,
   ORACLE_INPUT_PLACEHOLDER,
@@ -537,30 +536,6 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
 
               {renderModeSelector()}
 
-              <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>Try asking</Text>
-              <View style={styles.exampleCloud}>
-                {ORACLE_EXAMPLE_PROMPTS.map((prompt) => (
-                  <Pressable
-                    key={prompt}
-                    onPress={() => {
-                      void hapticLight();
-                      setInput(prompt);
-                      inputRef.current?.focus();
-                    }}
-                    style={({ pressed }) => [
-                      styles.exampleChip,
-                      {
-                        borderColor: tokens.border.standard,
-                        backgroundColor: tokens.surface.frosted,
-                      },
-                      pressed && { opacity: 0.85 },
-                    ]}
-                  >
-                    <Text style={[styles.exampleText, { color: theme.text }]}>{prompt}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
               <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>Explore by topic</Text>
               <View style={styles.categoryGrid}>
                 {ORACLE_CATEGORIES.map((cat) => (
@@ -760,23 +735,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 14,
-    marginTop: 4,
-  },
-  exampleCloud: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 32,
-  },
-  exampleChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  exampleText: {
-    fontSize: 13,
-    lineHeight: 18,
+    marginTop: 12,
   },
   categoryGrid: {
     flexDirection: 'row',

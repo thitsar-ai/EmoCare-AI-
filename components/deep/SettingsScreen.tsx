@@ -34,6 +34,7 @@ import {
   openCrisisText,
 } from '../../utils/crisisLine';
 import { tokens } from '../../theme/tokens';
+import { NotificationSheet } from '../home/NotificationSheet';
 
 const NAV_CONTENT_HEIGHT = 72;
 
@@ -50,8 +51,14 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const [passcodeSheetMode, setPasscodeSheetMode] = useState<PasscodeSetupMode>('create');
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState('Face ID');
+  const [remindersOpen, setRemindersOpen] = useState(false);
   const destructive = theme.isDark ? '#E87898' : '#D46BA8';
   const destructiveBg = theme.isDark ? 'rgba(120,30,60,0.45)' : 'rgba(212,107,168,0.15)';
+
+  const remindersValue =
+    settings.notificationsEnabled === false
+      ? 'Off'
+      : `On · ${settings.notificationTime || '8:00 PM'}`;
 
   const refresh = useCallback(async () => {
     await refreshEmocareConfig();
@@ -158,10 +165,26 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
       >
         <SettingsSection theme={theme} label="ACCOUNT">
           <SettingRow theme={theme} label="Name" value={userName.trim() || 'Not set'} />
-          <SettingRow theme={theme} label="Daily reminders" value="Coming soon" />
-          <Text style={[styles.rowHint, styles.reminderHint, { color: theme.mutedText }]}>
-            Gentle check-in nudges will arrive in a future update. You can check in anytime from Home.
-          </Text>
+          <Pressable
+            onPress={() => {
+              void hapticLight();
+              setRemindersOpen(true);
+            }}
+            style={[styles.linkRow, { borderBottomColor: theme.border }]}
+            accessibilityRole="button"
+            accessibilityLabel={`Daily reminders, ${remindersValue}`}
+          >
+            <View style={styles.switchLabelCol}>
+              <Text style={[styles.rowLabel, { color: theme.text }]}>Daily reminders</Text>
+              <Text style={[styles.rowHint, { color: theme.mutedText }]}>
+                Choose a preferred check-in time. Push delivery is still rolling out.
+              </Text>
+            </View>
+            <View style={styles.linkAction}>
+              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{remindersValue}</Text>
+              <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
+            </View>
+          </Pressable>
           <SettingRow theme={theme} label="Timezone" value={settings.timezone} last />
         </SettingsSection>
 
@@ -382,6 +405,19 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
         </Pressable>
       </ScrollView>
 
+      <NotificationSheet
+        visible={remindersOpen}
+        theme={theme}
+        onClose={() => setRemindersOpen(false)}
+        onSaved={(enabled, time) => {
+          setSettings((prev) => ({
+            ...prev,
+            notificationsEnabled: enabled,
+            notificationTime: time,
+          }));
+        }}
+      />
+
       <PasscodeSetupSheet
         visible={passcodeSheetOpen}
         theme={theme}
@@ -468,7 +504,6 @@ const styles = StyleSheet.create({
   switchValueCol: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   switchState: { fontSize: 14, fontWeight: '600', minWidth: 28, textAlign: 'right' },
   rowHint: { fontSize: 13, lineHeight: 18, marginTop: 4 },
-  reminderHint: { paddingHorizontal: 4, paddingBottom: 10 },
   rowLabel: { fontSize: 17, lineHeight: 22, flex: 1, minWidth: 0, paddingRight: 12 },
   rowValue: { fontSize: 16, flexShrink: 0, maxWidth: '42%', textAlign: 'right' },
   linkRow: {
