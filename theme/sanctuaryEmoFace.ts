@@ -15,15 +15,15 @@ export const SANCTUARY_EMO_STANDARD_SCALE = 1.34;
 export const SANCTUARY_EMO_HOME_SCALE = 1.45;
 
 /** Leaves extend further above the face than lace below — asymmetric stage padding. */
-export const SANCTUARY_EMO_TOP_BLEED = 0.34;
-export const SANCTUARY_EMO_BOTTOM_BLEED = 0.2;
+export const SANCTUARY_EMO_TOP_BLEED = 0.42;
+export const SANCTUARY_EMO_BOTTOM_BLEED = 0.18;
 export const SANCTUARY_EMO_SIDE_BLEED = 0.22;
 
 /** @deprecated Uniform bleed — prefer top/side/bottom constants. */
 export const SANCTUARY_EMO_ARTWORK_BLEED = 0.26;
 
-/** Nudge art down so leaf tips clear the stage top (asymmetric PNG). */
-export const SANCTUARY_EMO_OPTICAL_SHIFT_Y = 4;
+/** Extra stage height above the square art — breathe animation + leaf tips (not layout padding). */
+export const SANCTUARY_EMO_TOP_HEADROOM = 0.1;
 
 /** Crisp on-screen size for hero Emo orb (downscales 1024px art — never upscale). */
 export function getSanctuaryEmoOrbSize(scale = 1): number {
@@ -34,21 +34,33 @@ export type SanctuaryEmoStageDimensions = {
   width: number;
   height: number;
   imageSize: number;
+  topBleed: number;
+  bottomBleed: number;
+  topHeadroom: number;
 };
 
-/** Full stage including leaf/lace bleed — taller than wide for top leaves. */
+/** Full stage including leaf/lace bleed — square art bottom-anchored with headroom above. */
 export function getSanctuaryEmoStageDimensions(scale = 1): SanctuaryEmoStageDimensions {
   const faceSize = getSanctuaryEmoOrbSize(scale);
   const sideBleed = Math.round(faceSize * SANCTUARY_EMO_SIDE_BLEED);
   const topBleed = Math.round(faceSize * SANCTUARY_EMO_TOP_BLEED);
   const bottomBleed = Math.round(faceSize * SANCTUARY_EMO_BOTTOM_BLEED);
-  const width = faceSize + sideBleed * 2;
-  const height = faceSize + topBleed + bottomBleed;
+  const imageSize = Math.max(faceSize + sideBleed * 2, faceSize + topBleed + bottomBleed);
+  const topHeadroom = Math.round(faceSize * SANCTUARY_EMO_TOP_HEADROOM);
   return {
-    width,
-    height,
-    imageSize: Math.max(width, height),
+    width: imageSize,
+    height: imageSize + topHeadroom,
+    imageSize,
+    topBleed,
+    bottomBleed,
+    topHeadroom,
   };
+}
+
+/** Minimum top inset for parents with overflow:hidden (glass cards, scroll rows). */
+export function getSanctuaryEmoTopClipGuard(scale = 1): number {
+  const { topHeadroom } = getSanctuaryEmoStageDimensions(scale);
+  return Math.max(6, topHeadroom);
 }
 
 /** Stage height — use for layout min-heights (includes top leaf room). */

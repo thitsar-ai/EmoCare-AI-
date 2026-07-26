@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { getSanctuaryEmoFace, getSanctuaryEmoOrbSize, SANCTUARY_EMO_STANDARD_SCALE } from '../../theme/sanctuaryEmoFace';
+import { getSanctuaryEmoFace, getSanctuaryEmoStageDimensions, SANCTUARY_EMO_STANDARD_SCALE } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryHeroEmo } from '../home/SanctuaryHeroEmo';
 import { SanctuaryEmoOrbFace } from './SanctuaryEmoOrbFace';
 
@@ -40,12 +40,12 @@ export function SanctuaryEmoPresence({
   const resolvedScale = scale ?? SANCTUARY_EMO_SCALES[size];
 
   if (faceOnly) {
-    const faceSize = getSanctuaryEmoOrbSize(resolvedScale);
+    const { width, height, imageSize } = getSanctuaryEmoStageDimensions(resolvedScale);
     return (
-      <View style={[styles.faceOnly, { width: faceSize, height: faceSize }]}>
+      <View style={[styles.faceOnly, { width, height }]}>
         <SanctuaryEmoOrbFace
           source={getSanctuaryEmoFace(theme.phase)}
-          size={faceSize}
+          size={imageSize}
           accessibilityLabel="Emo"
         />
       </View>
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   },
   faceOnly: {
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     overflow: 'visible',
   },
 });

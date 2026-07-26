@@ -10,14 +10,14 @@ import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
   getSanctuaryEmoFace,
   getSanctuaryEmoStageDimensions,
-  SANCTUARY_EMO_OPTICAL_SHIFT_Y,
 } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryEmoOrbFace } from '../shared/SanctuaryEmoOrbFace';
 
 const BREATHE_MS = 2000;
 const FLOAT_MS = 3400;
 const BREATHE_SCALE_MAX = 1.02;
-const FLOAT_Y_RANGE: [number, number] = [1, -4];
+/** Rest slightly low — float only downward so leaf tips never clip. */
+const FLOAT_Y_RANGE: [number, number] = [3, 1];
 
 function useReduceMotion(): boolean {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -106,18 +106,11 @@ export function SanctuaryHeroEmo({
           width: stageW,
           height: stageH,
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent: 'flex-end',
           transform: [{ translateY }],
         }}
       >
-        <Animated.View
-          style={{
-            transform: [
-              { translateY: SANCTUARY_EMO_OPTICAL_SHIFT_Y },
-              { scale: faceScaleAnim },
-            ],
-          }}
-        >
+        <Animated.View style={{ transform: [{ scale: faceScaleAnim }] }}>
           <SanctuaryEmoOrbFace
             source={faceSource}
             size={imageSize}

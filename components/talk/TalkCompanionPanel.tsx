@@ -86,10 +86,10 @@ const styles = StyleSheet.create({
   },
   heroOrbBlock: {
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 4,
     overflow: 'visible',
-    paddingTop: 10,
+    paddingTop: 14,
     paddingBottom: 6,
   },
   welcomeBlock: {

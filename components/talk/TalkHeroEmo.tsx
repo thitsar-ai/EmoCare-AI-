@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
+import { getSanctuaryEmoTopClipGuard } from '../../theme/sanctuaryEmoFace';
 import { SANCTUARY_EMO_SCALES, SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
 
 export type TalkEmoOrbSize = 'hero' | 'header' | 'compact';
@@ -17,10 +18,15 @@ export function TalkHeroEmo({
 }) {
   const resolvedSize: TalkEmoOrbSize = size;
   const scale = SANCTUARY_EMO_SCALES[resolvedSize === 'hero' ? 'hero' : resolvedSize];
+  const topGuard = resolvedSize === 'header' ? getSanctuaryEmoTopClipGuard(scale) : 0;
 
   return (
     <View
-      style={[styles.wrap, resolvedSize === 'header' && styles.wrapHeader]}
+      style={[
+        styles.wrap,
+        resolvedSize === 'header' && styles.wrapHeader,
+        topGuard > 0 && { paddingTop: topGuard },
+      ]}
       pointerEvents="none"
     >
       <SanctuaryEmoPresence theme={theme} scale={scale} />
@@ -39,7 +45,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   wrapHeader: {
-    paddingTop: 2,
+    paddingTop: 0,
     paddingBottom: 0,
     paddingLeft: 2,
     flexShrink: 0,
