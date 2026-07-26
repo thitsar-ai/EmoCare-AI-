@@ -3,7 +3,10 @@ import { formatTimezoneLabel } from './settingsStorage';
 import { INITIAL_CHECKIN_PAYLOAD_KEY } from './onboardingLanding';
 import { JOURNAL_ENTRIES_KEY, PENDING_JOURNAL_CONTEXT_KEY } from './journalStorage';
 import { loadOracleSavedInsights, ORACLE_SAVED_INSIGHTS_KEY } from './oracleSavedInsights';
-import { MEMORY_CATEGORIES, resolveMemoryCategory } from './memoryCategories.js';
+import {
+  MEMORY_CATEGORIES as PERSONAL_MEMORY_CATEGORIES,
+  resolveMemoryCategory,
+} from './memoryCategories.js';
 import { clearMemoryDiagnostics } from './memoryDiagnostics.js';
 import {
   clearPersonalMemories,
@@ -11,8 +14,6 @@ import {
   loadPersonalMemories,
   PERSONAL_MEMORIES_KEY,
 } from './personalMemories.js';
-
-const PERSONAL_MEMORY_CATEGORIES = MEMORY_CATEGORIES;
 
 export const MEMORY_LEDGER_KEY = 'emoMemoryLedger';
 export const MEMORY_CONTEXT_KEY = 'emoMemoryContextItems';
