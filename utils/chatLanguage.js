@@ -1,7 +1,12 @@
 /**
- * Chat language preference for Emo / Oracle (conversations only).
- * App UI stays English until full localization.
+ * Chat language preference for Emo / Oracle.
+ * Burmese follows native-first gold standard (utils/emoBurmese.js).
  */
+
+import {
+  getEmoPersonalityBurmese,
+  shouldComposeInBurmese,
+} from './emoBurmese.js';
 
 /** @typedef {'auto' | 'en' | 'my' | 'es'} ChatLanguageId */
 
@@ -14,11 +19,7 @@ export const DEFAULT_CHAT_LANGUAGE = /** @type {ChatLanguageId} */ ('auto');
 export const CHAT_LANGUAGE_OPTIONS = [
   { id: 'auto', label: 'Auto', shortLabel: 'Auto' },
   { id: 'en', label: 'English', shortLabel: 'English' },
-  {
-    id: 'my',
-    label: 'English · understands မြန်မာ',
-    shortLabel: 'EN · မြန်မာ',
-  },
+  { id: 'my', label: 'မြန်မာ', shortLabel: 'မြန်မာ' },
   { id: 'es', label: 'Español', shortLabel: 'Español' },
 ];
 
@@ -41,46 +42,35 @@ export function getChatLanguageLabel(preference) {
   return CHAT_LANGUAGE_OPTIONS.find((o) => o.id === id)?.label || 'Auto';
 }
 
-const BURMESE_CAPABILITY = `## BURMESE CAPABILITY
-You can speak and understand Myanmar / Burmese well — warm, clear, everyday tone (Unicode Myanmar script; never Zawgyi).
-Never say your Burmese is limited, weak, or that you prefer English to avoid mistakes.
-Never apologize for not being able to speak Burmese.
-If asked "Can you speak Burmese?" / "မြန်မာလို ပြောနိုင်လား": answer yes warmly, optionally with one short pleasant Burmese phrase, then continue per the LANGUAGE rules below.
-When replying in Burmese, stay the same calm, kind Emo — simple spoken style, not stiff or overly formal.`;
+/**
+ * @param {ChatLanguageId | string | undefined} preference
+ * @param {{ userMessage?: string; recentUserTexts?: string[] }} [ctx]
+ */
+export function resolveComposeInBurmese(preference, ctx = {}) {
+  return shouldComposeInBurmese(
+    normalizeChatLanguage(preference),
+    ctx.userMessage || '',
+    ctx.recentUserTexts || [],
+  );
+}
 
 /**
- * Prompt appendix that overrides default English-oriented style rules.
+ * Non-Burmese language appendix (English / Spanish / Auto-default).
  * @param {ChatLanguageId | string | undefined} preference
  */
-export function getChatLanguageAppendix(preference) {
+function getNonBurmeseLanguageAppendix(preference) {
   const id = normalizeChatLanguage(preference);
 
   if (id === 'en') {
-    return `${BURMESE_CAPABILITY}
-
-## LANGUAGE
+    return `## LANGUAGE
 Reply in clear everyday English.
 Keep the same calm, warm, simple personality.
-If the user clearly asks you to speak Burmese, switch to warm everyday Burmese for that conversation.
+You can understand Burmese. If the user clearly asks you to speak Burmese, switch to native Burmese composition for that conversation (see Burmese capability — never claim Burmese is limited).
 Otherwise stay in English.`;
   }
 
-  if (id === 'my') {
-    return `${BURMESE_CAPABILITY}
-
-## LANGUAGE
-Default: reply in clear, warm everyday English — pleasant, kind, and easy to understand.
-Fully understand Burmese, English, or a mix.
-If the user asks you to speak Burmese (or writes mainly in Burmese and clearly wants Burmese back), reply in warm everyday Burmese.
-Otherwise stay in English — do not refuse Burmese or claim it is limited.
-Be culturally warm and respectful without stereotypes, honorific theater, or forced slang.
-Memory recall must stay factually accurate.`;
-  }
-
   if (id === 'es') {
-    return `${BURMESE_CAPABILITY}
-
-## LANGUAGE
+    return `## LANGUAGE
 Reply in natural everyday Spanish.
 Use a warm, clear register (neutral Latin American-friendly Spanish is fine unless the user clearly uses another variety).
 Keep the same calm Emo / Oracle personality and length rules.
@@ -88,14 +78,26 @@ If the user writes in English, still reply in Spanish unless they clearly ask fo
 Memory recall must stay factually accurate even when phrased in Spanish.`;
   }
 
-  return `${BURMESE_CAPABILITY}
-
-## LANGUAGE
-Match the language the user is writing in (especially English, Burmese/Myanmar, or Spanish).
+  // auto (when not composing in Burmese)
+  return `## LANGUAGE
+Match the language the user is writing in (especially English or Spanish).
+If they write mainly in Myanmar script, compose in native Burmese (never English-first translation).
 If they mix languages, follow their lead naturally.
 When the language is unclear, use clear everyday English.
-For Burmese, use Unicode Myanmar script and everyday spoken style.
-If they ask whether you can speak Burmese, say yes and you may continue in Burmese.
-Keep the same calm personality and length rules in every language.
-Memory recall must stay factually accurate in whatever language you reply in.`;
+Never claim Burmese ability is limited.
+Keep the same calm personality and length rules.
+Memory recall must stay factually accurate.`;
+}
+
+/**
+ * Full language / locale appendix for the system prompt.
+ * @param {ChatLanguageId | string | undefined} preference
+ * @param {string} [userName]
+ * @param {{ userMessage?: string; recentUserTexts?: string[] }} [ctx]
+ */
+export function getChatLanguageAppendix(preference, userName, ctx = {}) {
+  if (resolveComposeInBurmese(preference, ctx)) {
+    return getEmoPersonalityBurmese(userName);
+  }
+  return getNonBurmeseLanguageAppendix(preference);
 }

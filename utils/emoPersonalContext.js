@@ -1,6 +1,7 @@
 import { loadEmoStorageBlocks } from './emoAnalytics.js';
 import { buildMemoryInjectionBlock } from './memoryInjection.js';
 import { loadConfirmedUsableMemories } from './personalMemories.js';
+import { buildBurmeseChipLabel, getBurmeseCheckInContextHeader } from './emoBurmese.js';
 
 function truncate(text, max) {
   const t = String(text || '')
@@ -37,11 +38,13 @@ function buildChipLabel(latestMoodLabel, memoryCount) {
 /**
  * @param {string} [userName]
  * @param {string} [userMessage] current user message for retrieval ranking
+ * @param {{ burmese?: boolean }} [opts]
  */
-export async function loadEmoPersonalContext(userName, userMessage = '') {
+export async function loadEmoPersonalContext(userName, userMessage = '', opts = {}) {
+  const burmese = Boolean(opts.burmese);
   const [{ checkIns }, injection, confirmed] = await Promise.all([
     loadEmoStorageBlocks(),
-    buildMemoryInjectionBlock(userName, userMessage),
+    buildMemoryInjectionBlock(userName, userMessage, { burmese }),
     loadConfirmedUsableMemories(),
   ]);
 
@@ -60,8 +63,12 @@ export async function loadEmoPersonalContext(userName, userMessage = '') {
   const latest = recentCheckIns[0];
   if (latest?.mood?.label) {
     hasContent = true;
-    lines.push('## TEMPORARY CHECK-IN CONTEXT (not persistent memory)');
-    lines.push('Use: "You checked in as…" / "You wrote that…". Do NOT use "I remember…".');
+    if (burmese) {
+      lines.push(getBurmeseCheckInContextHeader());
+    } else {
+      lines.push('## TEMPORARY CHECK-IN CONTEXT (not persistent memory)');
+      lines.push('Use: "You checked in as…" / "You wrote that…". Do NOT use "I remember…".');
+    }
     const note = latest.note?.trim() ? ` Note: ${truncate(latest.note, 80)}` : '';
     lines.push(
       `- Latest check-in (${formatShortDate(latest.date)}): feeling ${latest.mood.label}.${note}`,
@@ -77,7 +84,9 @@ export async function loadEmoPersonalContext(userName, userMessage = '') {
     lines.push(`## NAME (safe to use): ${userName.trim()}`);
   }
 
-  const chipLabel = buildChipLabel(latest?.mood?.label, confirmed.length);
+  const chipLabel = burmese
+    ? buildBurmeseChipLabel(latest?.mood?.label, confirmed.length)
+    : buildChipLabel(latest?.mood?.label, confirmed.length);
 
   if (!hasContent) {
     return {

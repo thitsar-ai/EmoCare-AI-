@@ -34,6 +34,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Ellipsis,
+  Globe,
   Heart,
   Lock,
   Shield,
@@ -136,7 +137,13 @@ import { hapticLight, hapticMedium } from './utils/haptics';
 import { pressCardStyle, pressTabStyle } from './utils/pressFeedback';
 import { buildAnthropicMessagesFromChat } from './utils/chatMedia';
 import { getChatSystemPrompt, getCrisisSafetyAppendix, getIntentModeAppendix } from './utils/emoEos';
-import { loadSettings } from './utils/settingsStorage';
+import { loadSettings, saveSettings } from './utils/settingsStorage';
+import {
+  getChatLanguageLabel,
+  normalizeChatLanguage,
+  resolveComposeInBurmese,
+} from './utils/chatLanguage';
+import { BURMESE_UI } from './utils/emoBurmese';
 import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
 import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
@@ -149,6 +156,7 @@ import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
 import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
 import { SaveMemoryPrompt } from './components/talk/SaveMemoryPrompt';
+import { TalkLanguageSheet } from './components/talk/TalkLanguageSheet';
 import { TalkFeelingCheck } from './components/talk/TalkFeelingCheck';
 import { classifyMemoryEligibility } from './utils/memoryEligibilityClassifier';
 import { validateMemoryRecallResponse } from './utils/memoryFabricationGuard';
@@ -1149,6 +1157,9 @@ function ChatScreen({ userName }: { userName: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [streamLevel, setStreamLevel] = useState(0);
   const [memoryChipLabel, setMemoryChipLabel] = useState<string | null>(null);
+  const [chatLanguage, setChatLanguage] = useState<'auto' | 'en' | 'my' | 'es'>('auto');
+  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
+  const talkUiBurmese = chatLanguage === 'my';
   const [lastCheckIn, setLastCheckIn] = useState<{
     label: string | null;
     emoji: string | null;
@@ -1239,12 +1250,24 @@ function ChatScreen({ userName }: { userName: string }) {
   }, [userName]);
 
   const refreshMemoryChip = React.useCallback(async () => {
-    const { active, chipLabel } = await loadEmoPersonalContext(userName);
+    const settings = await loadSettings();
+    const lang = normalizeChatLanguage(settings.chatLanguage);
+    setChatLanguage(lang);
+    const { active, chipLabel } = await loadEmoPersonalContext(userName, '', {
+      burmese: lang === 'my',
+    });
     setMemoryChipLabel(active && chipLabel ? chipLabel : null);
   }, [userName]);
 
   useEffect(() => {
     void refreshMemoryChip();
+  }, [refreshMemoryChip]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshMemoryChip();
+    });
+    return () => sub.remove();
   }, [refreshMemoryChip]);
 
   const refreshLastCheckIn = React.useCallback(async () => {
@@ -1625,7 +1648,22 @@ function ChatScreen({ userName }: { userName: string }) {
         }
       }
 
-      const personalContext = await loadEmoPersonalContext(userName, lastUserMsg?.text || '');
+      const settings = await loadSettings();
+      const lang = normalizeChatLanguage(settings.chatLanguage);
+      setChatLanguage(lang);
+      const recentUserTexts = messages
+        .filter((m) => m.role === 'user' && typeof m.text === 'string')
+        .map((m) => m.text)
+        .slice(-6);
+      const localeCtx = {
+        userMessage: lastUserMsg?.text || '',
+        recentUserTexts,
+      };
+      const burmese = resolveComposeInBurmese(lang, localeCtx);
+
+      const personalContext = await loadEmoPersonalContext(userName, lastUserMsg?.text || '', {
+        burmese,
+      });
       setMemoryChipLabel(personalContext.active && personalContext.chipLabel ? personalContext.chipLabel : null);
       memoryIdsInjectedRef.current = personalContext.memory_ids_injected || [];
       injectedMemoriesRef.current = (personalContext.injectedMemories || []).map((m: { id: string; text: string }) => ({
@@ -1639,11 +1677,12 @@ function ChatScreen({ userName }: { userName: string }) {
         categories_injected: personalContext.categories_injected || [],
       });
 
-      const { chatLanguage } = await loadSettings();
       const system = [
-        getChatSystemPrompt(userName, chatLanguage),
+        getChatSystemPrompt(userName, lang, localeCtx),
         personalContext.systemBlock,
-        crisis.inCrisis ? getCrisisSafetyAppendix() : getIntentModeAppendix(intent.mode),
+        crisis.inCrisis
+          ? getCrisisSafetyAppendix({ burmese })
+          : getIntentModeAppendix(intent.mode),
         researchBlock,
       ]
         .filter(Boolean)
@@ -1860,13 +1899,25 @@ function ChatScreen({ userName }: { userName: string }) {
               theme={theme}
               onMenu={() => setAppMenuOpen(true)}
               actionsBeforeNav={
-                <NavChromeBtn
-                  theme={theme}
-                  onPress={() => setMenuOpen(true)}
-                  accessibilityLabel="Chat options"
-                >
-                  <Ellipsis size={18} color={theme.text} strokeWidth={2.4} />
-                </NavChromeBtn>
+                <>
+                  <NavChromeBtn
+                    theme={theme}
+                    onPress={() => {
+                      void hapticLight();
+                      setLanguageSheetOpen(true);
+                    }}
+                    accessibilityLabel={`Emo language, ${getChatLanguageLabel(chatLanguage)}`}
+                  >
+                    <Globe size={18} color={theme.text} strokeWidth={2.4} />
+                  </NavChromeBtn>
+                  <NavChromeBtn
+                    theme={theme}
+                    onPress={() => setMenuOpen(true)}
+                    accessibilityLabel="Chat options"
+                  >
+                    <Ellipsis size={18} color={theme.text} strokeWidth={2.4} />
+                  </NavChromeBtn>
+                </>
               }
             />
             <View style={styles.chatBrandRow}>
@@ -1891,6 +1942,7 @@ function ChatScreen({ userName }: { userName: string }) {
                   <EmoMemoryChip
                     theme={theme}
                     label={memoryChipLabel}
+                    remembersPrefix={talkUiBurmese ? BURMESE_UI.remembersPrefix : undefined}
                     onPress={() => navigate('memoryledger')}
                   />
                 </View>
@@ -2016,6 +2068,7 @@ function ChatScreen({ userName }: { userName: string }) {
             suggestedText={savePrompt?.text || ''}
             categoryLabel={savePrompt?.category}
             explicitRemember={Boolean(savePrompt?.explicitRemember)}
+            locale={talkUiBurmese ? 'my' : 'en'}
             onNotNow={() => {
               if (!savePrompt?.manual) autoPromptSuppressedRef.current = true;
               dismissSavePrompt(true, 'declined');
@@ -2120,6 +2173,20 @@ function ChatScreen({ userName }: { userName: string }) {
               },
             ]}
           >
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setLanguageSheetOpen(true);
+              }}
+              style={styles.chatLanguageChipRow}
+              accessibilityRole="button"
+              accessibilityLabel={`Emo language, ${getChatLanguageLabel(chatLanguage)}`}
+            >
+              <Globe size={13} color={theme.accent} strokeWidth={2.2} />
+              <Text style={[styles.chatLanguageChipText, { color: theme.accent }]}>
+                {getChatLanguageLabel(chatLanguage)}
+              </Text>
+            </Pressable>
             <View style={[styles.chatComposerPill, { backgroundColor: TALK_INPUT_SURFACE }]}>
               <Pressable
                 onPress={handleSendFiles}
@@ -2133,7 +2200,7 @@ function ChatScreen({ userName }: { userName: string }) {
               <TextInput
                 ref={inputRef}
                 style={[styles.chatComposerInput, { color: theme.text }]}
-                placeholder={TALK_INPUT_PLACEHOLDER}
+                placeholder={talkUiBurmese ? BURMESE_UI.talkInputPlaceholder : TALK_INPUT_PLACEHOLDER}
                 placeholderTextColor={theme.secondaryText}
                 value={input}
                 onChangeText={setInput}
@@ -2158,12 +2225,26 @@ function ChatScreen({ userName }: { userName: string }) {
             <View style={styles.chatPrivacyRow}>
               <Lock size={13} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
               <Text style={[styles.chatPrivacy, { color: theme.secondaryText }]}>
-                Your conversations are private and secure
+                {talkUiBurmese ? BURMESE_UI.talkPrivacy : 'Your conversations are private and secure'}
               </Text>
             </View>
           </View>
         </KeyboardAvoidingView>
       </TopChrome>
+
+      <TalkLanguageSheet
+        visible={languageSheetOpen}
+        theme={theme}
+        value={chatLanguage}
+        onClose={() => setLanguageSheetOpen(false)}
+        onSelect={(id) => {
+          void (async () => {
+            const next = await saveSettings({ chatLanguage: id });
+            setChatLanguage(normalizeChatLanguage(next.chatLanguage));
+            void refreshMemoryChip();
+          })();
+        }}
+      />
 
       <ChatMenuSheet
         visible={menuOpen}
@@ -3777,6 +3858,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingLeft: 24,
     paddingBottom: NAV_CONTENT_HEIGHT + 88,
+  },
+  chatLanguageChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  chatLanguageChipText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   chatComposerWrap: {
     marginTop: 'auto',

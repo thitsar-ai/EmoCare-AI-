@@ -192,8 +192,8 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               Emo language
             </Text>
               <Text style={[styles.rowHint, { color: theme.mutedText }]}>
-                Talk and Oracle use this setting. EN · မြန်မာ understands Burmese and replies in warm English.
-                App screens stay in English for now.
+                Talk and Oracle reply in this language. မြန်မာ uses native Burmese (not English
+                translation). Most other screens stay in English for now.
               </Text>
             <View style={styles.languageChipRow}>
               {CHAT_LANGUAGE_OPTIONS.map((option) => {

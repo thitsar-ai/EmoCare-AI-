@@ -1,5 +1,5 @@
-import { getChatLanguageAppendix, normalizeChatLanguage } from './chatLanguage';
-import { EOS_TAGLINE, getIntentModeAppendix } from './emoEos';
+import { getChatLanguageAppendix, normalizeChatLanguage, resolveComposeInBurmese } from './chatLanguage.js';
+import { EOS_TAGLINE, getIntentModeAppendix } from './emoEos.js';
 
 /** @typedef {'quick' | 'deep' | 'wise'} OracleModeId */
 
@@ -106,10 +106,18 @@ function getOracleModeInstructions(mode) {
  * @param {string} userName
  * @param {OracleModeId} [mode]
  * @param {import('./chatLanguage').ChatLanguageId | string} [chatLanguage]
+ * @param {{ userMessage?: string; recentUserTexts?: string[] }} [localeCtx]
  */
-export function buildOracleSystemPrompt(userName, mode = 'deep', chatLanguage = 'auto') {
+export function buildOracleSystemPrompt(userName, mode = 'deep', chatLanguage = 'auto', localeCtx = {}) {
   const name = userName?.trim() || 'friend';
-  const language = getChatLanguageAppendix(normalizeChatLanguage(chatLanguage));
+  const pref = normalizeChatLanguage(chatLanguage);
+  const burmese = resolveComposeInBurmese(pref, localeCtx);
+  const language = getChatLanguageAppendix(pref, userName, localeCtx);
+  const oracleLocaleNote = burmese
+    ? `## ORACLE IN BURMESE
+Answer first in natural Burmese (Unicode). Keep Short Answer → Why → Practical Meaning.
+Compose natively — never English-first translation. Stay calm, clear, and concise.`
+    : '';
   return `${ORACLE_PERSONALITY}
 
 ${getIntentModeAppendix('oracle')}
@@ -117,6 +125,8 @@ ${getIntentModeAppendix('oracle')}
 ${getOracleModeInstructions(mode)}
 
 ${language}
+
+${oracleLocaleNote}
 
 ## SESSION
 - Address ${name} naturally, not in every sentence.

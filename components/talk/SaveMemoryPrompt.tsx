@@ -4,6 +4,7 @@ import type { CircadianTheme } from '../../theme/circadianTheme';
 import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
 import { MEMORY_CATEGORIES, resolveMemoryCategory } from '../../utils/memoryCategories';
+import { BURMESE_UI } from '../../utils/emoBurmese';
 import { SERIF } from '../shared/CircadianHeroGlow';
 
 type Props = {
@@ -13,6 +14,7 @@ type Props = {
   categoryLabel?: string | null;
   /** Explicit "Remember that…" request uses softer title. */
   explicitRemember?: boolean;
+  locale?: 'en' | 'my';
   onRemember: (text: string, categoryId: string) => void;
   onNotNow: () => void;
 };
@@ -23,6 +25,7 @@ export function SaveMemoryPrompt({
   suggestedText,
   categoryLabel,
   explicitRemember = false,
+  locale = 'en',
   onRemember,
   onNotNow,
 }: Props) {
@@ -44,9 +47,16 @@ export function SaveMemoryPrompt({
   if (!visible) return null;
 
   const cat = resolveMemoryCategory(categoryId) || MEMORY_CATEGORIES[2];
-  const title = explicitRemember
-    ? 'Of course. Save this memory?'
-    : 'Would you like me to remember this?';
+  const burmese = locale === 'my';
+  const title = burmese
+    ? explicitRemember
+      ? BURMESE_UI.rememberPromptExplicit
+      : BURMESE_UI.rememberPrompt
+    : explicitRemember
+      ? 'Of course. Save this memory?'
+      : 'Would you like me to remember this?';
+  const rememberLabel = burmese ? BURMESE_UI.remember : 'Remember';
+  const notNowLabel = burmese ? BURMESE_UI.notNow : 'Not now';
 
   return (
     <View
@@ -113,9 +123,9 @@ export function SaveMemoryPrompt({
             pressed && { opacity: 0.75 },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Not now"
+          accessibilityLabel={notNowLabel}
         >
-          <Text style={[styles.secondaryLabel, { color: tokens.brand.accent }]}>Not now</Text>
+          <Text style={[styles.secondaryLabel, { color: tokens.brand.accent }]}>{notNowLabel}</Text>
         </Pressable>
         <Pressable
           onPress={() => {
@@ -130,9 +140,9 @@ export function SaveMemoryPrompt({
           ]}
           disabled={!text.trim()}
           accessibilityRole="button"
-          accessibilityLabel="Remember"
+          accessibilityLabel={rememberLabel}
         >
-          <Text style={styles.primaryLabel}>Remember</Text>
+          <Text style={styles.primaryLabel}>{rememberLabel}</Text>
         </Pressable>
       </View>
 

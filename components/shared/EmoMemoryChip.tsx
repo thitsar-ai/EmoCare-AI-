@@ -8,11 +8,13 @@ import { pressChipStyle } from '../../utils/pressFeedback';
 type Props = {
   theme: CircadianTheme;
   label: string;
+  /** Default "Remembers"; Burmese UI may pass "မှတ်မိ". */
+  remembersPrefix?: string;
   onPress?: () => void;
 };
 
 /** Shown when Emo has on-device check-in / journal / memory context active. */
-export function EmoMemoryChip({ theme, label, onPress }: Props) {
+export function EmoMemoryChip({ theme, label, remembersPrefix = 'Remembers', onPress }: Props) {
   return (
     <Pressable
       onPress={() => {
@@ -32,7 +34,15 @@ export function EmoMemoryChip({ theme, label, onPress }: Props) {
       ]}
     >
       <Sparkles size={11} color={theme.accent} strokeWidth={2.2} />
-      <Text style={[styles.chipPrefix, { color: theme.accent }]}>Remembers</Text>
+      <Text
+        style={[
+          styles.chipPrefix,
+          { color: theme.accent },
+          remembersPrefix !== 'Remembers' && styles.chipPrefixLocale,
+        ]}
+      >
+        {remembersPrefix}
+      </Text>
       <Text style={[styles.chipLabel, { color: theme.secondaryText }]} numberOfLines={2}>
         {label}
       </Text>
@@ -59,6 +69,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
+  },
+  chipPrefixLocale: {
+    textTransform: 'none',
+    letterSpacing: 0,
+    fontSize: 11,
   },
   chipLabel: {
     fontSize: 11,

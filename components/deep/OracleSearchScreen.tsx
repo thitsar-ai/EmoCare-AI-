@@ -28,6 +28,7 @@ import {
 } from '../../utils/oracleChatPrompt';
 import { callAnthropicMessages, describeAnthropicError } from '../../utils/anthropic';
 import { loadSettings } from '../../utils/settingsStorage';
+import { normalizeChatLanguage } from '../../utils/chatLanguage';
 import { rgba, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
 import { TalkHeroEmo } from '../talk/TalkHeroEmo';
@@ -226,9 +227,17 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               m.role === 'user' || m.role === 'bot',
           ),
         );
-        const { chatLanguage } = await loadSettings();
+        const settings = await loadSettings();
+        const chatLanguage = normalizeChatLanguage(settings.chatLanguage);
+        const recentUserTexts = priorForApi
+          .filter((m) => m.role === 'user')
+          .map((m) => m.text)
+          .slice(-6);
         const result = await callAnthropicMessages({
-          system: buildOracleSystemPrompt(name, activeMode, chatLanguage),
+          system: buildOracleSystemPrompt(name, activeMode, chatLanguage, {
+            userMessage: trimmed,
+            recentUserTexts,
+          }),
           messages: [...apiHistory, { role: 'user', content: userBlock }],
           maxTokens: maxTokensForMode(activeMode),
           route: 'oracle',

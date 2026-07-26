@@ -3,7 +3,8 @@
  * "Intelligence with Soul"
  */
 
-import { getChatLanguageAppendix, normalizeChatLanguage } from './chatLanguage';
+import { getChatLanguageAppendix, normalizeChatLanguage, resolveComposeInBurmese } from './chatLanguage.js';
+import { EMO_SAFETY_BURMESE } from './emoBurmese.js';
 
 export const EOS_TAGLINE = 'Intelligence with Soul';
 
@@ -135,8 +136,14 @@ Respond in 2–4 short paragraphs maximum:
 3. Do not attempt therapy, diagnosis, prescription, or problem-solving that delays real-world help.
 4. Remind them they deserve support from real people who can be present. Stay calm and clear — not clinical, not alarmist.`;
 
-/** @returns {string} */
-export function getCrisisSafetyAppendix() {
+/**
+ * @param {{ burmese?: boolean }} [opts]
+ * @returns {string}
+ */
+export function getCrisisSafetyAppendix(opts = {}) {
+  if (opts.burmese) {
+    return `${CRISIS_SAFETY_APPENDIX}\n\n${EMO_SAFETY_BURMESE}`;
+  }
   return CRISIS_SAFETY_APPENDIX;
 }
 
@@ -179,12 +186,16 @@ If a CONFIRMED MEMORY clearly relates to what they are saying, weave in at most 
 /**
  * @param {string} [userName]
  * @param {import('./chatLanguage').ChatLanguageId | string} [chatLanguage]
+ * @param {{ userMessage?: string; recentUserTexts?: string[] }} [localeCtx]
  */
-export function getChatSystemPrompt(userName, chatLanguage = 'auto') {
-  const nameLine = userName?.trim()
-    ? `\nThe user's name is ${userName.trim()}. Use it naturally, not in every sentence.`
-    : '';
-  const language = getChatLanguageAppendix(normalizeChatLanguage(chatLanguage));
+export function getChatSystemPrompt(userName, chatLanguage = 'auto', localeCtx = {}) {
+  const pref = normalizeChatLanguage(chatLanguage);
+  const burmese = resolveComposeInBurmese(pref, localeCtx);
+  const nameLine =
+    !burmese && userName?.trim()
+      ? `\nThe user's name is ${userName.trim()}. Use it naturally, not in every sentence.`
+      : '';
+  const language = getChatLanguageAppendix(pref, userName, localeCtx);
   return `${EOS_CORE}\n\n${CHAT_CHANNEL_RULES}${nameLine}\n\n${language}`;
 }
 
@@ -192,10 +203,14 @@ export function getChatSystemPrompt(userName, chatLanguage = 'auto') {
  * @param {'sanctuary' | 'oracle'} [mode]
  * @param {string} [userName]
  * @param {import('./chatLanguage').ChatLanguageId | string} [chatLanguage]
+ * @param {{ userMessage?: string; recentUserTexts?: string[] }} [localeCtx]
  */
-export function getVoiceSystemPrompt(mode = 'sanctuary', userName, chatLanguage = 'auto') {
-  const nameLine = userName?.trim() ? `\nUser name: ${userName.trim()}.` : '';
-  const language = getChatLanguageAppendix(normalizeChatLanguage(chatLanguage));
+export function getVoiceSystemPrompt(mode = 'sanctuary', userName, chatLanguage = 'auto', localeCtx = {}) {
+  const pref = normalizeChatLanguage(chatLanguage);
+  const burmese = resolveComposeInBurmese(pref, localeCtx);
+  const nameLine =
+    !burmese && userName?.trim() ? `\nUser name: ${userName.trim()}.` : '';
+  const language = getChatLanguageAppendix(pref, userName, localeCtx);
   return `${EOS_CORE}\n\n${VOICE_CHANNEL_RULES}${nameLine}\n\n${getIntentModeAppendix(mode)}\n\n${language}`;
 }
 

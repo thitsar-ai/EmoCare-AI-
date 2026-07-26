@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_CHAT_LANGUAGE, normalizeChatLanguage } from './chatLanguage';
+import { DEFAULT_CHAT_LANGUAGE, normalizeChatLanguage } from './chatLanguage.js';
 
 export const SETTINGS_STORAGE_KEY = 'emoAppSettings';
 
