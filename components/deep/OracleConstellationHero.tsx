@@ -29,7 +29,7 @@ const CONSTELLATION_LINES = [
   [2, 7],
 ];
 
-/** Oracle identity — constellation, intelligent orb, subtle animated light (not Emo). */
+/** Legacy Mira constellation hero (unused by Mira screen; kept for reference). */
 export function OracleConstellationHero() {
   const pulse = useRef(new Animated.Value(0)).current;
   const drift = useRef(new Animated.Value(0)).current;
@@ -82,7 +82,7 @@ export function OracleConstellationHero() {
   const driftY = drift.interpolate({ inputRange: [0, 1], outputRange: [0, -4] });
 
   return (
-    <View style={styles.wrap} accessibilityLabel="Oracle knowledge companion">
+    <View style={styles.wrap} accessibilityLabel="Mira guidance companion">
       <Animated.View style={[styles.constellationWrap, { transform: [{ translateY: driftY }] }]}>
         <Svg width={120} height={72} viewBox="0 0 120 72">
           {CONSTELLATION_LINES.map(([a, b], index) => {

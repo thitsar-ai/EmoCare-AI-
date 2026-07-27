@@ -144,6 +144,7 @@ import {
   resolveComposeInBurmese,
 } from './utils/chatLanguage';
 import { BURMESE_UI } from './utils/emoBurmese';
+import { localeAwareTextStyle, localeTextMetrics } from './utils/localeText';
 import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
 import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFormat';
@@ -902,14 +903,23 @@ function EmoChatText({
   style: object;
   paragraphGap?: number;
 }) {
-  const paragraphs = splitEmoReplyParagraphs(text);
+  const polished = polishEmoReplyText(text);
+  const localeStyle = localeAwareTextStyle(polished, {
+    fontSize: 15,
+    englishLineHeight: 24,
+    baseFontFamily: SERIF,
+  });
+  const paragraphs = splitEmoReplyParagraphs(polished);
   if (paragraphs.length <= 1) {
-    return <Text style={style}>{polishEmoReplyText(text)}</Text>;
+    return <Text style={[style, localeStyle]}>{polished}</Text>;
   }
   return (
     <>
       {paragraphs.map((paragraph, index) => (
-        <Text key={`${index}-${paragraph.slice(0, 12)}`} style={[style, index > 0 && { marginTop: paragraphGap }]}>
+        <Text
+          key={`${index}-${paragraph.slice(0, 12)}`}
+          style={[style, localeStyle, index > 0 && { marginTop: paragraphGap }]}
+        >
           {paragraph}
         </Text>
       ))}
@@ -1878,7 +1888,7 @@ function ChatScreen({ userName }: { userName: string }) {
     borderColor: theme.border,
   };
   const chatStatusLine = isSearching
-    ? 'Oracle · gathering research…'
+    ? 'Mira · gathering research…'
     : isWaiting
       ? streamLevel > 0.05
         ? 'Emo is writing…'
@@ -1990,7 +2000,20 @@ function ChatScreen({ userName }: { userName: string }) {
                       >
                         <Pressable
                           onPress={() => openBubbleMenu(m)}
-                          style={({ pressed }) => [styles.chatBotPlain, pressed && styles.chatBubblePressed]}
+                          style={({ pressed }) => {
+                            const pad = localeTextMetrics(m.text, {
+                              fontSize: 15,
+                              englishPaddingV: 10,
+                            });
+                            return [
+                              styles.chatBotPlain,
+                              {
+                                paddingTop: pad.paddingTop,
+                                paddingBottom: pad.paddingBottom,
+                              },
+                              pressed && styles.chatBubblePressed,
+                            ];
+                          }}
                           accessibilityRole="button"
                           accessibilityLabel="Emo message options"
                         >
@@ -2014,7 +2037,19 @@ function ChatScreen({ userName }: { userName: string }) {
                           locations={[0, 0.33, 0.67, 1]}
                           start={{ x: 0, y: 0.5 }}
                           end={{ x: 1, y: 0.5 }}
-                          style={styles.chatUserBubble}
+                          style={[
+                            styles.chatUserBubble,
+                            (() => {
+                              const pad = localeTextMetrics(m.text, {
+                                fontSize: 14,
+                                englishPaddingV: 12,
+                              });
+                              return {
+                                paddingTop: pad.paddingTop,
+                                paddingBottom: pad.paddingBottom,
+                              };
+                            })(),
+                          ]}
                         >
                           {m.attachmentUri && m.attachmentKind === 'photo' ? (
                             <Image
@@ -2023,7 +2058,14 @@ function ChatScreen({ userName }: { userName: string }) {
                               resizeMode="cover"
                             />
                           ) : null}
-                          <Text style={styles.chatUserText}>{m.text}</Text>
+                          <Text
+                            style={[
+                              styles.chatUserText,
+                              localeAwareTextStyle(m.text, { fontSize: 14, englishLineHeight: 21 }),
+                            ]}
+                          >
+                            {m.text}
+                          </Text>
                         </LinearGradient>
                       </Pressable>
                       {m.time ? (
@@ -2199,7 +2241,6 @@ function ChatScreen({ userName }: { userName: string }) {
               </Pressable>
               <TextInput
                 ref={inputRef}
-                style={[styles.chatComposerInput, { color: theme.text }]}
                 placeholder={talkUiBurmese ? BURMESE_UI.talkInputPlaceholder : TALK_INPUT_PLACEHOLDER}
                 placeholderTextColor={theme.secondaryText}
                 value={input}
@@ -2210,6 +2251,25 @@ function ChatScreen({ userName }: { userName: string }) {
                 submitBehavior="submit"
                 blurOnSubmit={false}
                 multiline={false}
+                style={[
+                  styles.chatComposerInput,
+                  { color: theme.text },
+                  (() => {
+                    const sample =
+                      input || (talkUiBurmese ? BURMESE_UI.talkInputPlaceholder : TALK_INPUT_PLACEHOLDER);
+                    const m = localeTextMetrics(sample, {
+                      fontSize: 16,
+                      englishLineHeight: 22,
+                      englishPaddingV: 8,
+                    });
+                    return {
+                      lineHeight: m.lineHeight,
+                      paddingTop: Math.max(8, m.paddingTop - 4),
+                      paddingBottom: Math.max(8, m.paddingBottom - 4),
+                      ...(m.myanmar ? { fontFamily: undefined } : {}),
+                    };
+                  })(),
+                ]}
               />
               <TouchableOpacity
                 style={[styles.chatSendWrap, isWaiting && styles.btnDisabled]}
@@ -2370,7 +2430,7 @@ function NavBar() {
     insights: { label: 'Insights', Icon: TrendingUp },
     memoryledger: { label: 'Memory', Icon: Brain },
     settings: { label: 'Settings', Icon: Settings },
-    oracle: { label: 'Oracle', Icon: Sparkles },
+    oracle: { label: 'Mira', Icon: Sparkles }, // legacy screen key: oracle
   };
   return (
     <View
@@ -3641,7 +3701,8 @@ const styles = StyleSheet.create({
     backgroundColor: TALK_CONVERSATION_SURFACE,
     borderRadius: 22,
     borderWidth: 1,
-    overflow: 'hidden',
+    // visible: Myanmar diacritics clip when overflow is hidden with tight padding
+    overflow: 'visible',
   },
   chatQuickChipRow: {
     gap: 8,
@@ -3747,6 +3808,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
     fontFamily: SERIF,
+    // localeAwareTextStyle may override fontFamily/lineHeight for Myanmar
   },
   chatMsgRowUser: {
     alignSelf: 'flex-end',

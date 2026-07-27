@@ -4,6 +4,7 @@ import { Sparkles } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { hapticLight } from '../../utils/haptics';
 import { pressChipStyle } from '../../utils/pressFeedback';
+import { textNeedsMyanmarMetrics } from '../../utils/localeText';
 
 type Props = {
   theme: CircadianTheme;
@@ -43,7 +44,14 @@ export function EmoMemoryChip({ theme, label, remembersPrefix = 'Remembers', onP
       >
         {remembersPrefix}
       </Text>
-      <Text style={[styles.chipLabel, { color: theme.secondaryText }]} numberOfLines={2}>
+      <Text
+        style={[
+          styles.chipLabel,
+          { color: theme.secondaryText },
+          textNeedsMyanmarMetrics(`${remembersPrefix} ${label}`) && styles.chipLabelMyanmar,
+        ]}
+        numberOfLines={2}
+      >
         {label}
       </Text>
     </Pressable>
@@ -79,5 +87,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     flexShrink: 1,
+  },
+  chipLabelMyanmar: {
+    lineHeight: 18,
+    paddingTop: 2,
   },
 });

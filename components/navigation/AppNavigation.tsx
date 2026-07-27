@@ -500,7 +500,7 @@ export const MAIN_APP_MENU: {
   { label: 'Today', Icon: CalendarDays, accent: '#2A9D8F', target: { kind: 'screen', key: 'today' } },
   { label: 'Talk', Icon: MessageCircle, accent: '#9B7BFF', target: { kind: 'screen', key: 'talk' } },
   { label: 'Journal', Icon: BookOpen, accent: '#D4A574', target: { kind: 'screen', key: 'journal' } },
-  { label: 'Oracle', Icon: Sparkles, accent: '#58D6D0', target: { kind: 'screen', key: 'oracle' } },
+  { label: 'Mira', Icon: Sparkles, accent: '#58D6D0', target: { kind: 'screen', key: 'oracle' } },
   { label: 'Insights', Icon: TrendingUp, accent: '#6B7FD7', target: { kind: 'screen', key: 'insights' } },
   { label: 'Memory Ledger', Icon: Brain, accent: '#C4A35A', target: { kind: 'screen', key: 'memoryledger' } },
 ];

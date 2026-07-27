@@ -619,8 +619,8 @@ export function SanctuaryDashboard({
               theme={theme}
               icon={Sparkles}
               iconColor={tokens.oracle.accent}
-              title="Oracle"
-              subtitle="Ask Emo anything"
+              title="Mira"
+              subtitle="Ask Mira…"
               onPress={() => onNav('oracle')}
             />
           </View>

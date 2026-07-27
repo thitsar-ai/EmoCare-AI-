@@ -133,7 +133,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const handleDeleteAll = () => {
     Alert.alert(
       'Delete all data?',
-      'This permanently removes your check-ins, journal entries, memories, chat history, Oracle insights, and app data from this device. Your name and app settings stay.',
+      'This permanently removes your check-ins, journal entries, memories, chat history, Mira insights, and app data from this device. Your name and app settings stay.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -192,8 +192,8 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               Emo language
             </Text>
               <Text style={[styles.rowHint, { color: theme.mutedText }]}>
-                Talk and Oracle reply in this language. မြန်မာ uses native Burmese (not English
-                translation). Most other screens stay in English for now.
+                Talk language for Emo / အီမို. မြန်မာ uses native Burmese (not English translation).
+                Mira has its own language control. Most other screens stay in English for now.
               </Text>
             <View style={styles.languageChipRow}>
               {CHAT_LANGUAGE_OPTIONS.map((option) => {

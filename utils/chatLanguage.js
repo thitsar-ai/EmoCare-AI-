@@ -1,5 +1,5 @@
 /**
- * Chat language preference for Emo / Oracle.
+ * Chat language preference for Emo / အီမို Talk (Mira has miraLanguage).
  * Burmese follows native-first gold standard (utils/emoBurmese.js).
  */
 
@@ -73,7 +73,7 @@ Otherwise stay in English.`;
     return `## LANGUAGE
 Reply in natural everyday Spanish.
 Use a warm, clear register (neutral Latin American-friendly Spanish is fine unless the user clearly uses another variety).
-Keep the same calm Emo / Oracle personality and length rules.
+Keep the same calm Emo personality and length rules.
 If the user writes in English, still reply in Spanish unless they clearly ask for English.
 Memory recall must stay factually accurate even when phrased in Spanish.`;
   }

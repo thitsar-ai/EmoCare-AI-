@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { ArrowUp, Bookmark, Compass, Loader2, Sparkles, Trash2 } from 'lucide-react-native';
+import { ArrowUp, Bookmark, Compass, Globe, Loader2, Sparkles, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,19 +27,28 @@ import {
   buildOracleSystemPrompt,
 } from '../../utils/oracleChatPrompt';
 import { callAnthropicMessages, describeAnthropicError } from '../../utils/anthropic';
-import { loadSettings } from '../../utils/settingsStorage';
-import { normalizeChatLanguage } from '../../utils/chatLanguage';
+import { loadSettings, saveSettings } from '../../utils/settingsStorage';
+import {
+  getMiraLanguageLabel,
+  miraInputPlaceholder,
+  normalizeMiraLanguage,
+} from '../../utils/miraLanguage';
+import { localeAwareTextStyle, localeTextMetrics, textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { rgba, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
-import { TalkHeroEmo } from '../talk/TalkHeroEmo';
+import { TalkHeroMira } from '../talk/TalkHeroMira';
+import { MiraLanguageSheet } from '../talk/MiraLanguageSheet';
 import { TalkAiConsentSheet } from '../talk/TalkAiConsentSheet';
 import { useAnthropicAiConsent } from '../../hooks/useAnthropicAiConsent';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
+  MIRA_EMPTY_PROMPT,
+  MIRA_EMPTY_PROMPT_MY,
+  MIRA_EMPTY_ROLE,
+  MIRA_EMPTY_ROLE_MY,
   ORACLE_CATEGORIES,
   ORACLE_HEADER_TAGLINE,
   ORACLE_HEADER_TITLE,
-  ORACLE_INPUT_PLACEHOLDER,
   ORACLE_MODES,
   ORACLE_STATUS_MESSAGE,
   ORACLE_STATUS_SHORT,
@@ -47,6 +56,7 @@ import {
   oracleSourcesLabel,
 } from '../../constants/brandCopy';
 import { hapticLight } from '../../utils/haptics';
+import { NavChromeBtn } from '../navigation/AppNavigation';
 
 const ORACLE_CHAT_KEY = 'oracleChatCurrent';
 
@@ -156,9 +166,19 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const [mode, setMode] = useState<OracleModeId>('deep');
   const [messages, setMessages] = useState<OracleMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [miraLanguage, setMiraLanguage] = useState<'auto' | 'en' | 'my' | 'id'>('auto');
+  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
     useAnthropicAiConsent();
   const isEmpty = messages.length === 0;
+  const miraUiBurmese = miraLanguage === 'my';
+  const miraPlaceholder = miraInputPlaceholder(miraLanguage);
+
+  useEffect(() => {
+    void loadSettings().then((s) => {
+      setMiraLanguage(normalizeMiraLanguage(s.miraLanguage));
+    });
+  }, []);
 
   const lastBotId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -228,19 +248,20 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           ),
         );
         const settings = await loadSettings();
-        const chatLanguage = normalizeChatLanguage(settings.chatLanguage);
+        const lang = normalizeMiraLanguage(settings.miraLanguage);
+        setMiraLanguage(lang);
         const recentUserTexts = priorForApi
           .filter((m) => m.role === 'user')
           .map((m) => m.text)
           .slice(-6);
         const result = await callAnthropicMessages({
-          system: buildOracleSystemPrompt(name, activeMode, chatLanguage, {
+          system: buildOracleSystemPrompt(name, activeMode, lang, {
             userMessage: trimmed,
             recentUserTexts,
           }),
           messages: [...apiHistory, { role: 'user', content: userBlock }],
           maxTokens: maxTokensForMode(activeMode),
-          route: 'oracle',
+          route: 'oracle', // legacy route id — companion is Mira
         });
 
         const replyText =
@@ -305,7 +326,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   }, [input, submitText]);
 
   const clearHistory = () => {
-    Alert.alert('Clear history', 'Remove all Oracle messages?', [
+    Alert.alert('Clear history', 'Remove all Mira messages?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
@@ -322,7 +343,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
     const lastBot = [...messages].reverse().find((m) => m.role === 'bot');
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     if (!lastBot?.text.trim()) {
-      Alert.alert('Nothing to save', 'Ask Oracle a question first.');
+      Alert.alert('Nothing to save', 'Ask Mira a question first.');
       return;
     }
     const ok = await saveOracleInsight({
@@ -332,7 +353,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
       sourceTitles: (lastBot.sources || []).map((s) => s.title || '').filter(Boolean),
     });
     if (ok) {
-      Alert.alert('Saved', 'This Oracle answer was saved to your library.', [
+      Alert.alert('Saved', 'This Mira answer was saved to your library.', [
         { text: 'Stay here', style: 'cancel' },
         { text: 'View Insights', onPress: () => onNav('insights') },
       ]);
@@ -365,7 +386,15 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           variant="todayInsights"
           style={[styles.botBubble, { borderColor: oracle.botBubbleBorder }]}
         >
-          <Text style={[styles.botText, { color: oracle.inputText }]}>{answer}</Text>
+          <Text
+            style={[
+              styles.botText,
+              { color: oracle.inputText },
+              localeAwareTextStyle(answer, { fontSize: 16, englishLineHeight: 26, baseFontFamily: SERIF }),
+            ]}
+          >
+            {answer}
+          </Text>
           {perspective ? (
             <View
               style={[
@@ -374,7 +403,19 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               ]}
             >
               <Text style={[styles.wiseEyebrow, { color: tokens.text.primary }]}>A wise perspective</Text>
-              <Text style={[styles.wiseText, { color: oracle.inputText }]}>{perspective}</Text>
+              <Text
+                style={[
+                  styles.wiseText,
+                  { color: oracle.inputText },
+                  localeAwareTextStyle(perspective, {
+                    fontSize: 15,
+                    englishLineHeight: 24,
+                    baseFontFamily: SERIF,
+                  }),
+                ]}
+              >
+                {perspective}
+              </Text>
             </View>
           ) : null}
         </CircadianGlassCard>
@@ -451,7 +492,13 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
     </View>
   );
 
-  const renderSearchInput = (large: boolean) => (
+  const renderSearchInput = (large: boolean) => {
+    const inputMetrics = localeTextMetrics(input || miraPlaceholder, {
+      fontSize: large ? 18 : 16,
+      englishLineHeight: large ? 26 : 22,
+      englishPaddingV: large ? 14 : 10,
+    });
+    return (
     <View style={[styles.inputRow, large && styles.inputRowLarge]}>
       <TextInput
         ref={inputRef}
@@ -461,9 +508,13 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             borderColor: oracle.inputBorder,
             backgroundColor: oracle.inputBg,
             color: oracle.inputText,
+            lineHeight: inputMetrics.lineHeight,
+            paddingTop: inputMetrics.paddingTop,
+            paddingBottom: inputMetrics.paddingBottom,
+            ...(textNeedsMyanmarMetrics(input || miraPlaceholder) ? { fontFamily: undefined } : {}),
           },
         ]}
-        placeholder={ORACLE_INPUT_PLACEHOLDER}
+        placeholder={miraPlaceholder}
         placeholderTextColor={oracle.placeholder}
         value={input}
         onChangeText={setInput}
@@ -481,7 +532,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           { backgroundColor: canSend ? oracle.sendBg : oracle.sendDisabled },
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Send question to Oracle"
+        accessibilityLabel="Send question to Mira"
       >
         {searching ? (
           <ActivityIndicator color="#fff" size="small" />
@@ -490,7 +541,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         )}
       </Pressable>
     </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.flex}>
@@ -503,7 +555,23 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
           <View style={styles.chromeWrap}>
-            <ScreenNavChrome theme={theme} title={ORACLE_HEADER_TITLE} titleColor={oracle.navTitle} />
+            <ScreenNavChrome
+              theme={theme}
+              title={ORACLE_HEADER_TITLE}
+              titleColor={oracle.navTitle}
+              actionsBeforeNav={
+                <NavChromeBtn
+                  theme={theme}
+                  onPress={() => {
+                    void hapticLight();
+                    setLanguageSheetOpen(true);
+                  }}
+                  accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+                >
+                  <Globe size={18} color={theme.text} strokeWidth={2.4} />
+                </NavChromeBtn>
+              }
+            />
           </View>
 
           <View style={styles.oracleHeaderMeta}>
@@ -526,7 +594,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           </View>
 
           <View style={[styles.oracleEmoRow, !isEmpty && styles.oracleEmoRowCompact]}>
-            <TalkHeroEmo theme={theme} size="compact" />
+            <TalkHeroMira theme={theme} size={isEmpty ? 'hero' : 'compact'} />
           </View>
 
           {isEmpty ? (
@@ -541,9 +609,53 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
+              <View style={styles.miraRoleBlock}>
+                <Text
+                  style={[
+                    styles.miraRoleText,
+                    { color: theme.secondaryText },
+                    localeAwareTextStyle(miraUiBurmese ? MIRA_EMPTY_ROLE_MY : MIRA_EMPTY_ROLE, {
+                      fontSize: 15,
+                      englishLineHeight: 22,
+                      baseFontFamily: SERIF,
+                    }),
+                  ]}
+                >
+                  {miraUiBurmese ? MIRA_EMPTY_ROLE_MY : MIRA_EMPTY_ROLE}
+                </Text>
+                <Text
+                  style={[
+                    styles.miraPromptText,
+                    { color: theme.text },
+                    localeAwareTextStyle(miraUiBurmese ? MIRA_EMPTY_PROMPT_MY : MIRA_EMPTY_PROMPT, {
+                      fontSize: 17,
+                      englishLineHeight: 26,
+                      baseFontFamily: SERIF,
+                    }),
+                  ]}
+                >
+                  {miraUiBurmese ? MIRA_EMPTY_PROMPT_MY : MIRA_EMPTY_PROMPT}
+                </Text>
+              </View>
+
               <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroSearchCard}>
                 {renderSearchInput(true)}
               </CircadianGlassCard>
+
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setLanguageSheetOpen(true);
+                }}
+                style={styles.miraLangChip}
+                accessibilityRole="button"
+                accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+              >
+                <Globe size={13} color={tokens.oracle.accent} strokeWidth={2.2} />
+                <Text style={[styles.miraLangChipText, { color: tokens.oracle.accent }]}>
+                  {getMiraLanguageLabel(miraLanguage)}
+                </Text>
+              </Pressable>
 
               {renderModeSelector()}
 
@@ -592,12 +704,28 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                     );
                   }
                   if (m.role === 'user') {
+                    const userPad = localeTextMetrics(m.text, { fontSize: 16, englishPaddingV: 16 });
                     return (
                       <View
                         key={m.id}
-                        style={[styles.userBubble, { backgroundColor: oracle.userBubble }]}
+                        style={[
+                          styles.userBubble,
+                          {
+                            backgroundColor: oracle.userBubble,
+                            paddingTop: userPad.paddingTop,
+                            paddingBottom: userPad.paddingBottom,
+                          },
+                        ]}
                       >
-                        <Text style={[styles.userText, { color: oracle.inputText }]}>{m.text}</Text>
+                        <Text
+                          style={[
+                            styles.userText,
+                            { color: oracle.inputText },
+                            localeAwareTextStyle(m.text, { fontSize: 16, englishLineHeight: 24 }),
+                          ]}
+                        >
+                          {m.text}
+                        </Text>
                         {m.time ? (
                           <Text style={[styles.timeTag, { color: oracle.body }]}>{m.time}</Text>
                         ) : null}
@@ -612,6 +740,20 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
 
           {!isEmpty ? (
             <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setLanguageSheetOpen(true);
+                }}
+                style={styles.miraLangChip}
+                accessibilityRole="button"
+                accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+              >
+                <Globe size={13} color={tokens.oracle.accent} strokeWidth={2.2} />
+                <Text style={[styles.miraLangChipText, { color: tokens.oracle.accent }]}>
+                  {getMiraLanguageLabel(miraLanguage)}
+                </Text>
+              </Pressable>
               {renderSearchInput(false)}
               <View style={styles.composerActions}>
                 <Pressable
@@ -645,6 +787,19 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           ) : null}
         </KeyboardAvoidingView>
       </ScreenSafeArea>
+
+      <MiraLanguageSheet
+        visible={languageSheetOpen}
+        theme={theme}
+        value={miraLanguage}
+        onClose={() => setLanguageSheetOpen(false)}
+        onSelect={(id) => {
+          void (async () => {
+            const next = await saveSettings({ miraLanguage: id });
+            setMiraLanguage(normalizeMiraLanguage(next.miraLanguage));
+          })();
+        }}
+      />
 
       <TalkAiConsentSheet
         visible={showAiConsentSheet}
@@ -779,10 +934,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     maxWidth: '92%',
     borderRadius: 18,
-    padding: 16,
+    paddingHorizontal: 16,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: tokens.border.standard,
+    overflow: 'visible',
   },
   userText: { fontSize: 16, lineHeight: 24 },
   timeTag: {
@@ -792,9 +948,41 @@ const styles = StyleSheet.create({
   },
   botBlock: { marginBottom: 12 },
   botBubble: {
-    paddingVertical: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    overflow: 'visible',
   },
   botText: { fontSize: 16, lineHeight: 26 },
+  miraRoleBlock: {
+    paddingHorizontal: 8,
+    marginBottom: 18,
+    gap: 10,
+  },
+  miraRoleText: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    fontFamily: SERIF,
+  },
+  miraPromptText: {
+    fontSize: 17,
+    lineHeight: 26,
+    textAlign: 'center',
+    fontFamily: SERIF,
+    fontWeight: '600',
+  },
+  miraLangChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  miraLangChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   wiseBlock: {
     marginTop: 16,
     borderWidth: 1,

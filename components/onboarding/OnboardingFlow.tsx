@@ -901,7 +901,7 @@ export function OnboardingFlow({
 
             <Text style={[styles.privacyClarify, { color: theme.mutedText }]}>
               Journal entries and Memory Ledger data stay encrypted on your device. When you use Talk
-              or Oracle, your messages are sent to Anthropic's AI to generate replies. Only those
+              or Mira, your messages are sent to Anthropic's AI to generate replies. Only those
               messages are transmitted — nothing else — and they are not stored long-term on our
               servers.
             </Text>

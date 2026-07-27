@@ -4,26 +4,26 @@ import { Globe } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
-import { CHAT_LANGUAGE_OPTIONS } from '../../utils/chatLanguage';
+import { MIRA_LANGUAGE_OPTIONS } from '../../utils/miraLanguage';
 
-type ChatLanguageId = 'auto' | 'en' | 'my' | 'es';
+type MiraLanguageId = 'auto' | 'en' | 'my' | 'id';
 
 type Props = {
   visible: boolean;
   theme: CircadianTheme;
-  value: ChatLanguageId;
+  value: MiraLanguageId;
   onClose: () => void;
-  onSelect: (id: ChatLanguageId) => void;
+  onSelect: (id: MiraLanguageId) => void;
 };
 
-const HINTS: Record<ChatLanguageId, string> = {
+const HINTS: Record<MiraLanguageId, string> = {
   auto: 'Match the language you write in',
-  en: 'Emo replies in English',
-  my: 'Emo replies in natural Burmese',
-  es: 'Emo replies in Spanish',
+  en: 'Mira replies in English',
+  my: 'Mira replies in natural Burmese',
+  id: 'Mira replies in Bahasa Indonesia',
 };
 
-export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: Props) {
+export function MiraLanguageSheet({ visible, theme, value, onClose, onSelect }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
@@ -37,34 +37,34 @@ export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                 <Globe size={18} color={theme.accent} strokeWidth={2.2} />
               </View>
               <View style={styles.flex}>
-                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>Emo language</Text>
+                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>Response language</Text>
                 <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>
-                  Choose how Emo / အီမို talks with you. Saved for Talk (separate from Mira).
+                  Choose how Mira replies. Saved separately from Emo / အီမို Talk.
                 </Text>
               </View>
             </View>
 
             <View style={styles.list}>
-              {CHAT_LANGUAGE_OPTIONS.map((option, index) => {
+              {MIRA_LANGUAGE_OPTIONS.map((option, index) => {
                 const selected = value === option.id;
                 return (
                   <Pressable
                     key={option.id}
                     onPress={() => {
                       void hapticLight();
-                      onSelect(option.id);
+                      onSelect(option.id as MiraLanguageId);
                       onClose();
                     }}
                     style={[
                       styles.row,
-                      index < CHAT_LANGUAGE_OPTIONS.length - 1 && {
+                      index < MIRA_LANGUAGE_OPTIONS.length - 1 && {
                         borderBottomWidth: StyleSheet.hairlineWidth,
                         borderBottomColor: DARK_MENU_SURFACE.border,
                       },
                     ]}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
-                    accessibilityLabel={`Emo language ${option.label}`}
+                    accessibilityLabel={`Mira language ${option.label}`}
                   >
                     <View style={styles.rowText}>
                       <Text
@@ -77,7 +77,7 @@ export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                         {option.label}
                       </Text>
                       <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontSize: 12, marginTop: 3 }}>
-                        {HINTS[option.id]}
+                        {HINTS[option.id as MiraLanguageId]}
                       </Text>
                     </View>
                     <View
@@ -112,11 +112,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   anchor: { width: '100%' },
-  sheet: {
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 18,
-  },
+  sheet: { borderRadius: 18, borderWidth: 1, padding: 18 },
   flex: { flex: 1 },
   headerRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
   iconWrap: {

@@ -47,7 +47,7 @@ const MAIN_ROUTE_META: Record<
   today: { label: "Today's Dashboard", component: 'TodayDashboardScreen', tabBar: true },
   talk: { label: 'Talk', component: 'ChatScreen', tabBar: true },
   journal: { label: 'Journal', component: 'JournalScreen', tabBar: true },
-  oracle: { label: 'Oracle', component: 'OracleSearchScreen' },
+  oracle: { label: 'Mira', component: 'OracleSearchScreen' }, // legacy route key: oracle
   insights: { label: 'Insights', component: 'InsightsScreen' },
   memoryledger: { label: 'Memory Ledger', component: 'MemoryLedgerScreen' },
   settings: { label: 'Settings', component: 'SettingsScreen' },

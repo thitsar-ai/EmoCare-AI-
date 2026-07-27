@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_CHAT_LANGUAGE, normalizeChatLanguage } from './chatLanguage.js';
+import { DEFAULT_MIRA_LANGUAGE, normalizeMiraLanguage } from './miraLanguage.js';
 
 export const SETTINGS_STORAGE_KEY = 'emoAppSettings';
 
@@ -12,6 +13,8 @@ export const DEFAULT_SETTINGS = {
   biometricUnlockEnabled: false,
   /** @type {import('./chatLanguage').ChatLanguageId} */
   chatLanguage: DEFAULT_CHAT_LANGUAGE,
+  /** Mira response language (independent from Emo Talk). */
+  miraLanguage: DEFAULT_MIRA_LANGUAGE,
 };
 
 export async function loadSettings() {
@@ -23,6 +26,7 @@ export async function loadSettings() {
         ...DEFAULT_SETTINGS,
         ...parsed,
         chatLanguage: normalizeChatLanguage(parsed?.chatLanguage),
+        miraLanguage: normalizeMiraLanguage(parsed?.miraLanguage),
       };
     }
   } catch {}
@@ -34,6 +38,9 @@ export async function saveSettings(partial) {
   const next = { ...current, ...partial };
   if (partial && Object.prototype.hasOwnProperty.call(partial, 'chatLanguage')) {
     next.chatLanguage = normalizeChatLanguage(partial.chatLanguage);
+  }
+  if (partial && Object.prototype.hasOwnProperty.call(partial, 'miraLanguage')) {
+    next.miraLanguage = normalizeMiraLanguage(partial.miraLanguage);
   }
   try {
     await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
