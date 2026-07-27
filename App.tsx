@@ -147,6 +147,13 @@ import {
   resolveEmoComposeLocale,
   responseViolatesLocale,
 } from './utils/chatLanguage';
+import { classifyBurmeseTalkIntent } from './utils/emoBurmeseIntent';
+import {
+  ANTHROPIC_MODEL_BURMESE,
+  ensureQualityBurmeseReply,
+  logBurmeseQualityDev,
+} from './utils/emoBurmeseReview';
+import { normalizeBurmeseText } from './utils/emoBurmeseNormalize';
 import { localeAwareTextStyle, localeTextMetrics } from './utils/localeText';
 import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
@@ -160,6 +167,7 @@ import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
 import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
 import { SaveMemoryPrompt } from './components/talk/SaveMemoryPrompt';
+import { BurmeseReplyFeedback } from './components/talk/BurmeseReplyFeedback';
 import { TalkLanguageSheet } from './components/talk/TalkLanguageSheet';
 import { TalkFeelingCheck } from './components/talk/TalkFeelingCheck';
 import { classifyMemoryEligibility } from './utils/memoryEligibilityClassifier';
@@ -1727,11 +1735,16 @@ function ChatScreen({ userName }: { userName: string }) {
 
       const maxTokens = intent.mode === 'oracle' ? 1600 : 1200;
       const route = intent.mode === 'oracle' ? 'oracle' : 'talk';
+      const burmeseTalkIntent = burmese ? classifyBurmeseTalkIntent(lastUserMsg?.text || '') : null;
+      const talkModel = burmese ? ANTHROPIC_MODEL_BURMESE : undefined;
+      const talkTemperature = burmese ? 0.55 : undefined;
 
       const result = await streamAnthropicMessages({
         system,
         maxTokens,
         route,
+        model: talkModel,
+        temperature: talkTemperature,
         messages: apiMessages,
         languageMeta,
         signal: abort.signal,
@@ -1781,6 +1794,8 @@ function ChatScreen({ userName }: { userName: string }) {
             system: `${system}\n\n${rewriteInstruction}`,
             maxTokens,
             route,
+            model: talkModel,
+            temperature: talkTemperature,
             languageMeta,
             messages: [
               ...apiMessages,
@@ -1801,6 +1816,33 @@ function ChatScreen({ userName }: { userName: string }) {
           if (!corrected) {
             replyText = getLanguageFallbackMessage(composeLocale);
           }
+        }
+
+        // Burmese: script check is not enough — fluency/coherence review before display
+        if (burmese && !abort.signal.aborted) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === streamId ? { ...m, text: normalizeBurmeseText(replyText) } : m,
+            ),
+          );
+          const quality = await ensureQualityBurmeseReply({
+            userMessage: lastUserMsg?.text || '',
+            draftResponse: replyText,
+            userName,
+            intent: burmeseTalkIntent || 'unknown',
+          });
+          replyText = polishEmoReplyText(quality.text);
+          logBurmeseQualityDev({
+            model: ANTHROPIC_MODEL_BURMESE,
+            intent: burmeseTalkIntent,
+            responseLength: replyText.length,
+            rewriteOccurred: quality.displayedAfterRewrite || quality.review?.rewriteOccurred,
+            fluencyScore: quality.review?.fluencyScore,
+            coherenceScore: quality.review?.coherenceScore,
+            spellingScore: quality.review?.spellingScore,
+            personaScore: quality.review?.personaScore,
+            pass: quality.review?.pass,
+          });
         }
 
         const validated = validateMemoryRecallResponse({
@@ -2082,6 +2124,9 @@ function ChatScreen({ userName }: { userName: string }) {
                           <EmoChatText text={m.text} style={[styles.chatBotText, { color: theme.text }]} />
                         </Pressable>
                       </View>
+                      {talkUiBurmese && m.text?.trim() && !isWaiting ? (
+                        <BurmeseReplyFeedback theme={theme} responseText={m.text} />
+                      ) : null}
                       {m.time ? (
                         <Text style={[styles.chatMsgTime, { color: theme.secondaryText }]}>{m.time}</Text>
                       ) : null}

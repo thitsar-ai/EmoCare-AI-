@@ -9,6 +9,7 @@ import {
   resolveEmoComposeLocale,
 } from './chatLanguage.js';
 import { EMO_SAFETY_BURMESE } from './emoBurmese.js';
+import { getEmoIdentityBlock } from './emoIdentity.js';
 
 export const EOS_TAGLINE = 'Intelligence with Soul';
 
@@ -209,7 +210,8 @@ export function getChatSystemPrompt(userName, chatLanguage = 'auto', localeCtx =
   const language = getChatLanguageAppendix(pref, userName, localeCtx);
   const priority = `## LANGUAGE PRIORITY
 Active compose locale: ${composeLocale}. Explicit user language selection (or Auto detection for this turn) beats history, memories, and personality examples. Never mix languages in one reply.`;
-  return `${EOS_CORE}\n\n${CHAT_CHANNEL_RULES}${nameLine}\n\n${priority}\n\n${language}`;
+  const identity = burmese ? '' : `\n\n${getEmoIdentityBlock('en')}`;
+  return `${EOS_CORE}${identity}\n\n${CHAT_CHANNEL_RULES}${nameLine}\n\n${priority}\n\n${language}`;
 }
 
 /**

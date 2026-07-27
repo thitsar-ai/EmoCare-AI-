@@ -471,7 +471,7 @@ export function getChatLanguageAppendix(preference, userName, ctx = {}) {
   );
   const strict = getStrictLanguageBlock(locale, userName);
   if (locale === 'my') {
-    return `${getEmoPersonalityBurmese(userName)}\n\n${strict}`;
+    return `${getEmoPersonalityBurmese(userName, ctx)}\n\n${strict}`;
   }
   return strict;
 }
@@ -516,8 +516,8 @@ export const TALK_UI_BY_LOCALE = {
   my: {
     placeholder: 'စိတ်ထဲမှာ ဘာတွေရှိနေလဲရှင်',
     privacy: 'သင့်စကားဝိုင်းများကို သီးသန့်နှင့် လုံခြုံစွာ ထိန်းသိမ်းထားပါသည်။',
-    remembersPrefix: 'မှတ်မိ',
-    languageError: 'အခု အဖြေကို မှန်မှန်ကန်ကန် မပေးနိုင်သေးပါဘူးရှင်။ ခဏနေပြီး ထပ်ကြိုးစားကြည့်ပါနော်။',
+    remembersPrefix: 'မှတ်မိထားသည်',
+    languageError: 'အခု အဖြေကို မှန်မှန်ကန်ကန် မပေးနိုင်သေးပါဘူး။ ခဏနေပြီး ထပ်ကြိုးစားကြည့်ပါနော်။',
   },
 };
 

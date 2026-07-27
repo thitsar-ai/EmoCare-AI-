@@ -44,6 +44,7 @@ export async function callAnthropicMessages({
   model = ANTHROPIC_MODEL,
   route,
   languageMeta,
+  temperature,
 }) {
   await ensureEmocareConfig();
 
@@ -78,6 +79,7 @@ export async function callAnthropicMessages({
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
+      ...(typeof temperature === 'number' ? { temperature } : {}),
       ...(route ? { route } : {}),
       ...(system ? { system } : {}),
       messages,

@@ -17,6 +17,7 @@ import {
   getChatLanguageOptionsForUi,
   getEmoLanguageSettingsHint,
 } from '../../utils/chatLanguage';
+import { localeTextMetrics, textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { exportUserData, deleteAllUserData } from '../../utils/dataExport';
 import { triggerAppReset } from '../../utils/appReset';
 import { isPasscodeEnabled } from '../../utils/passcodeLock';
@@ -213,6 +214,12 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             <View style={styles.languageChipRow}>
               {getChatLanguageOptionsForUi(settings.chatLanguage).map((option) => {
                 const selected = (settings.chatLanguage || 'auto') === option.id;
+                const myanmarChip = textNeedsMyanmarMetrics(option.shortLabel);
+                const labelMetrics = localeTextMetrics(option.shortLabel, {
+                  fontSize: 13,
+                  englishLineHeight: 18,
+                  englishPaddingV: 0,
+                });
                 return (
                   <Pressable
                     key={option.id}
@@ -228,6 +235,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                     )}
                     style={[
                       styles.languageChip,
+                      myanmarChip && styles.languageChipMyanmar,
                       {
                         borderColor: selected ? tokens.brand.ctaStart : theme.border,
                         backgroundColor: selected ? `${tokens.brand.ctaStart}22` : 'transparent',
@@ -240,8 +248,18 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                         {
                           color: selected ? tokens.brand.ctaStart : theme.mutedText,
                           fontWeight: selected ? '700' : '500',
+                          lineHeight: labelMetrics.lineHeight,
+                          ...(myanmarChip
+                            ? {
+                                fontFamily: undefined,
+                                paddingTop: 2,
+                                paddingBottom: 1,
+                                overflow: 'visible' as const,
+                              }
+                            : null),
                         },
                       ]}
+                      allowFontScaling
                     >
                       {option.shortLabel}
                     </Text>
@@ -612,11 +630,18 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'visible',
+  },
+  languageChipMyanmar: {
+    paddingTop: 12,
+    paddingBottom: 11,
+    minHeight: 48,
   },
   languageChipText: {
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
+    overflow: 'visible',
   },
   safetyNote: {
     fontSize: 13,

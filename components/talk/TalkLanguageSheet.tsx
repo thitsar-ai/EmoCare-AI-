@@ -8,6 +8,7 @@ import {
   getChatLanguageAccessibilityLabel,
   getChatLanguageOptionsForUi,
 } from '../../utils/chatLanguage';
+import { localeAwareTextStyle, textNeedsMyanmarMetrics } from '../../utils/localeText';
 
 type ChatLanguageId = 'auto' | 'en' | 'my' | 'es' | 'id' | 'pt-BR' | 'fr';
 
@@ -138,11 +139,19 @@ export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                   >
                     <View style={styles.rowText}>
                       <Text
-                        style={{
-                          color: selected ? theme.accent : DARK_MENU_SURFACE.text,
-                          fontWeight: selected ? '700' : '600',
-                          fontSize: 16,
-                        }}
+                        style={[
+                          {
+                            color: selected ? theme.accent : DARK_MENU_SURFACE.text,
+                            fontWeight: selected ? '700' : '600',
+                            fontSize: 16,
+                            overflow: 'visible',
+                          },
+                          localeAwareTextStyle(option.label, {
+                            fontSize: 16,
+                            englishLineHeight: 22,
+                          }),
+                          textNeedsMyanmarMetrics(option.label) && { paddingTop: 4 },
+                        ]}
                       >
                         {option.label}
                       </Text>

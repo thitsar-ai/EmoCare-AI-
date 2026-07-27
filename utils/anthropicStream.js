@@ -30,6 +30,7 @@ export async function streamAnthropicMessages({
   model = ANTHROPIC_MODEL,
   route,
   languageMeta,
+  temperature,
   signal,
   onTextDelta,
   onStart,
@@ -63,6 +64,7 @@ export async function streamAnthropicMessages({
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
+        ...(typeof temperature === 'number' ? { temperature } : {}),
         ...(route ? { route } : {}),
         ...(system ? { system } : {}),
         messages,
@@ -99,6 +101,7 @@ export async function streamAnthropicMessages({
       model,
       route,
       languageMeta,
+      temperature,
     });
     if (!fallback.ok) {
       const message = describeAnthropicError(
@@ -165,6 +168,7 @@ export async function streamAnthropicMessages({
         model,
         route,
         languageMeta,
+        temperature,
       });
       if (fallback.ok) {
         const text = fallback.data?.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
