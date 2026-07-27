@@ -161,6 +161,7 @@ export async function buildMemoryInjectionBlock(userName, userMessage = '', opts
         'If the user asks what you remember and nothing relevant is saved: "I don\'t have anything saved about that yet." Never invent.',
         'Reference at most ONE memory when directly relevant. Close paraphrase only; do not change names, relationships, dates, or preferences.',
         'Do not mention memory merely to prove you remember. If none is useful, respond without memory.',
+        'LANGUAGE: Paraphrase memory meaning in the active reply language from the LANGUAGE section. Never paste Burmese/Myanmar script into a non-Burmese reply.',
       ].join('\n');
 
   const eiUse = opts.burmese

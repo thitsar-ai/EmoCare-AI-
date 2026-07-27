@@ -49,7 +49,7 @@ export function getCircadianIconColor(
 /** Menu / modal sheet tokens — light sanctuary in all phases. */
 export const DARK_MENU_SURFACE = menuSurface;
 
-const EMO_FACE_LAVENDER_TRANSPARENT: ImageSourcePropType = require('../assets/emo-face-lavender-transparent.png');
+const EMO_FACE_LAVENDER_TRANSPARENT: ImageSourcePropType = require('../assets/emo-face-floating.png');
 
 export const SANCTUARY_SPLASH = TOKEN_SPLASH;
 

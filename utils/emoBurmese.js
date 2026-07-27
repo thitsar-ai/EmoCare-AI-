@@ -41,7 +41,16 @@ export function isPrimarilyMyanmar(text) {
  */
 export function shouldComposeInBurmese(preference, userMessage = '', recentUserTexts = []) {
   if (preference === 'my') return true;
-  if (preference === 'en' || preference === 'es') return false;
+  if (
+    preference === 'en' ||
+    preference === 'es' ||
+    preference === 'id' ||
+    preference === 'pt-BR' ||
+    preference === 'fr' ||
+    preference === 'pt'
+  ) {
+    return false;
+  }
 
   // auto
   if (isPrimarilyMyanmar(userMessage)) return true;

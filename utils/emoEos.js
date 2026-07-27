@@ -3,7 +3,11 @@
  * "Intelligence with Soul"
  */
 
-import { getChatLanguageAppendix, normalizeChatLanguage, resolveComposeInBurmese } from './chatLanguage.js';
+import {
+  getChatLanguageAppendix,
+  normalizeChatLanguage,
+  resolveEmoComposeLocale,
+} from './chatLanguage.js';
 import { EMO_SAFETY_BURMESE } from './emoBurmese.js';
 
 export const EOS_TAGLINE = 'Intelligence with Soul';
@@ -18,7 +22,7 @@ You are not a therapist, counselor, life coach, or motivational speaker. You are
 ## COMMUNICATION STYLE
 
 Speak naturally, using clear everyday language that most people can easily understand.
-Follow the LANGUAGE section for which language to use.
+Follow the LANGUAGE section for which language to use — that section always overrides examples below, conversation history, and memories.
 
 Your tone should be:
 - Calm
@@ -192,13 +196,20 @@ If a CONFIRMED MEMORY clearly relates to what they are saying, weave in at most 
  */
 export function getChatSystemPrompt(userName, chatLanguage = 'auto', localeCtx = {}) {
   const pref = normalizeChatLanguage(chatLanguage);
-  const burmese = resolveComposeInBurmese(pref, localeCtx);
+  const composeLocale = resolveEmoComposeLocale(
+    pref,
+    localeCtx.userMessage || '',
+    localeCtx.recentUserTexts || [],
+  );
+  const burmese = composeLocale === 'my';
   const nameLine =
     !burmese && userName?.trim()
       ? `\nThe user's name is ${userName.trim()}. Use it naturally, not in every sentence.`
       : '';
   const language = getChatLanguageAppendix(pref, userName, localeCtx);
-  return `${EOS_CORE}\n\n${CHAT_CHANNEL_RULES}${nameLine}\n\n${language}`;
+  const priority = `## LANGUAGE PRIORITY
+Active compose locale: ${composeLocale}. Explicit user language selection (or Auto detection for this turn) beats history, memories, and personality examples. Never mix languages in one reply.`;
+  return `${EOS_CORE}\n\n${CHAT_CHANNEL_RULES}${nameLine}\n\n${priority}\n\n${language}`;
 }
 
 /**
@@ -209,7 +220,12 @@ export function getChatSystemPrompt(userName, chatLanguage = 'auto', localeCtx =
  */
 export function getVoiceSystemPrompt(mode = 'sanctuary', userName, chatLanguage = 'auto', localeCtx = {}) {
   const pref = normalizeChatLanguage(chatLanguage);
-  const burmese = resolveComposeInBurmese(pref, localeCtx);
+  const composeLocale = resolveEmoComposeLocale(
+    pref,
+    localeCtx.userMessage || '',
+    localeCtx.recentUserTexts || [],
+  );
+  const burmese = composeLocale === 'my';
   const nameLine =
     !burmese && userName?.trim() ? `\nUser name: ${userName.trim()}.` : '';
   const language = getChatLanguageAppendix(pref, userName, localeCtx);

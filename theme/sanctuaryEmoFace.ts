@@ -1,11 +1,12 @@
 import { PixelRatio, type ImageSourcePropType } from 'react-native';
 import type { CircadianPhase } from './circadianTheme';
 
-const EMO_FACE_LAVENDER_TRANSPARENT: ImageSourcePropType = require('../assets/emo-face-lavender-transparent.png');
+/** Floating translucent Emo — soft orb face, no hard globe rim (Mira-matched style). */
+const EMO_FACE_FLOATING: ImageSourcePropType = require('../assets/emo-face-floating.png');
 
 /** Plate-free Emo orb — same lavender identity in every phase and screen. */
 export function getSanctuaryEmoFace(_phase: CircadianPhase): ImageSourcePropType {
-  return EMO_FACE_LAVENDER_TRANSPARENT;
+  return EMO_FACE_FLOATING;
 }
 
 /** Primary Emo orb scale — talk companion, cards, shared presets. */

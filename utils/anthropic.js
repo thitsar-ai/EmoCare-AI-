@@ -43,6 +43,7 @@ export async function callAnthropicMessages({
   maxTokens = 700,
   model = ANTHROPIC_MODEL,
   route,
+  languageMeta,
 }) {
   await ensureEmocareConfig();
 
@@ -80,6 +81,7 @@ export async function callAnthropicMessages({
       ...(route ? { route } : {}),
       ...(system ? { system } : {}),
       messages,
+      ...(languageMeta && typeof languageMeta === 'object' ? languageMeta : {}),
     }),
   });
 

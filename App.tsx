@@ -63,7 +63,6 @@ import {
   TALK_CONVERSATION_SURFACE,
   TALK_HEADER_TAGLINE,
   TALK_HEADER_TITLE,
-  TALK_INPUT_PLACEHOLDER,
   TALK_INPUT_SURFACE,
 } from './constants/brandCopy';
 import { SanctuarySplashContent, SplashStarField } from './components/shared/SanctuarySplash';
@@ -140,10 +139,14 @@ import { getChatSystemPrompt, getCrisisSafetyAppendix, getIntentModeAppendix } f
 import { loadSettings, saveSettings } from './utils/settingsStorage';
 import {
   getChatLanguageLabel,
+  getEmoLanguageRequestMeta,
+  getLanguageFallbackMessage,
+  getLanguageRewriteInstruction,
+  getTalkUiCopy,
   normalizeChatLanguage,
-  resolveComposeInBurmese,
+  resolveEmoComposeLocale,
+  responseViolatesLocale,
 } from './utils/chatLanguage';
-import { BURMESE_UI } from './utils/emoBurmese';
 import { localeAwareTextStyle, localeTextMetrics } from './utils/localeText';
 import { detectCrisisSignals } from './utils/emoCrisis';
 import { classifyEmoIntent } from './utils/emoIntent';
@@ -1167,8 +1170,11 @@ function ChatScreen({ userName }: { userName: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [streamLevel, setStreamLevel] = useState(0);
   const [memoryChipLabel, setMemoryChipLabel] = useState<string | null>(null);
-  const [chatLanguage, setChatLanguage] = useState<'auto' | 'en' | 'my' | 'es'>('auto');
+  const [chatLanguage, setChatLanguage] = useState<
+    'auto' | 'en' | 'my' | 'es' | 'id' | 'pt-BR' | 'fr'
+  >('auto');
   const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
+  const talkUi = getTalkUiCopy(chatLanguage);
   const talkUiBurmese = chatLanguage === 'my';
   const [lastCheckIn, setLastCheckIn] = useState<{
     label: string | null;
@@ -1263,8 +1269,10 @@ function ChatScreen({ userName }: { userName: string }) {
     const settings = await loadSettings();
     const lang = normalizeChatLanguage(settings.chatLanguage);
     setChatLanguage(lang);
+    const locale = resolveEmoComposeLocale(lang);
     const { active, chipLabel } = await loadEmoPersonalContext(userName, '', {
-      burmese: lang === 'my',
+      burmese: locale === 'my',
+      locale,
     });
     setMemoryChipLabel(active && chipLabel ? chipLabel : null);
   }, [userName]);
@@ -1669,10 +1677,21 @@ function ChatScreen({ userName }: { userName: string }) {
         userMessage: lastUserMsg?.text || '',
         recentUserTexts,
       };
-      const burmese = resolveComposeInBurmese(lang, localeCtx);
+      const composeLocale = resolveEmoComposeLocale(lang, localeCtx.userMessage, localeCtx.recentUserTexts);
+      const burmese = composeLocale === 'my';
+      const languageMeta = getEmoLanguageRequestMeta(composeLocale);
+      if (__DEV__) {
+        console.log('[Emo Language]', {
+          selectedLanguage: lang,
+          resolvedLanguage: composeLocale,
+          requestLocale: languageMeta.locale,
+          strictLanguage: languageMeta.strictLanguage,
+        });
+      }
 
       const personalContext = await loadEmoPersonalContext(userName, lastUserMsg?.text || '', {
         burmese,
+        locale: composeLocale,
       });
       setMemoryChipLabel(personalContext.active && personalContext.chipLabel ? personalContext.chipLabel : null);
       memoryIdsInjectedRef.current = personalContext.memory_ids_injected || [];
@@ -1706,11 +1725,15 @@ function ChatScreen({ userName }: { userName: string }) {
       const streamId = `b-${Date.now()}`;
       setMessages((prev) => [...prev, { id: streamId, role: 'bot', text: '', time: replyTime }]);
 
+      const maxTokens = intent.mode === 'oracle' ? 1600 : 1200;
+      const route = intent.mode === 'oracle' ? 'oracle' : 'talk';
+
       const result = await streamAnthropicMessages({
         system,
-        maxTokens: intent.mode === 'oracle' ? 1600 : 1200,
-        route: intent.mode === 'oracle' ? 'oracle' : 'talk',
+        maxTokens,
+        route,
         messages: apiMessages,
+        languageMeta,
         signal: abort.signal,
         onStart: () => bumpStreamLevel(),
         onTextDelta: (_chunk: string, full: string) => {
@@ -1722,31 +1745,10 @@ function ChatScreen({ userName }: { userName: string }) {
         },
         onDone: (fullText: string) => {
           const polished = polishEmoReplyText(fullText);
-          const validated = validateMemoryRecallResponse({
-            response: polished,
-            memory_ids_injected: [...memoryIdsInjectedRef.current],
-            injectedMemories: [...injectedMemoriesRef.current],
-          }) as {
-            ok: boolean;
-            response: string;
-            memory_ids_used: string[];
-            recall_phrase_detected: boolean;
-          };
-          void logMemoryDiagnostic({
-            type: 'memory_recall_validate',
-            sessionId: talkSessionIdRef.current,
-            memory_ids_injected: memoryIdsInjectedRef.current,
-            memory_ids_used: validated.memory_ids_used,
-            recall_phrase_detected: validated.recall_phrase_detected,
-            validation_passed: validated.ok,
-          });
-          const replyText = validated.ok ? validated.response : validated.response;
-          setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
           setMessages((prev) =>
-            prev.map((m) => (m.id === streamId ? { ...m, text: replyText } : m)),
+            prev.map((m) => (m.id === streamId ? { ...m, text: polished } : m)),
           );
           setStreamLevel(0);
-          afterTalkExchange(chatMessages);
         },
         onError: (message: string) => {
           setStreamLevel(0);
@@ -1765,7 +1767,67 @@ function ChatScreen({ userName }: { userName: string }) {
         },
       });
 
-      if (result.ok === false && !abort.signal.aborted) {
+      if (result.ok && 'text' in result && typeof result.text === 'string' && !abort.signal.aborted) {
+        let replyText = polishEmoReplyText(result.text);
+
+        if (responseViolatesLocale(replyText, composeLocale)) {
+          if (__DEV__) {
+            console.warn('[Emo Language] response failed locale validation; retrying once', {
+              resolvedLanguage: composeLocale,
+            });
+          }
+          const rewriteInstruction = getLanguageRewriteInstruction(composeLocale);
+          const rewrite = await callAnthropicMessages({
+            system: `${system}\n\n${rewriteInstruction}`,
+            maxTokens,
+            route,
+            languageMeta,
+            messages: [
+              ...apiMessages,
+              { role: 'assistant', content: replyText },
+              { role: 'user', content: rewriteInstruction },
+            ],
+          });
+          let corrected = false;
+          if (rewrite.ok) {
+            const rewritten =
+              rewrite.data?.content?.find((b: { type?: string; text?: string }) => b.type === 'text')
+                ?.text?.trim() ?? '';
+            if (rewritten && !responseViolatesLocale(rewritten, composeLocale)) {
+              replyText = polishEmoReplyText(rewritten);
+              corrected = true;
+            }
+          }
+          if (!corrected) {
+            replyText = getLanguageFallbackMessage(composeLocale);
+          }
+        }
+
+        const validated = validateMemoryRecallResponse({
+          response: replyText,
+          memory_ids_injected: [...memoryIdsInjectedRef.current],
+          injectedMemories: [...injectedMemoriesRef.current],
+        }) as {
+          ok: boolean;
+          response: string;
+          memory_ids_used: string[];
+          recall_phrase_detected: boolean;
+        };
+        void logMemoryDiagnostic({
+          type: 'memory_recall_validate',
+          sessionId: talkSessionIdRef.current,
+          memory_ids_injected: memoryIdsInjectedRef.current,
+          memory_ids_used: validated.memory_ids_used,
+          recall_phrase_detected: validated.recall_phrase_detected,
+          validation_passed: validated.ok,
+        });
+        replyText = validated.response;
+        setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === streamId ? { ...m, text: replyText } : m)),
+        );
+        afterTalkExchange(chatMessages);
+      } else if (result.ok === false && !abort.signal.aborted) {
         const aborted = 'aborted' in result && result.aborted;
         if (!aborted) {
           setMessages((prev) =>
@@ -1952,7 +2014,7 @@ function ChatScreen({ userName }: { userName: string }) {
                   <EmoMemoryChip
                     theme={theme}
                     label={memoryChipLabel}
-                    remembersPrefix={talkUiBurmese ? BURMESE_UI.remembersPrefix : undefined}
+                    remembersPrefix={talkUi.remembersPrefix}
                     onPress={() => navigate('memoryledger')}
                   />
                 </View>
@@ -2241,7 +2303,7 @@ function ChatScreen({ userName }: { userName: string }) {
               </Pressable>
               <TextInput
                 ref={inputRef}
-                placeholder={talkUiBurmese ? BURMESE_UI.talkInputPlaceholder : TALK_INPUT_PLACEHOLDER}
+                placeholder={talkUi.placeholder}
                 placeholderTextColor={theme.secondaryText}
                 value={input}
                 onChangeText={setInput}
@@ -2255,8 +2317,7 @@ function ChatScreen({ userName }: { userName: string }) {
                   styles.chatComposerInput,
                   { color: theme.text },
                   (() => {
-                    const sample =
-                      input || (talkUiBurmese ? BURMESE_UI.talkInputPlaceholder : TALK_INPUT_PLACEHOLDER);
+                    const sample = input || talkUi.placeholder;
                     const m = localeTextMetrics(sample, {
                       fontSize: 16,
                       englishLineHeight: 22,
@@ -2285,7 +2346,7 @@ function ChatScreen({ userName }: { userName: string }) {
             <View style={styles.chatPrivacyRow}>
               <Lock size={13} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
               <Text style={[styles.chatPrivacy, { color: theme.secondaryText }]}>
-                {talkUiBurmese ? BURMESE_UI.talkPrivacy : 'Your conversations are private and secure'}
+                {talkUi.privacy}
               </Text>
             </View>
           </View>

@@ -29,6 +29,7 @@ export async function streamAnthropicMessages({
   maxTokens = 700,
   model = ANTHROPIC_MODEL,
   route,
+  languageMeta,
   signal,
   onTextDelta,
   onStart,
@@ -65,6 +66,7 @@ export async function streamAnthropicMessages({
         ...(route ? { route } : {}),
         ...(system ? { system } : {}),
         messages,
+        ...(languageMeta && typeof languageMeta === 'object' ? languageMeta : {}),
       }),
       signal,
     });
@@ -90,7 +92,14 @@ export async function streamAnthropicMessages({
   const reader = response.body?.getReader?.();
   if (!reader) {
     if (__DEV__) console.warn('[Emo chat] Stream reader unavailable — using buffered fallback');
-    const fallback = await callAnthropicMessages({ system, messages, maxTokens, model, route });
+    const fallback = await callAnthropicMessages({
+      system,
+      messages,
+      maxTokens,
+      model,
+      route,
+      languageMeta,
+    });
     if (!fallback.ok) {
       const message = describeAnthropicError(
         fallback.data ?? { error: fallback.error ?? { message: `HTTP ${fallback.status}` } },
@@ -149,7 +158,14 @@ export async function streamAnthropicMessages({
 
     if (!fullText.trim()) {
       if (__DEV__) console.warn('[Emo chat] Empty stream — using buffered fallback');
-      const fallback = await callAnthropicMessages({ system, messages, maxTokens, model, route });
+      const fallback = await callAnthropicMessages({
+        system,
+        messages,
+        maxTokens,
+        model,
+        route,
+        languageMeta,
+      });
       if (fallback.ok) {
         const text = fallback.data?.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
         if (text) return deliverFallbackReply(text, signal, onStart, onTextDelta, onDone);

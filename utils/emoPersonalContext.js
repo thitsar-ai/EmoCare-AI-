@@ -35,13 +35,173 @@ function buildChipLabel(latestMoodLabel, memoryCount) {
   return parts.join(' · ');
 }
 
+/** @param {string} [moodLabel] */
+function spanishFeelingPart(moodLabel) {
+  const key = String(moodLabel || '')
+    .trim()
+    .toLowerCase();
+  /** @type {Record<string, string>} */
+  const map = {
+    light: 'en calma',
+    calm: 'en calma',
+    peaceful: 'en paz',
+    hopeful: 'con esperanza',
+    grateful: 'agradecido/a',
+    tired: 'cansado/a',
+    anxious: 'ansioso/a',
+    sad: 'triste',
+    stressed: 'estresado/a',
+    happy: 'feliz',
+  };
+  return map[key] || String(moodLabel || '').toLowerCase();
+}
+
+function buildSpanishChipLabel(latestMoodLabel, memoryCount) {
+  const parts = [];
+  if (latestMoodLabel) {
+    parts.push(`Te sientes ${spanishFeelingPart(latestMoodLabel)}`);
+  }
+  if (memoryCount > 0) {
+    parts.push(memoryCount === 1 ? '1 recuerdo' : `${memoryCount} recuerdos`);
+  }
+  if (!parts.length) return null;
+  return parts.join(' · ');
+}
+
+/** @param {string} [moodLabel] */
+function indonesianFeelingPart(moodLabel) {
+  const key = String(moodLabel || '')
+    .trim()
+    .toLowerCase();
+  /** @type {Record<string, string>} */
+  const map = {
+    light: 'lebih ringan',
+    calm: 'tenang',
+    peaceful: 'damai',
+    hopeful: 'penuh harapan',
+    grateful: 'bersyukur',
+    tired: 'lelah',
+    anxious: 'cemas',
+    sad: 'sedih',
+    stressed: 'stres',
+    happy: 'bahagia',
+  };
+  return map[key] || String(moodLabel || '').toLowerCase();
+}
+
+function buildIndonesianChipLabel(latestMoodLabel, memoryCount) {
+  const parts = [];
+  if (latestMoodLabel) {
+    const feeling = indonesianFeelingPart(latestMoodLabel);
+    parts.push(
+      String(latestMoodLabel).trim().toLowerCase() === 'light'
+        ? 'Merasa lebih ringan'
+        : `Merasa ${feeling}`,
+    );
+  }
+  if (memoryCount > 0) {
+    parts.push(memoryCount === 1 ? '1 kenangan' : `${memoryCount} kenangan`);
+  }
+  if (!parts.length) return null;
+  return parts.join(' · ');
+}
+
+/** @param {string} [moodLabel] */
+function portugueseFeelingPart(moodLabel) {
+  const key = String(moodLabel || '')
+    .trim()
+    .toLowerCase();
+  /** @type {Record<string, string>} */
+  const map = {
+    light: 'mais leve',
+    calm: 'em paz',
+    peaceful: 'em paz',
+    heavy: 'com o coração pesado',
+    hopeful: 'esperançosa',
+    grateful: 'grata',
+    tired: 'cansada',
+    anxious: 'ansiosa',
+    overwhelmed: 'sobrecarregada',
+    sad: 'triste',
+    stressed: 'estressada',
+    happy: 'alegre',
+    joyful: 'alegre',
+    present: 'presente',
+  };
+  return map[key] || String(moodLabel || '').toLowerCase();
+}
+
+function buildPortugueseChipLabel(latestMoodLabel, memoryCount) {
+  const parts = [];
+  if (latestMoodLabel) {
+    const key = String(latestMoodLabel).trim().toLowerCase();
+    parts.push(
+      key === 'light'
+        ? 'Sentindo-se mais leve'
+        : key === 'peaceful' || key === 'calm'
+          ? 'Sentindo-se em paz'
+          : `Sentindo-se ${portugueseFeelingPart(latestMoodLabel)}`,
+    );
+  }
+  if (memoryCount > 0) {
+    parts.push(memoryCount === 1 ? '1 lembrança' : `${memoryCount} lembranças`);
+  }
+  if (!parts.length) return null;
+  return parts.join(' · ');
+}
+
+/** @param {string} [moodLabel] */
+function frenchFeelingPart(moodLabel) {
+  const key = String(moodLabel || '')
+    .trim()
+    .toLowerCase();
+  /** @type {Record<string, string>} */
+  const map = {
+    light: 'mieux',
+    calm: 'en paix',
+    peaceful: 'en paix',
+    heavy: 'le cœur lourd',
+    hopeful: 'plein·e d’espoir',
+    grateful: 'reconnaissant·e',
+    tired: 'fatigué·e',
+    anxious: 'anxieux·se',
+    overwhelmed: 'dépassé·e',
+    sad: 'triste',
+    stressed: 'stressé·e',
+    happy: 'joyeux·se',
+    joyful: 'joyeux·se',
+    present: 'présent·e',
+  };
+  return map[key] || String(moodLabel || '').toLowerCase();
+}
+
+function buildFrenchChipLabel(latestMoodLabel, memoryCount) {
+  const parts = [];
+  if (latestMoodLabel) {
+    const key = String(latestMoodLabel).trim().toLowerCase();
+    parts.push(
+      key === 'light'
+        ? 'Vous vous sentez mieux'
+        : key === 'peaceful' || key === 'calm'
+          ? 'Vous vous sentez en paix'
+          : `Vous vous sentez ${frenchFeelingPart(latestMoodLabel)}`,
+    );
+  }
+  if (memoryCount > 0) {
+    parts.push(memoryCount === 1 ? '1 souvenir' : `${memoryCount} souvenirs`);
+  }
+  if (!parts.length) return null;
+  return parts.join(' · ');
+}
+
 /**
  * @param {string} [userName]
  * @param {string} [userMessage] current user message for retrieval ranking
- * @param {{ burmese?: boolean }} [opts]
+ * @param {{ burmese?: boolean; locale?: 'en' | 'my' | 'es' | 'id' | 'pt-BR' | 'fr' }} [opts]
  */
 export async function loadEmoPersonalContext(userName, userMessage = '', opts = {}) {
-  const burmese = Boolean(opts.burmese);
+  const burmese = Boolean(opts.burmese) || opts.locale === 'my';
+  const locale = opts.locale || (burmese ? 'my' : 'en');
   const [{ checkIns }, injection, confirmed] = await Promise.all([
     loadEmoStorageBlocks(),
     buildMemoryInjectionBlock(userName, userMessage, { burmese }),
@@ -68,6 +228,15 @@ export async function loadEmoPersonalContext(userName, userMessage = '', opts = 
     } else {
       lines.push('## TEMPORARY CHECK-IN CONTEXT (not persistent memory)');
       lines.push('Use: "You checked in as…" / "You wrote that…". Do NOT use "I remember…".');
+      if (locale === 'pt-BR') {
+        lines.push(
+          'Express mood in Brazilian Portuguese with gender-neutral phrasing when possible (e.g. “Hoje você registrou que está se sentindo em paz.”). Never expose raw English mood keys.',
+        );
+      } else if (locale === 'fr') {
+        lines.push(
+          'Express mood in French with gender-neutral phrasing when possible (e.g. “Vous avez indiqué vous sentir en paix aujourd’hui.”). Never expose raw English mood keys.',
+        );
+      }
     }
     const note = latest.note?.trim() ? ` Note: ${truncate(latest.note, 80)}` : '';
     lines.push(
@@ -84,9 +253,12 @@ export async function loadEmoPersonalContext(userName, userMessage = '', opts = 
     lines.push(`## NAME (safe to use): ${userName.trim()}`);
   }
 
-  const chipLabel = burmese
-    ? buildBurmeseChipLabel(latest?.mood?.label, confirmed.length)
-    : buildChipLabel(latest?.mood?.label, confirmed.length);
+  let chipLabel = buildChipLabel(latest?.mood?.label, confirmed.length);
+  if (locale === 'my') chipLabel = buildBurmeseChipLabel(latest?.mood?.label, confirmed.length);
+  else if (locale === 'es') chipLabel = buildSpanishChipLabel(latest?.mood?.label, confirmed.length);
+  else if (locale === 'id') chipLabel = buildIndonesianChipLabel(latest?.mood?.label, confirmed.length);
+  else if (locale === 'pt-BR') chipLabel = buildPortugueseChipLabel(latest?.mood?.label, confirmed.length);
+  else if (locale === 'fr') chipLabel = buildFrenchChipLabel(latest?.mood?.label, confirmed.length);
 
   if (!hasContent) {
     return {

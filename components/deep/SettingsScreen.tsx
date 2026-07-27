@@ -12,7 +12,11 @@ import {
   loadSettings,
   saveSettings,
 } from '../../utils/settingsStorage';
-import { CHAT_LANGUAGE_OPTIONS } from '../../utils/chatLanguage';
+import {
+  getChatLanguageAccessibilityLabel,
+  getChatLanguageOptionsForUi,
+  getEmoLanguageSettingsHint,
+} from '../../utils/chatLanguage';
 import { exportUserData, deleteAllUserData } from '../../utils/dataExport';
 import { triggerAppReset } from '../../utils/appReset';
 import { isPasscodeEnabled } from '../../utils/passcodeLock';
@@ -189,14 +193,25 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           <SettingRow theme={theme} label="Timezone" value={settings.timezone} />
           <View style={styles.languageBlock}>
             <Text style={[styles.rowLabel, { color: theme.text, flex: 0, paddingRight: 0 }]}>
-              Emo language
+              {(settings.chatLanguage || 'auto') === 'pt-BR'
+                ? 'Idioma da Emo'
+                : (settings.chatLanguage || 'auto') === 'fr'
+                  ? 'Langue d’Emo'
+                  : (settings.chatLanguage || 'auto') === 'id'
+                    ? 'Bahasa Emo'
+                    : 'Emo language'}
             </Text>
-              <Text style={[styles.rowHint, { color: theme.mutedText }]}>
-                Talk language for Emo / အီမို. မြန်မာ uses native Burmese (not English translation).
-                Mira has its own language control. Most other screens stay in English for now.
-              </Text>
+            <Text
+              style={[
+                styles.rowHint,
+                styles.languageHint,
+                { color: theme.mutedText },
+              ]}
+            >
+              {getEmoLanguageSettingsHint(settings.chatLanguage)}
+            </Text>
             <View style={styles.languageChipRow}>
-              {CHAT_LANGUAGE_OPTIONS.map((option) => {
+              {getChatLanguageOptionsForUi(settings.chatLanguage).map((option) => {
                 const selected = (settings.chatLanguage || 'auto') === option.id;
                 return (
                   <Pressable
@@ -207,7 +222,10 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                     }}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
-                    accessibilityLabel={`Emo language ${option.label}`}
+                    accessibilityLabel={getChatLanguageAccessibilityLabel(
+                      settings.chatLanguage,
+                      option.id,
+                    )}
                     style={[
                       styles.languageChip,
                       {
@@ -217,11 +235,13 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                     ]}
                   >
                     <Text
-                      style={{
-                        color: selected ? tokens.brand.ctaStart : theme.mutedText,
-                        fontWeight: selected ? '700' : '500',
-                        fontSize: 13,
-                      }}
+                      style={[
+                        styles.languageChipText,
+                        {
+                          color: selected ? tokens.brand.ctaStart : theme.mutedText,
+                          fontWeight: selected ? '700' : '500',
+                        },
+                      ]}
                     >
                       {option.shortLabel}
                     </Text>
@@ -548,6 +568,11 @@ const styles = StyleSheet.create({
   switchValueCol: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   switchState: { fontSize: 14, fontWeight: '600', minWidth: 28, textAlign: 'right' },
   rowHint: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  languageHint: {
+    lineHeight: 20,
+    marginBottom: 10,
+    overflow: 'visible',
+  },
   rowLabel: { fontSize: 17, lineHeight: 22, flex: 1, minWidth: 0, paddingRight: 12 },
   rowValue: { fontSize: 16, flexShrink: 0, maxWidth: '42%', textAlign: 'right' },
   linkRow: {
@@ -583,7 +608,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  languageChipText: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   safetyNote: {
     fontSize: 13,
