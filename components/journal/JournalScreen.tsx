@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
   Alert,
 } from 'react-native';
@@ -68,6 +69,7 @@ function moodEmoji(entry: JournalEntry) {
 export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const labelAccent = getSanctuaryLabelAccent(theme);
@@ -77,19 +79,26 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   const [viewingId, setViewingId] = useState<number | null>(null);
   const [todayMood, setTodayMood] = useState<{ emoji: string; label: string } | null>(null);
   const [showSaved, setShowSaved] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [editorFocused, setEditorFocused] = useState(false);
 
   const dailyPrompt = useMemo(() => pickDailyJournalPrompt(), []);
   const recentEntries = useMemo(() => entries.slice(0, 3), [entries]);
   const journeyLine = useMemo(() => buildJourneyLine(entries), [entries]);
   const scrollPad = TAB_BAR_HEIGHT + insets.bottom + 24;
-  const saveBarPad = keyboardVisible ? 12 : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 8;
+  const writingMode = keyboardHeight > 0 || editorFocused;
+  /** When the keyboard is up, never reserve tab-bar space — that was eating the page. */
+  const saveBarPad = writingMode ? 6 : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 8;
+  const browseEditorMinHeight = Math.max(280, Math.round(windowHeight * 0.38));
+  const canSave = Boolean(text.trim());
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -151,6 +160,8 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
     if (!text.trim()) return;
     void hapticMedium();
     Keyboard.dismiss();
+    setEditorFocused(false);
+    setKeyboardHeight(0);
     const mood = todayMood || { emoji: '💜', label: 'Reflective' };
     const entry: JournalEntry = {
       id: Date.now(),
@@ -260,164 +271,237 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
       <ScreenSafeArea extraTop={4}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 52 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
         >
           <View style={styles.chromeWrap}>
             <ScreenNavChrome theme={theme} title="Your Journal" />
           </View>
 
-          <View style={styles.headerBlock}>
-            <Text style={[styles.headerSubtitle, { color: theme.mutedText }]}>
-              A private space for reflection, growth, and self-discovery.
-            </Text>
-          </View>
-
-          <ScrollView
-            ref={scrollRef}
-            style={styles.flex}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: 16 }]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-          >
-            {/* Today's Reflection */}
-            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
-              <Text style={[styles.heroEyebrow, { color: tokens.text.secondary }]}>✨ Today's Reflection</Text>
-              <Text style={[styles.heroPrompt, { color: theme.text }]}>{dailyPrompt}</Text>
-            </CircadianGlassCard>
-
-            {/* Editor — capped height so long writing scrolls inside the box */}
-            <View
-              style={[
-                styles.editorShell,
-                {
-                  borderColor: tokens.border.standard,
-                  backgroundColor: JOURNAL_EDITOR_SURFACE,
-                },
-              ]}
-            >
-              <TextInput
-                ref={inputRef}
-                style={[styles.journalInput, { color: theme.text }]}
-                multiline
-                placeholder={EDITOR_PLACEHOLDER}
-                placeholderTextColor={theme.mutedText}
-                value={text}
-                onChangeText={setText}
-                onFocus={() => {
-                  // Keep the writing area above the sticky Save bar.
-                  requestAnimationFrame(() => {
-                    scrollRef.current?.scrollTo({ y: 0, animated: true });
-                  });
-                }}
-                textAlignVertical="top"
-                blurOnSubmit={false}
-                scrollEnabled
-              />
-            </View>
-
-            {/* Reflect with Emo */}
-            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.reflectCard}>
-              <Text style={[styles.reflectEyebrow, { color: labelAccent }]}>
-                💜 Need help finding the words?
+          {writingMode ? (
+            <View style={styles.writeCompose}>
+              <Text style={[styles.writePromptLine, { color: theme.secondaryText }]} numberOfLines={1}>
+                ✨ {dailyPrompt}
               </Text>
-              <Pressable
-                onPress={() => void reflectWithEmo()}
-                style={({ pressed }) => [
-                  styles.reflectBtn,
-                  { borderColor: tokens.border.strong },
-                  pressed && { opacity: 0.88 },
+              <View
+                style={[
+                  styles.editorShell,
+                  styles.editorShellWrite,
+                  {
+                    borderColor: tokens.border.standard,
+                    backgroundColor: JOURNAL_EDITOR_SURFACE,
+                  },
                 ]}
               >
-                <MessageCircle size={16} color={theme.accent} strokeWidth={2.2} />
-                <Text style={[styles.reflectBtnText, { color: theme.text }]}>Reflect with Emo</Text>
-              </Pressable>
-            </CircadianGlassCard>
+                <TextInput
+                  ref={inputRef}
+                  style={[styles.journalInput, styles.journalInputWrite, { color: theme.text }]}
+                  multiline
+                  placeholder={EDITOR_PLACEHOLDER}
+                  placeholderTextColor={theme.mutedText}
+                  value={text}
+                  onChangeText={setText}
+                  onFocus={() => setEditorFocused(true)}
+                  onBlur={() => setEditorFocused(false)}
+                  textAlignVertical="top"
+                  blurOnSubmit={false}
+                  scrollEnabled
+                  autoFocus
+                />
+              </View>
 
-            {/* Recent reflections */}
-            <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>Recent Reflections</Text>
-            {recentEntries.length === 0 ? (
-              <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.emptyCard}>
-                <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
-                  Your recent reflections will appear here — one honest moment at a time.
+              {/* Chat-style composer — slim row above keyboard, not a full CTA slab */}
+              <View
+                style={[
+                  styles.composerBar,
+                  {
+                    paddingBottom: saveBarPad,
+                    borderTopColor: tokens.border.standard,
+                    backgroundColor: JOURNAL_BG,
+                  },
+                ]}
+              >
+                <Pressable
+                  onPress={() => {
+                    if (!canSave) return;
+                    void save();
+                  }}
+                  disabled={!canSave}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save reflection"
+                  accessibilityState={{ disabled: !canSave }}
+                  style={({ pressed }) => [
+                    styles.composerSave,
+                    !canSave && styles.composerSaveDisabled,
+                    canSave && pressed && { opacity: 0.9 },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={
+                      canSave
+                        ? getSanctuaryButtonGradient(theme.phase)
+                        : [tokens.border.standard, tokens.border.standard]
+                    }
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.composerSaveInner}
+                  >
+                    <Text
+                      style={[
+                        styles.composerSaveText,
+                        { color: canSave ? '#FFFFFF' : theme.mutedText },
+                      ]}
+                    >
+                      Save →
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              <View style={styles.headerBlock}>
+                <Text style={[styles.headerSubtitle, { color: theme.mutedText }]}>
+                  A private space for reflection, growth, and self-discovery.
                 </Text>
-              </CircadianGlassCard>
-            ) : (
-              recentEntries.map((entry) => {
-                const shortDate = new Date(entry.date).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                });
-                const preview =
-                  entry.text.length > 64 ? `${entry.text.slice(0, 64).trim()}…` : entry.text.trim();
-                return (
-                  <Pressable
-                    key={entry.id}
-                    onPress={() => {
-                      void hapticLight();
-                      setViewingId(entry.id);
-                    }}
-                    style={({ pressed }) => [
-                      styles.recentCard,
-                      selectableCardStyle(pressed),
-                      moodCheckInCardShadow(pressed),
-                      pressed && styles.recentCardPressed,
+              </View>
+
+              <ScrollView
+                ref={scrollRef}
+                style={styles.flex}
+                contentContainerStyle={[styles.scrollContent, { paddingBottom: 16 }]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+              >
+                <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
+                  <Text style={[styles.heroEyebrow, { color: tokens.text.secondary }]}>
+                    ✨ Today's Reflection
+                  </Text>
+                  <Text style={[styles.heroPrompt, { color: theme.text }]}>{dailyPrompt}</Text>
+                </CircadianGlassCard>
+
+                <Pressable
+                  onPress={() => {
+                    setEditorFocused(true);
+                    requestAnimationFrame(() => inputRef.current?.focus());
+                  }}
+                  style={[
+                    styles.editorShell,
+                    {
+                      borderColor: tokens.border.standard,
+                      backgroundColor: JOURNAL_EDITOR_SURFACE,
+                      minHeight: browseEditorMinHeight,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.journalInput,
+                      {
+                        color: text.trim() ? theme.text : theme.mutedText,
+                        minHeight: browseEditorMinHeight - 28,
+                      },
                     ]}
                   >
-                    <View style={styles.recentTop}>
-                      <Text
-                        style={[
-                          styles.recentMood,
-                          { color: theme.text },
+                    {text.trim() || EDITOR_PLACEHOLDER}
+                  </Text>
+                </Pressable>
+
+                <PrimaryActionButton
+                  label="Save Reflection →"
+                  theme={theme}
+                  onPress={() => void save()}
+                  disabled={!canSave}
+                  disabledHint="Write a few words to save your reflection."
+                  style={styles.saveBtnWrap}
+                />
+
+                <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.reflectCard}>
+                  <Text style={[styles.reflectEyebrow, { color: labelAccent }]}>
+                    💜 Need help finding the words?
+                  </Text>
+                  <Pressable
+                    onPress={() => void reflectWithEmo()}
+                    style={({ pressed }) => [
+                      styles.reflectBtn,
+                      { borderColor: tokens.border.strong },
+                      pressed && { opacity: 0.88 },
+                    ]}
+                  >
+                    <MessageCircle size={16} color={theme.accent} strokeWidth={2.2} />
+                    <Text style={[styles.reflectBtnText, { color: theme.text }]}>Reflect with Emo</Text>
+                  </Pressable>
+                </CircadianGlassCard>
+
+                <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>Recent Reflections</Text>
+                {recentEntries.length === 0 ? (
+                  <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.emptyCard}>
+                    <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
+                      Your recent reflections will appear here — one honest moment at a time.
+                    </Text>
+                  </CircadianGlassCard>
+                ) : (
+                  recentEntries.map((entry) => {
+                    const shortDate = new Date(entry.date).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    });
+                    const preview =
+                      entry.text.length > 64
+                        ? `${entry.text.slice(0, 64).trim()}…`
+                        : entry.text.trim();
+                    return (
+                      <Pressable
+                        key={entry.id}
+                        onPress={() => {
+                          void hapticLight();
+                          setViewingId(entry.id);
+                        }}
+                        style={({ pressed }) => [
+                          styles.recentCard,
+                          selectableCardStyle(pressed),
+                          moodCheckInCardShadow(pressed),
+                          pressed && styles.recentCardPressed,
                         ]}
                       >
-                        {moodEmoji(entry)} {entry.mood?.label ?? 'Reflective'}
-                      </Text>
-                      <Text style={[styles.recentDate, { color: theme.mutedText }]}>{shortDate}</Text>
-                    </View>
-                    <Text style={[styles.recentPreview, { color: theme.secondaryText }]} numberOfLines={2}>
-                      {preview}
-                    </Text>
-                  </Pressable>
-                );
-              })
-            )}
+                        <View style={styles.recentTop}>
+                          <Text style={[styles.recentMood, { color: theme.text }]}>
+                            {moodEmoji(entry)} {entry.mood?.label ?? 'Reflective'}
+                          </Text>
+                          <Text style={[styles.recentDate, { color: theme.mutedText }]}>
+                            {shortDate}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[styles.recentPreview, { color: theme.secondaryText }]}
+                          numberOfLines={2}
+                        >
+                          {preview}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                )}
 
-            {/* Your Journey */}
-            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.journeyCard}>
-              <Text style={[styles.journeyTitle, { color: theme.text }]}>Your Journey</Text>
-              <Text style={[styles.journeyLine, { color: theme.secondaryText }]}>{journeyLine}</Text>
-            </CircadianGlassCard>
+                <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.journeyCard}>
+                  <Text style={[styles.journeyTitle, { color: theme.text }]}>Your Journey</Text>
+                  <Text style={[styles.journeyLine, { color: theme.secondaryText }]}>
+                    {journeyLine}
+                  </Text>
+                </CircadianGlassCard>
 
-            <View style={styles.privacyRow}>
-              <Lock size={14} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
-              <Text style={[styles.privacyText, { color: theme.mutedText }]}>
-                Stored privately on this device only.
-              </Text>
-            </View>
-          </ScrollView>
+                <View style={styles.privacyRow}>
+                  <Lock size={14} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
+                  <Text style={[styles.privacyText, { color: theme.mutedText }]}>
+                    Stored privately on this device only.
+                  </Text>
+                </View>
+              </ScrollView>
 
-          {/* Sticky save — stays visible above keyboard / tab bar while writing */}
-          <View
-            style={[
-              styles.saveBar,
-              {
-                paddingBottom: saveBarPad,
-                borderTopColor: tokens.border.standard,
-                backgroundColor: JOURNAL_BG,
-              },
-            ]}
-          >
-            <PrimaryActionButton
-              label="Save Reflection →"
-              theme={theme}
-              onPress={() => void save()}
-              disabled={!text.trim()}
-              disabledHint="Write a few words to save your reflection."
-              style={styles.saveBtnWrap}
-            />
-          </View>
+              <View style={{ height: saveBarPad }} />
+            </>
+          )}
         </KeyboardAvoidingView>
       </ScreenSafeArea>
 
@@ -469,18 +553,84 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 32,
   },
+  promptCompact: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  writePromptLine: {
+    fontFamily: SERIF,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: H_PAD,
+    paddingBottom: 8,
+  },
+  heroEyebrowCompact: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  heroPromptCompact: {
+    fontFamily: SERIF,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  writeCompose: {
+    flex: 1,
+    paddingTop: 4,
+    minHeight: 0,
+  },
   editorShell: {
     borderWidth: 1,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
+  editorShellWrite: {
+    flex: 1,
+    minHeight: 0,
+    marginHorizontal: H_PAD,
+    marginBottom: 8,
+  },
   journalInput: {
     fontSize: 16,
     lineHeight: 26,
-    minHeight: 160,
-    maxHeight: 220,
     fontFamily: SERIF,
+  },
+  journalInputWrite: {
+    flex: 1,
+    minHeight: 120,
+    width: '100%',
+    paddingTop: 0,
+  },
+  composerBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: H_PAD,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  composerSave: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    minWidth: 108,
+  },
+  composerSaveDisabled: {
+    opacity: 0.7,
+  },
+  composerSaveInner: {
+    minHeight: 44,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composerSaveText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
   saveBar: {
     paddingHorizontal: H_PAD,
@@ -488,8 +638,8 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   saveBtnWrap: {
-    marginTop: 0,
-    marginBottom: 0,
+    marginTop: 4,
+    marginBottom: 4,
   },
   reflectCard: {
     paddingVertical: 18,

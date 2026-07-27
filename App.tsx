@@ -162,12 +162,10 @@ import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracl
 import { loadEmoPersonalContext } from './utils/emoPersonalContext';
 import { refreshEmocareConfig, logEmocareApiDebug } from './utils/emocareApi';
 import { logOracleInquiry } from './utils/oracleTopicLog';
-import { HOME_LANDING_MODE_KEY } from './utils/onboardingLanding';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
 import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
 import { SaveMemoryPrompt } from './components/talk/SaveMemoryPrompt';
-import { BurmeseReplyFeedback } from './components/talk/BurmeseReplyFeedback';
 import { TalkLanguageSheet } from './components/talk/TalkLanguageSheet';
 import { classifyMemoryEligibility } from './utils/memoryEligibilityClassifier';
 import { validateMemoryRecallResponse } from './utils/memoryFabricationGuard';
@@ -2119,9 +2117,6 @@ function ChatScreen({ userName }: { userName: string }) {
                           <EmoChatText text={m.text} style={[styles.chatBotText, { color: theme.text }]} />
                         </Pressable>
                       </View>
-                      {talkUiBurmese && m.text?.trim() && !isWaiting ? (
-                        <BurmeseReplyFeedback theme={theme} responseText={m.text} />
-                      ) : null}
                       {m.time ? (
                         <Text style={[styles.chatMsgTime, { color: theme.secondaryText }]}>{m.time}</Text>
                       ) : null}
@@ -2604,9 +2599,9 @@ function Root() {
         setUnlocked(!passcodeOn);
         if (v === 'true') {
           const n = await AsyncStorage.getItem('userName');
-          const mode = await AsyncStorage.getItem(HOME_LANDING_MODE_KEY);
+          // Returning users always land on Home — ignore legacy Mira landing preference.
           setUserName(n || '');
-          setHomeLandingMode(mode === 'oracle' ? 'oracle' : 'sanctuary');
+          setHomeLandingMode('sanctuary');
           setOnboarded(true);
         }
         setAgeVerified(ageOk);
@@ -2804,9 +2799,8 @@ function FirstOnboardingShell({
   );
 }
 
-function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
+function RootMain({ homeLandingMode: _homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
   const theme = useCircadianTheme();
-  const landingHandled = useRef(false);
   const [menuLanguage, setMenuLanguage] = useState('en');
   const {
     userName,
@@ -2821,14 +2815,6 @@ function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle'
     onboardingReviewSlide,
     closeOnboardingReview,
   } = useAppNav();
-
-  useEffect(() => {
-    if (landingHandled.current) return;
-    landingHandled.current = true;
-    if (homeLandingMode === 'oracle') {
-      navigate('oracle'); // legacy route key — Mira guidance screen
-    }
-  }, [homeLandingMode, navigate]);
 
   useEffect(() => {
     if (!menuOpen) return;

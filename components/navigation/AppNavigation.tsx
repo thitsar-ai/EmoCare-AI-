@@ -42,6 +42,7 @@ import {
   getMainMenuLabel,
   getTalkToEmoMenuCopy,
 } from '../../utils/appMenuCopy';
+import { textNeedsMyanmarMetrics } from '../../utils/localeText';
 
 export type MainScreenKey =
   | 'home'
@@ -646,7 +647,11 @@ export function AppMenuSheet({
       onPress?: () => void;
     },
     bordered: boolean,
-  ) => (
+  ) => {
+    const labelMyanmar = textNeedsMyanmarMetrics(item.label);
+    const subtitleMyanmar = textNeedsMyanmarMetrics(item.subtitle);
+    const rowMyanmar = labelMyanmar || subtitleMyanmar;
+    return (
     <Pressable
       key={item.id || item.label}
       onPress={() => {
@@ -658,6 +663,7 @@ export function AppMenuSheet({
       accessibilityLabel={item.subtitle ? `${item.label}. ${item.subtitle}` : item.label}
       style={({ pressed }) => [
         styles.menuItem,
+        rowMyanmar && styles.menuItemMyanmar,
         bordered && styles.menuItemBorder,
         pressed && styles.menuItemPressed,
       ]}
@@ -666,20 +672,36 @@ export function AppMenuSheet({
         <item.Icon size={16} color={item.accent} strokeWidth={2.2} />
       </View>
       <View style={styles.menuItemTextCol}>
-        <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]} numberOfLines={2}>
+        <Text
+          style={[
+            styles.menuItemText,
+            labelMyanmar && styles.menuItemTextMyanmar,
+            { color: DARK_MENU_SURFACE.text },
+          ]}
+          numberOfLines={2}
+          allowFontScaling
+          {...(labelMyanmar ? { includeFontPadding: true } : {})}
+        >
           {item.label}
         </Text>
         {item.subtitle ? (
           <Text
-            style={[styles.menuItemSubtitle, { color: DARK_MENU_SURFACE.mutedText }]}
-            numberOfLines={2}
+            style={[
+              styles.menuItemSubtitle,
+              subtitleMyanmar && styles.menuItemSubtitleMyanmar,
+              { color: DARK_MENU_SURFACE.mutedText },
+            ]}
+            numberOfLines={3}
+            allowFontScaling
+            {...(subtitleMyanmar ? { includeFontPadding: true } : {})}
           >
             {item.subtitle}
           </Text>
         ) : null}
       </View>
     </Pressable>
-  );
+    );
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -1087,6 +1109,10 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: 18,
   },
+  menuItemMyanmar: {
+    alignItems: 'flex-start',
+    paddingVertical: 14,
+  },
   menuItemBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: DARK_MENU_SURFACE.headerBorder,
@@ -1094,7 +1120,20 @@ const styles = StyleSheet.create({
   menuItemPressed: { backgroundColor: tokens.surface.pressed },
   menuItemTextCol: { flex: 1, minWidth: 0, gap: 2 },
   menuItemText: { fontSize: 15, fontWeight: '500', lineHeight: 20 },
+  menuItemTextMyanmar: {
+    fontSize: 14,
+    lineHeight: 26,
+    fontFamily: undefined,
+    paddingTop: 2,
+  },
   menuItemSubtitle: { fontSize: 11, fontWeight: '400', lineHeight: 15 },
+  menuItemSubtitleMyanmar: {
+    fontSize: 11,
+    lineHeight: 20,
+    fontFamily: undefined,
+    paddingTop: 1,
+    paddingBottom: 2,
+  },
   menuIconWrap: {
     width: 32,
     height: 32,
@@ -1102,6 +1141,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 2,
   },
   menuDivider: {
     height: StyleSheet.hairlineWidth,

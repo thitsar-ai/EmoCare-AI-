@@ -19,7 +19,7 @@ export function getAskMiraMenuCopy(preference) {
     },
     my: {
       title: 'Mira ကို မေးမယ်',
-      subtitle: 'အသိပညာ၊ မဟာဗျူဟာနှင့် အမြင်သစ်များ',
+      subtitle: 'အသိပညာနှင့် အမြင်သစ်များ',
     },
     es: {
       title: 'Preguntar a Mira',
@@ -55,7 +55,7 @@ export function getTalkToEmoMenuCopy(preference) {
     },
     my: {
       title: 'အီမိုနဲ့ စကားပြောမယ်',
-      subtitle: 'ခံစားချက်၊ ထောက်ပံ့မှုနှင့် စေတနာရှိရှိ နားထောင်ပေးခြင်း',
+      subtitle: 'ခံစားချက်နှင့် နားထောင်ပေးခြင်း',
     },
     es: {
       title: 'Hablar con Emo',
