@@ -169,7 +169,6 @@ import { TalkAiConsentSheet } from './components/talk/TalkAiConsentSheet';
 import { SaveMemoryPrompt } from './components/talk/SaveMemoryPrompt';
 import { BurmeseReplyFeedback } from './components/talk/BurmeseReplyFeedback';
 import { TalkLanguageSheet } from './components/talk/TalkLanguageSheet';
-import { TalkFeelingCheck } from './components/talk/TalkFeelingCheck';
 import { classifyMemoryEligibility } from './utils/memoryEligibilityClassifier';
 import { validateMemoryRecallResponse } from './utils/memoryFabricationGuard';
 import { logMemoryDiagnostic } from './utils/memoryDiagnostics';
@@ -1310,12 +1309,8 @@ function ChatScreen({ userName }: { userName: string }) {
     }
   }, []);
 
-  const maybeOfferFeelingCheck = useCallback(() => {
-    if (feelingDoneRef.current || feelingOfferedRef.current) return;
-    if (exchangeCountRef.current < 1) return;
-    feelingOfferedRef.current = true;
-    setFeelingCheckVisible(true);
-  }, []);
+  /** Feeling check popup removed from Talk — keep no-op so memory flow stays unchanged. */
+  const maybeOfferFeelingCheck = useCallback(() => {}, []);
 
   const dismissSavePrompt = useCallback(
     (offerFeeling: boolean, outcome: 'accepted' | 'declined' | 'discarded' = 'declined') => {
@@ -2298,20 +2293,6 @@ function ChatScreen({ userName }: { userName: string }) {
             }}
           />
 
-          <TalkFeelingCheck
-            visible={feelingCheckVisible && !savePrompt && !isWaiting}
-            theme={theme}
-            moodBefore={sessionMoodBefore}
-            onSkip={() => {
-              feelingDoneRef.current = true;
-              setFeelingCheckVisible(false);
-            }}
-            onComplete={() => {
-              feelingDoneRef.current = true;
-              setFeelingCheckVisible(false);
-            }}
-          />
-
           <View
             style={[
               styles.chatComposerWrap,
@@ -2530,7 +2511,7 @@ function NavBar() {
   const tabMeta: Record<MainScreenKey, { label: string; Icon: LucideIcon }> = {
     home: { label: 'Home', Icon: Home },
     checkin: { label: 'Check-in', Icon: Heart },
-    today: { label: 'Today', Icon: CalendarDays },
+    today: { label: 'My Day', Icon: CalendarDays },
     talk: { label: 'Talk', Icon: MessageCircle },
     journal: { label: 'Journal', Icon: BookOpen },
     insights: { label: 'Insights', Icon: TrendingUp },
@@ -2776,6 +2757,12 @@ function FirstOnboardingShell({
     openOnboardingSlide,
     closeOnboardingReview,
   } = useAppNav();
+  const [menuLanguage, setMenuLanguage] = useState('en');
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    void loadSettings().then((s) => setMenuLanguage(normalizeChatLanguage(s.chatLanguage)));
+  }, [menuOpen]);
 
   const handleMenuSelect = (target: NavTarget) => {
     if (target.kind === 'onboarding') openOnboardingSlide(target.slide);
@@ -2801,6 +2788,7 @@ function FirstOnboardingShell({
       <AppMenuSheet
         visible={menuOpen}
         theme={theme}
+        menuLanguage={menuLanguage}
         onClose={() => setMenuOpen(false)}
         onSelect={handleMenuSelect}
         onOpenProfile={() => setProfileOpen(true)}
@@ -2819,6 +2807,7 @@ function FirstOnboardingShell({
 function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle' }) {
   const theme = useCircadianTheme();
   const landingHandled = useRef(false);
+  const [menuLanguage, setMenuLanguage] = useState('en');
   const {
     userName,
     setUserName,
@@ -2837,9 +2826,14 @@ function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle'
     if (landingHandled.current) return;
     landingHandled.current = true;
     if (homeLandingMode === 'oracle') {
-      navigate('oracle');
+      navigate('oracle'); // legacy route key — Mira guidance screen
     }
   }, [homeLandingMode, navigate]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    void loadSettings().then((s) => setMenuLanguage(normalizeChatLanguage(s.chatLanguage)));
+  }, [menuOpen]);
 
   const handleMenuSelect = (target: NavTarget) => {
     navigateFromMenu(target);
@@ -2865,6 +2859,7 @@ function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle'
         <AppMenuSheet
           visible={menuOpen}
           theme={theme}
+          menuLanguage={menuLanguage}
           onClose={() => setMenuOpen(false)}
           onSelect={handleMenuSelect}
           onOpenProfile={() => setProfileOpen(true)}
@@ -2888,7 +2883,7 @@ function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle'
     insights: <InsightsScreen onNav={navigate} />,
     memoryledger: <MemoryLedgerScreen />,
     settings: <SettingsScreen onNav={navigate} />,
-    oracle: <OracleSearchScreen onNav={navigate} />,
+    oracle: <OracleSearchScreen onNav={navigate} />, // legacy route key — Mira
     today: <TodayDashboardScreen onNav={navigate} />,
   };
 
@@ -2906,6 +2901,7 @@ function RootMain({ homeLandingMode }: { homeLandingMode: 'sanctuary' | 'oracle'
       <AppMenuSheet
         visible={menuOpen}
         theme={theme}
+        menuLanguage={menuLanguage}
         onClose={() => setMenuOpen(false)}
         onSelect={handleMenuSelect}
         onOpenProfile={() => setProfileOpen(true)}

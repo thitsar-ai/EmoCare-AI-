@@ -687,3 +687,45 @@ export function isBreathCareTask(task) {
     /breath|breathe|meditat|mindful/i.test(task.title || '')
   );
 }
+
+/**
+ * Soft starter intentions for Today — tap to add; not auto-seeded onto the list.
+ * Keep these small and sanctuary-toned (behavioral activation, not productivity grind).
+ */
+export const INTENTION_SUGGESTIONS = [
+  { id: 'suggest-water', title: 'Drink a glass of water', energyCategory: 'care' },
+  { id: 'suggest-breathe', title: 'Take three slow breaths', energyCategory: 'care' },
+  { id: 'suggest-walk', title: 'Step outside for a short walk', energyCategory: 'movement' },
+  { id: 'suggest-stretch', title: 'Stretch for five minutes', energyCategory: 'movement' },
+  { id: 'suggest-message', title: 'Send a kind message to someone', energyCategory: 'connect' },
+  { id: 'suggest-journal', title: 'Write a few lines in your journal', energyCategory: 'care' },
+  { id: 'suggest-tidy', title: 'Tidy one small corner', energyCategory: 'home' },
+  { id: 'suggest-focus', title: 'Do one focused task for 15 minutes', energyCategory: 'work' },
+];
+
+/**
+ * Pick suggestion chips for Today UI — skip titles already on the list.
+ * @param {Array<{ title?: string }>} existingTasks
+ * @param {string | null | undefined} moodLabel
+ * @param {number} [limit=4]
+ */
+export function pickIntentionSuggestions(existingTasks = [], moodLabel = null, limit = 4) {
+  const taken = new Set(
+    (existingTasks || []).map((t) => String(t.title || '').trim().toLowerCase()).filter(Boolean),
+  );
+  const mood = String(moodLabel || '').toLowerCase();
+
+  /** Prefer gentler care/movement when mood leans low-energy. */
+  const preferCare =
+    /tired|sad|anxious|overwhelmed|heavy|low|stressed|lonely|numb|drained/.test(mood);
+
+  const pool = INTENTION_SUGGESTIONS.filter((s) => !taken.has(s.title.toLowerCase()));
+  const ranked = preferCare
+    ? [
+        ...pool.filter((s) => s.energyCategory === 'care' || s.energyCategory === 'movement'),
+        ...pool.filter((s) => s.energyCategory !== 'care' && s.energyCategory !== 'movement'),
+      ]
+    : pool;
+
+  return ranked.slice(0, Math.max(1, limit));
+}

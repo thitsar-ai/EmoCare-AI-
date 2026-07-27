@@ -77,11 +77,24 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   const [viewingId, setViewingId] = useState<number | null>(null);
   const [todayMood, setTodayMood] = useState<{ emoji: string; label: string } | null>(null);
   const [showSaved, setShowSaved] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const dailyPrompt = useMemo(() => pickDailyJournalPrompt(), []);
   const recentEntries = useMemo(() => entries.slice(0, 3), [entries]);
   const journeyLine = useMemo(() => buildJourneyLine(entries), [entries]);
   const scrollPad = TAB_BAR_HEIGHT + insets.bottom + 24;
+  const saveBarPad = keyboardVisible ? 12 : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 8;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const refreshEntries = useCallback(async () => {
     const loaded = await loadJournalEntries();
@@ -263,10 +276,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
           <ScrollView
             ref={scrollRef}
             style={styles.flex}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 20 },
-            ]}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 16 }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
@@ -277,7 +287,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               <Text style={[styles.heroPrompt, { color: theme.text }]}>{dailyPrompt}</Text>
             </CircadianGlassCard>
 
-            {/* Editor */}
+            {/* Editor — capped height so long writing scrolls inside the box */}
             <View
               style={[
                 styles.editorShell,
@@ -295,19 +305,17 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                 placeholderTextColor={theme.mutedText}
                 value={text}
                 onChangeText={setText}
+                onFocus={() => {
+                  // Keep the writing area above the sticky Save bar.
+                  requestAnimationFrame(() => {
+                    scrollRef.current?.scrollTo({ y: 0, animated: true });
+                  });
+                }}
                 textAlignVertical="top"
                 blurOnSubmit={false}
+                scrollEnabled
               />
             </View>
-
-            <PrimaryActionButton
-              label="Save Reflection →"
-              theme={theme}
-              onPress={() => void save()}
-              disabled={!text.trim()}
-              disabledHint="Write a few words to save your reflection."
-              style={styles.saveBtnWrap}
-            />
 
             {/* Reflect with Emo */}
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.reflectCard}>
@@ -389,6 +397,27 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               </Text>
             </View>
           </ScrollView>
+
+          {/* Sticky save — stays visible above keyboard / tab bar while writing */}
+          <View
+            style={[
+              styles.saveBar,
+              {
+                paddingBottom: saveBarPad,
+                borderTopColor: tokens.border.standard,
+                backgroundColor: JOURNAL_BG,
+              },
+            ]}
+          >
+            <PrimaryActionButton
+              label="Save Reflection →"
+              theme={theme}
+              onPress={() => void save()}
+              disabled={!text.trim()}
+              disabledHint="Write a few words to save your reflection."
+              style={styles.saveBtnWrap}
+            />
+          </View>
         </KeyboardAvoidingView>
       </ScreenSafeArea>
 
@@ -443,19 +472,24 @@ const styles = StyleSheet.create({
   editorShell: {
     borderWidth: 1,
     borderRadius: 20,
-    minHeight: 220,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   journalInput: {
     fontSize: 16,
     lineHeight: 26,
-    minHeight: 192,
+    minHeight: 160,
+    maxHeight: 220,
     fontFamily: SERIF,
   },
+  saveBar: {
+    paddingHorizontal: H_PAD,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   saveBtnWrap: {
-    marginTop: 4,
-    marginBottom: 4,
+    marginTop: 0,
+    marginBottom: 0,
   },
   reflectCard: {
     paddingVertical: 18,

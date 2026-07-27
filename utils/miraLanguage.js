@@ -112,7 +112,7 @@ Stay clear, calm, answer-first. Most replies under 200 words.`;
 
 export function miraInputPlaceholder(preference) {
   const id = normalizeMiraLanguage(preference);
-  if (id === 'my') return 'Mira ကို မေးလိုတာ ရေးပါရှင်။';
+  if (id === 'my') return 'Mira ကို မေးလိုတာ မေးပါရှင်။';
   if (id === 'id') return 'Tanyakan kepada Mira…';
   return 'Ask Mira…';
 }

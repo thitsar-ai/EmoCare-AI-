@@ -177,6 +177,10 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   useEffect(() => {
     void loadSettings().then((s) => {
       setMiraLanguage(normalizeMiraLanguage(s.miraLanguage));
+      const savedMode = s.miraMode;
+      if (savedMode === 'quick' || savedMode === 'deep' || savedMode === 'wise') {
+        setMode(savedMode);
+      }
     });
   }, []);
 
@@ -363,6 +367,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const researchMore = (botMsg: OracleMessage) => {
     const topic = botMsg.query || botMsg.text.slice(0, 100);
     setMode('deep');
+    void saveSettings({ miraMode: 'deep' });
     void submitText(`Research this more deeply: ${topic}`, 'deep');
   };
 
@@ -457,6 +462,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             onPress={() => {
               void hapticLight();
               setMode(item.id);
+              void saveSettings({ miraMode: item.id });
             }}
             style={[
               styles.modeChip,

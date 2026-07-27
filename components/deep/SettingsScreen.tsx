@@ -17,7 +17,7 @@ import {
   getChatLanguageOptionsForUi,
   getEmoLanguageSettingsHint,
 } from '../../utils/chatLanguage';
-import { localeTextMetrics, textNeedsMyanmarMetrics } from '../../utils/localeText';
+import { textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { exportUserData, deleteAllUserData } from '../../utils/dataExport';
 import { triggerAppReset } from '../../utils/appReset';
 import { isPasscodeEnabled } from '../../utils/passcodeLock';
@@ -215,11 +215,6 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               {getChatLanguageOptionsForUi(settings.chatLanguage).map((option) => {
                 const selected = (settings.chatLanguage || 'auto') === option.id;
                 const myanmarChip = textNeedsMyanmarMetrics(option.shortLabel);
-                const labelMetrics = localeTextMetrics(option.shortLabel, {
-                  fontSize: 13,
-                  englishLineHeight: 18,
-                  englishPaddingV: 0,
-                });
                 return (
                   <Pressable
                     key={option.id}
@@ -242,27 +237,22 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                       },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.languageChipText,
-                        {
-                          color: selected ? tokens.brand.ctaStart : theme.mutedText,
-                          fontWeight: selected ? '700' : '500',
-                          lineHeight: labelMetrics.lineHeight,
-                          ...(myanmarChip
-                            ? {
-                                fontFamily: undefined,
-                                paddingTop: 2,
-                                paddingBottom: 1,
-                                overflow: 'visible' as const,
-                              }
-                            : null),
-                        },
-                      ]}
-                      allowFontScaling
-                    >
-                      {option.shortLabel}
-                    </Text>
+                    <View style={myanmarChip ? styles.languageChipLabelWrapMyanmar : undefined}>
+                      <Text
+                        style={[
+                          styles.languageChipText,
+                          myanmarChip && styles.languageChipTextMyanmar,
+                          {
+                            color: selected ? tokens.brand.ctaStart : theme.mutedText,
+                            fontWeight: selected ? '700' : '500',
+                          },
+                        ]}
+                        allowFontScaling
+                        includeFontPadding={myanmarChip ? true : undefined}
+                      >
+                        {option.shortLabel}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               })}
@@ -630,18 +620,33 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
+  /** Myanmar ascenders need extra room; avoid clipping at the pill edge. */
   languageChipMyanmar: {
+    overflow: 'visible',
     paddingTop: 12,
     paddingBottom: 11,
-    minHeight: 48,
+    paddingHorizontal: 12,
+    minHeight: 50,
+  },
+  languageChipLabelWrapMyanmar: {
+    paddingTop: 4,
+    paddingBottom: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   languageChipText: {
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'center',
-    overflow: 'visible',
+  },
+  languageChipTextMyanmar: {
+    fontSize: 12,
+    lineHeight: 26,
+    fontFamily: undefined,
+    textAlignVertical: 'center',
+    paddingTop: 2,
   },
   safetyNote: {
     fontSize: 13,

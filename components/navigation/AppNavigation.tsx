@@ -25,6 +25,7 @@ import {
   Home,
   Menu,
   MessageCircle,
+  Moon,
   Settings,
   Shield,
   Sparkles,
@@ -36,6 +37,11 @@ import type { CircadianTheme } from '../../theme/circadianTheme';
 import { getCircadianIconColor } from '../../theme/circadianTheme';
 import { pressNavChromeStyle } from '../../utils/pressFeedback';
 import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
+import {
+  getAskMiraMenuCopy,
+  getMainMenuLabel,
+  getTalkToEmoMenuCopy,
+} from '../../utils/appMenuCopy';
 
 export type MainScreenKey =
   | 'home'
@@ -80,13 +86,13 @@ export const ONBOARDING_MENU_SLIDES = [2, 4, 5] as const;
  * Back uses visit history; the app menu is the primary way to reach secondary screens.
  */
 export const MAIN_SCREEN_MENU_ORDER: MainScreenKey[] = [
-  'home',
-  'checkin',
-  'today',
   'talk',
+  'oracle', // legacy route key — user-facing companion is Mira
+  'checkin',
   'journal',
-  'oracle',
   'insights',
+  'home',
+  'today',
   'memoryledger',
   'settings',
 ];
@@ -485,38 +491,110 @@ export function AppNavProvider({
   return <AppNavContext.Provider value={value}>{children}</AppNavContext.Provider>;
 }
 
-/** Main app destinations — Welcome through Memory (Settings below divider). */
-export const MAIN_APP_MENU: {
+type AppMenuItem = {
+  id: string;
   label: string;
+  subtitle?: string;
   Icon: LucideIcon;
   accent: string;
   target: NavTarget;
-}[] = [
-  { label: 'Welcome', Icon: Sparkles, accent: '#E89B5C', target: { kind: 'onboarding', slide: 2 } },
-  { label: 'Privacy', Icon: Shield, accent: '#7BC67E', target: { kind: 'onboarding', slide: 4 } },
-  { label: 'Tell Me About You', Icon: Heart, accent: '#B79DFF', target: { kind: 'onboarding', slide: 5 } },
-  { label: 'Home', Icon: Home, accent: '#B79DFF', target: { kind: 'screen', key: 'home' } },
-  { label: 'Check In', Icon: Heart, accent: '#E89B5C', target: { kind: 'screen', key: 'checkin' } },
-  { label: 'Today', Icon: CalendarDays, accent: '#2A9D8F', target: { kind: 'screen', key: 'today' } },
-  { label: 'Talk', Icon: MessageCircle, accent: '#9B7BFF', target: { kind: 'screen', key: 'talk' } },
-  { label: 'Journal', Icon: BookOpen, accent: '#D4A574', target: { kind: 'screen', key: 'journal' } },
-  { label: 'Mira', Icon: Sparkles, accent: '#58D6D0', target: { kind: 'screen', key: 'oracle' } },
-  { label: 'Insights', Icon: TrendingUp, accent: '#6B7FD7', target: { kind: 'screen', key: 'insights' } },
-  { label: 'Memory Ledger', Icon: Brain, accent: '#C4A35A', target: { kind: 'screen', key: 'memoryledger' } },
-];
-
-const SETTINGS_MENU_ITEM = {
-  label: 'Settings',
-  Icon: Settings,
-  accent: '#C4B7FF',
-  target: { kind: 'screen' as const, key: 'settings' as MainScreenKey },
 };
 
+/** Build main-app menu — Talk to Emo / Ask Mira as the companion pair first. */
+export function buildMainAppMenu(menuLanguage?: string): AppMenuItem[] {
+  const emo = getTalkToEmoMenuCopy(menuLanguage);
+  const mira = getAskMiraMenuCopy(menuLanguage);
+  return [
+    {
+      id: 'talk',
+      label: emo.title,
+      subtitle: emo.subtitle,
+      Icon: MessageCircle,
+      accent: '#9B7BFF',
+      target: { kind: 'screen', key: 'talk' },
+    },
+    {
+      id: 'oracle', // legacy route key — user-facing name is Mira / Ask Mira
+      label: mira.title,
+      subtitle: mira.subtitle,
+      Icon: Moon,
+      accent: '#58D6D0',
+      target: { kind: 'screen', key: 'oracle' },
+    },
+    {
+      id: 'checkin',
+      label: getMainMenuLabel(menuLanguage, 'checkin'),
+      Icon: Heart,
+      accent: '#E89B5C',
+      target: { kind: 'screen', key: 'checkin' },
+    },
+    {
+      id: 'journal',
+      label: getMainMenuLabel(menuLanguage, 'journal'),
+      Icon: BookOpen,
+      accent: '#D4A574',
+      target: { kind: 'screen', key: 'journal' },
+    },
+    {
+      id: 'insights',
+      label: getMainMenuLabel(menuLanguage, 'insights'),
+      Icon: TrendingUp,
+      accent: '#6B7FD7',
+      target: { kind: 'screen', key: 'insights' },
+    },
+    {
+      id: 'home',
+      label: getMainMenuLabel(menuLanguage, 'home'),
+      Icon: Home,
+      accent: '#B79DFF',
+      target: { kind: 'screen', key: 'home' },
+    },
+    {
+      id: 'today',
+      label: getMainMenuLabel(menuLanguage, 'today'),
+      Icon: CalendarDays,
+      accent: '#2A9D8F',
+      target: { kind: 'screen', key: 'today' },
+    },
+    {
+      id: 'memoryledger',
+      label: getMainMenuLabel(menuLanguage, 'memoryledger'),
+      Icon: Brain,
+      accent: '#C4A35A',
+      target: { kind: 'screen', key: 'memoryledger' },
+    },
+    { id: 'welcome', label: 'Welcome', Icon: Sparkles, accent: '#E89B5C', target: { kind: 'onboarding', slide: 2 } },
+    { id: 'privacy', label: 'Privacy', Icon: Shield, accent: '#7BC67E', target: { kind: 'onboarding', slide: 4 } },
+    {
+      id: 'aboutyou',
+      label: 'Tell Me About You',
+      Icon: Heart,
+      accent: '#B79DFF',
+      target: { kind: 'onboarding', slide: 5 },
+    },
+  ];
+}
+
+/** @deprecated Prefer buildMainAppMenu(lang) for localized labels. */
+export const MAIN_APP_MENU = buildMainAppMenu('en');
+
+function buildSettingsMenuItem(menuLanguage?: string) {
+  return {
+    id: 'settings',
+    label: getMainMenuLabel(menuLanguage, 'settings'),
+    Icon: Settings,
+    accent: '#C4B7FF',
+    target: { kind: 'screen' as const, key: 'settings' as MainScreenKey },
+  };
+}
+
 if (__DEV__) {
-  const menuScreenKeys = MAIN_APP_MENU.filter(
-    (item): item is (typeof MAIN_APP_MENU)[number] & { target: { kind: 'screen'; key: MainScreenKey } } =>
-      item.target.kind === 'screen',
-  ).map((item) => item.target.key);
+  const menuScreenKeys = buildMainAppMenu('en')
+    .filter(
+      (item): item is AppMenuItem & { target: { kind: 'screen'; key: MainScreenKey } } =>
+        item.target.kind === 'screen',
+    )
+    .map((item) => item.target.key);
   const expectedMenuKeys = MAIN_SCREEN_MENU_ORDER.filter((key) => key !== 'settings');
   if (JSON.stringify(menuScreenKeys) !== JSON.stringify(expectedMenuKeys)) {
     console.warn(
@@ -539,22 +617,29 @@ export function AppMenuSheet({
   onClose,
   onSelect,
   onOpenProfile,
+  menuLanguage = 'en',
 }: {
   visible: boolean;
   theme: CircadianTheme;
   onClose: () => void;
   onSelect: (target: NavTarget) => void;
   onOpenProfile: () => void;
+  /** Emo language preference — drives visible menu labels (Ask Mira, etc.). */
+  menuLanguage?: string;
 }) {
   const insets = useLayoutInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const menuTop = insets.top + 52;
   const menuMaxHeight = Math.min(windowHeight * 0.62, windowHeight - menuTop - insets.bottom - 20);
   const menuWidth = Math.min(300, Math.max(272, windowWidth - 28));
+  const menuItems = useMemo(() => buildMainAppMenu(menuLanguage), [menuLanguage]);
+  const settingsItem = useMemo(() => buildSettingsMenuItem(menuLanguage), [menuLanguage]);
 
   const renderMenuItem = (
     item: {
+      id?: string;
       label: string;
+      subtitle?: string;
       Icon: LucideIcon;
       accent: string;
       target?: NavTarget;
@@ -563,12 +648,14 @@ export function AppMenuSheet({
     bordered: boolean,
   ) => (
     <Pressable
-      key={item.label}
+      key={item.id || item.label}
       onPress={() => {
         onClose();
         if (item.onPress) item.onPress();
         else if (item.target) onSelect(item.target);
       }}
+      accessibilityRole="button"
+      accessibilityLabel={item.subtitle ? `${item.label}. ${item.subtitle}` : item.label}
       style={({ pressed }) => [
         styles.menuItem,
         bordered && styles.menuItemBorder,
@@ -578,9 +665,19 @@ export function AppMenuSheet({
       <View style={[styles.menuIconWrap, { backgroundColor: `${item.accent}20`, borderColor: `${item.accent}44` }]}>
         <item.Icon size={16} color={item.accent} strokeWidth={2.2} />
       </View>
-      <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]} numberOfLines={2}>
-        {item.label}
-      </Text>
+      <View style={styles.menuItemTextCol}>
+        <Text style={[styles.menuItemText, { color: DARK_MENU_SURFACE.text }]} numberOfLines={2}>
+          {item.label}
+        </Text>
+        {item.subtitle ? (
+          <Text
+            style={[styles.menuItemSubtitle, { color: DARK_MENU_SURFACE.mutedText }]}
+            numberOfLines={2}
+          >
+            {item.subtitle}
+          </Text>
+        ) : null}
+      </View>
     </Pressable>
   );
 
@@ -614,13 +711,13 @@ export function AppMenuSheet({
               bounces={false}
               keyboardShouldPersistTaps="handled"
             >
-              {MAIN_APP_MENU.map((item, idx) =>
-                renderMenuItem(item, idx < MAIN_APP_MENU.length - 1),
+              {menuItems.map((item, idx) =>
+                renderMenuItem(item, idx < menuItems.length - 1),
               )}
               <View style={styles.menuDivider} />
-              {renderMenuItem(SETTINGS_MENU_ITEM, true)}
+              {renderMenuItem(settingsItem, true)}
               {renderMenuItem(
-                { ...PROFILE_MENU_ITEM, onPress: onOpenProfile },
+                { ...PROFILE_MENU_ITEM, id: 'profile', onPress: onOpenProfile },
                 false,
               )}
             </ScrollView>
@@ -995,7 +1092,9 @@ const styles = StyleSheet.create({
     borderBottomColor: DARK_MENU_SURFACE.headerBorder,
   },
   menuItemPressed: { backgroundColor: tokens.surface.pressed },
-  menuItemText: { fontSize: 15, fontWeight: '500', flex: 1, lineHeight: 20 },
+  menuItemTextCol: { flex: 1, minWidth: 0, gap: 2 },
+  menuItemText: { fontSize: 15, fontWeight: '500', lineHeight: 20 },
+  menuItemSubtitle: { fontSize: 11, fontWeight: '400', lineHeight: 15 },
   menuIconWrap: {
     width: 32,
     height: 32,

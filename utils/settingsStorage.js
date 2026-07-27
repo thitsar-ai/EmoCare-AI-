@@ -15,7 +15,15 @@ export const DEFAULT_SETTINGS = {
   chatLanguage: DEFAULT_CHAT_LANGUAGE,
   /** Mira response language (independent from Emo Talk). */
   miraLanguage: DEFAULT_MIRA_LANGUAGE,
+  /** Mira guidance mode — quick | deep | wise (persists across menu navigation). */
+  miraMode: 'deep',
 };
+
+/** @param {unknown} value */
+function normalizeMiraMode(value) {
+  if (value === 'quick' || value === 'deep' || value === 'wise') return value;
+  return 'deep';
+}
 
 export async function loadSettings() {
   try {
@@ -27,6 +35,7 @@ export async function loadSettings() {
         ...parsed,
         chatLanguage: normalizeChatLanguage(parsed?.chatLanguage),
         miraLanguage: normalizeMiraLanguage(parsed?.miraLanguage),
+        miraMode: normalizeMiraMode(parsed?.miraMode),
       };
     }
   } catch {}
@@ -41,6 +50,9 @@ export async function saveSettings(partial) {
   }
   if (partial && Object.prototype.hasOwnProperty.call(partial, 'miraLanguage')) {
     next.miraLanguage = normalizeMiraLanguage(partial.miraLanguage);
+  }
+  if (partial && Object.prototype.hasOwnProperty.call(partial, 'miraMode')) {
+    next.miraMode = normalizeMiraMode(partial.miraMode);
   }
   try {
     await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));

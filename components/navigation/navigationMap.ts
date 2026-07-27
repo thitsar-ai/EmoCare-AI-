@@ -44,10 +44,10 @@ const MAIN_ROUTE_META: Record<
 > = {
   home: { label: 'Home / Sanctuary', component: 'SanctuaryDashboard', tabBar: true },
   checkin: { label: 'Check In', component: 'CheckInScreen', tabBar: true },
-  today: { label: "Today's Dashboard", component: 'TodayDashboardScreen', tabBar: true },
-  talk: { label: 'Talk', component: 'ChatScreen', tabBar: true },
+  today: { label: 'My Day', component: 'TodayDashboardScreen', tabBar: true },
+  talk: { label: 'Talk to Emo', component: 'ChatScreen', tabBar: true },
   journal: { label: 'Journal', component: 'JournalScreen', tabBar: true },
-  oracle: { label: 'Mira', component: 'OracleSearchScreen' }, // legacy route key: oracle
+  oracle: { label: 'Ask Mira', component: 'OracleSearchScreen' }, // legacy route key: oracle — companion is Mira
   insights: { label: 'Insights', component: 'InsightsScreen' },
   memoryledger: { label: 'Memory Ledger', component: 'MemoryLedgerScreen' },
   settings: { label: 'Settings', component: 'SettingsScreen' },

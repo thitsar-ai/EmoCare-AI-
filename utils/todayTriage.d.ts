@@ -79,3 +79,17 @@ export function buildTodayGentleGrowth(tasks: TriageTaskRecord[]): {
 };
 export function categorySubline(task: TriageTaskRecord): string;
 export function isBreathCareTask(task: TriageTaskRecord): boolean;
+export const INTENTION_SUGGESTIONS: Array<{
+  id: string;
+  title: string;
+  energyCategory: EnergyCategoryId;
+}>;
+export function pickIntentionSuggestions(
+  existingTasks?: Array<{ title?: string }>,
+  moodLabel?: string | null,
+  limit?: number,
+): Array<{
+  id: string;
+  title: string;
+  energyCategory: EnergyCategoryId;
+}>;

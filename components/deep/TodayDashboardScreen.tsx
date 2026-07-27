@@ -34,6 +34,7 @@ import {
   inferTaskCategory,
   isBreathCareTask,
   loadTodayTasks,
+  pickIntentionSuggestions,
   setTaskStatus,
   type EnergyCategoryId,
 } from '../../utils/todayTriage';
@@ -149,9 +150,14 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   }, [newTitle, categoryTouched]);
 
   const groups = groupTasksByEnergy(tasks);
+  const hasTasks = tasks.length > 0;
   const heroInsight = buildTodayHeroInsight(tasks, moodLabel);
   const gentleGrowth = buildTodayGentleGrowth(tasks);
   const emoReflection = buildEmoDailyNote(tasks, moodLabel);
+  const suggestions = useMemo(
+    () => pickIntentionSuggestions(tasks, moodLabel, hasTasks ? 3 : 4),
+    [tasks, moodLabel, hasTasks],
+  );
   const todayLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -160,7 +166,6 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
 
   const inferredCategory = newTitle.trim() ? inferTaskCategory(newTitle) : null;
   const labelAccent = getSanctuaryLabelAccent(theme);
-  const hasTasks = tasks.length > 0;
 
   const scrollMinHeight = useMemo(() => {
     const reserved = insets.top + insets.bottom + NAV_CONTENT_HEIGHT + 168;
@@ -216,12 +221,34 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
     }
   };
 
+  const handleAddSuggestion = async (suggestion: {
+    title: string;
+    energyCategory: EnergyCategoryId;
+  }) => {
+    if (adding) return;
+    void hapticLight();
+    setAdding(true);
+    try {
+      await addTodayTask({
+        title: suggestion.title,
+        energyCategory: suggestion.energyCategory,
+        deadline: 'flexible',
+        autoCategory: false,
+      });
+      await refresh();
+    } catch {
+      Alert.alert('Could not save', 'That suggestion was not added. Please try again.');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <View style={styles.flex}>
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} title="Today" />
+          <ScreenNavChrome theme={theme} title="My Day" />
         </View>
 
         <View style={styles.headerBlock}>
@@ -335,7 +362,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.intentionsCard}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Intentions</Text>
               <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
-                Nothing on your list yet — add one small intention below, or let the day stay open.
+                Nothing on your list yet — tap a gentle suggestion below, or write your own.
               </Text>
             </CircadianGlassCard>
           )}
@@ -360,8 +387,47 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
               returnKeyType="done"
               onSubmitEditing={() => void handleAddTask()}
             />
+
+            {suggestions.length > 0 ? (
+              <View style={styles.suggestBlock}>
+                <Text style={[styles.suggestLabel, { color: labelAccent }]}>
+                  {hasTasks ? 'More ideas' : 'Try one'}
+                </Text>
+                <View style={styles.suggestRow}>
+                  {suggestions.map((item) => {
+                    const cat = ENERGY_CATEGORIES[item.energyCategory];
+                    return (
+                      <Pressable
+                        key={item.id}
+                        onPress={() => void handleAddSuggestion(item)}
+                        disabled={adding}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add intention: ${item.title}`}
+                        style={({ pressed }) => [
+                          styles.suggestChip,
+                          {
+                            borderColor: cat.accent,
+                            backgroundColor: cat.chipBg,
+                          },
+                          pressChipStyle(cat.accent, pressed),
+                          adding && { opacity: 0.55 },
+                        ]}
+                      >
+                        <Text style={[styles.suggestChipText, { color: theme.text }]} numberOfLines={2}>
+                          + {item.title}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
             <Text style={[styles.categoryPickLabel, { color: theme.mutedText }]}>
-              Activity{inferredCategory && !categoryTouched ? ' · suggested' : ''}
+              Activity type{inferredCategory && !categoryTouched ? ' · auto-matched' : ''}
+            </Text>
+            <Text style={[styles.categoryHint, { color: theme.mutedText }]}>
+              Choose where this intention belongs — Work, Home, Move, and more.
             </Text>
             <View style={styles.categoryRow}>
               {ENERGY_CATEGORY_ORDER.map((id) => {
@@ -553,14 +619,21 @@ const styles = StyleSheet.create({
   },
   categoryPickLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  categoryHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
   },
   categoryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 4,
   },
   categoryChip: {
     borderWidth: 1.5,
@@ -571,6 +644,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   categoryChipText: { fontSize: 12, fontWeight: '700' },
+  suggestBlock: {
+    marginBottom: 14,
+  },
+  suggestLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  suggestRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  suggestChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    maxWidth: '100%',
+  },
+  suggestChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
   addInputHighlight: {
     borderWidth: 2,
     ...Platform.select({
