@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Animated,
@@ -177,6 +178,7 @@ import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracl
 import { loadEmoPersonalContext } from './utils/emoPersonalContext';
 import { refreshEmocareConfig, logEmocareApiDebug } from './utils/emocareApi';
 import { loadOnboardingState, markOnboardingComplete } from './utils/onboardingState';
+import { syncDailyReminderOnLaunch } from './utils/dailyReminders';
 import { logOracleInquiry } from './utils/oracleTopicLog';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
@@ -1178,10 +1180,11 @@ function ChatBubbleMenuSheet({
 
 function ChatScreen({ userName }: { userName: string }) {
   const theme = useCircadianTheme();
-  const { setMenuOpen: setAppMenuOpen, navigate } = useAppNav();
+  const { setMenuOpen: setAppMenuOpen, navigate, setImmersiveChromeHidden } = useAppNav();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [isWaiting, setIsWaiting] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [history, setHistory] = useState<ApiMessage[]>([]);
@@ -1235,6 +1238,24 @@ function ChatScreen({ userName }: { userName: string }) {
       talkMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setKeyboardOpen(true);
+      setImmersiveChromeHidden(true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardOpen(false);
+      setImmersiveChromeHidden(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      setImmersiveChromeHidden(false);
+    };
+  }, [setImmersiveChromeHidden]);
 
   const bumpStreamLevel = () => {
     setStreamLevel(1);
@@ -2047,7 +2068,7 @@ function ChatScreen({ userName }: { userName: string }) {
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
         >
           <View style={styles.chatHeaderWrap}>
             <ScreenNavChrome
@@ -2075,35 +2096,37 @@ function ChatScreen({ userName }: { userName: string }) {
                 </>
               }
             />
-            <View style={styles.chatBrandRow}>
-              <View style={styles.chatBrandMain}>
-                <TalkHeroEmo theme={theme} size="header" />
-                <View style={styles.chatHeaderTitles}>
-                  <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>
-                    {TALK_HEADER_TITLE}
-                  </Text>
-                  <Text
-                    style={[styles.chatHeroSubCompact, { color: theme.secondaryText }]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.85}
-                  >
-                    {TALK_HEADER_TAGLINE}
-                  </Text>
+            {!keyboardOpen ? (
+              <View style={styles.chatBrandRow}>
+                <View style={styles.chatBrandMain}>
+                  <TalkHeroEmo theme={theme} size="header" />
+                  <View style={styles.chatHeaderTitles}>
+                    <Text style={[styles.chatHeroTitleCompact, { color: theme.text }]}>
+                      {TALK_HEADER_TITLE}
+                    </Text>
+                    <Text
+                      style={[styles.chatHeroSubCompact, { color: theme.secondaryText }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {TALK_HEADER_TAGLINE}
+                    </Text>
+                  </View>
                 </View>
+                {memoryChipLabel ? (
+                  <View style={styles.chatHeaderChipWrap}>
+                    <EmoMemoryChip
+                      theme={theme}
+                      label={memoryChipLabel}
+                      remembersPrefix={talkUi.remembersPrefix}
+                      onPress={() => navigate('memoryledger')}
+                    />
+                  </View>
+                ) : null}
               </View>
-              {memoryChipLabel ? (
-                <View style={styles.chatHeaderChipWrap}>
-                  <EmoMemoryChip
-                    theme={theme}
-                    label={memoryChipLabel}
-                    remembersPrefix={talkUi.remembersPrefix}
-                    onPress={() => navigate('memoryledger')}
-                  />
-                </View>
-              ) : null}
-            </View>
-            {chatStatusLine ? (
+            ) : null}
+            {chatStatusLine && !keyboardOpen ? (
               <View style={styles.chatPresenceRow}>
                 <Text
                   style={[styles.chatHeaderPresence, { color: theme.text }]}
@@ -2340,26 +2363,30 @@ function ChatScreen({ userName }: { userName: string }) {
             style={[
               styles.chatComposerWrap,
               {
-                paddingBottom: NAV_CONTENT_HEIGHT + (insets.bottom ?? 0) + 6,
+                paddingBottom: keyboardOpen
+                  ? Math.max(insets.bottom, 10)
+                  : NAV_CONTENT_HEIGHT + (insets.bottom ?? 0) + 6,
                 borderTopColor: tokens.border.standard,
                 backgroundColor: TALK_INPUT_SURFACE,
               },
             ]}
           >
-            <Pressable
-              onPress={() => {
-                void hapticLight();
-                setLanguageSheetOpen(true);
-              }}
-              style={styles.chatLanguageChipRow}
-              accessibilityRole="button"
-              accessibilityLabel={`Emo language, ${getChatLanguageLabel(chatLanguage)}`}
-            >
-              <Globe size={13} color={theme.accent} strokeWidth={2.2} />
-              <Text style={[styles.chatLanguageChipText, { color: theme.accent }]}>
-                {getChatLanguageLabel(chatLanguage)}
-              </Text>
-            </Pressable>
+            {!keyboardOpen ? (
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setLanguageSheetOpen(true);
+                }}
+                style={styles.chatLanguageChipRow}
+                accessibilityRole="button"
+                accessibilityLabel={`Emo language, ${getChatLanguageLabel(chatLanguage)}`}
+              >
+                <Globe size={13} color={theme.accent} strokeWidth={2.2} />
+                <Text style={[styles.chatLanguageChipText, { color: theme.accent }]}>
+                  {getChatLanguageLabel(chatLanguage)}
+                </Text>
+              </Pressable>
+            ) : null}
             <View style={[styles.chatComposerPill, { backgroundColor: TALK_INPUT_SURFACE }]}>
               <Pressable
                 onPress={handleSendFiles}
@@ -2412,12 +2439,14 @@ function ChatScreen({ userName }: { userName: string }) {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-            <View style={styles.chatPrivacyRow}>
-              <Lock size={13} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
-              <Text style={[styles.chatPrivacy, { color: theme.secondaryText }]}>
-                {talkUi.privacy}
-              </Text>
-            </View>
+            {!keyboardOpen ? (
+              <View style={styles.chatPrivacyRow}>
+                <Lock size={13} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
+                <Text style={[styles.chatPrivacy, { color: theme.secondaryText }]}>
+                  {talkUi.privacy}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </KeyboardAvoidingView>
       </TopChrome>
@@ -2655,6 +2684,8 @@ function Root() {
           setOnboarded(false);
         }
         setAgeVerified(ageOk);
+        // Re-schedule local daily reminder from saved preference (no prompt).
+        void syncDailyReminderOnLaunch();
       } finally {
         setBootReady(true);
       }

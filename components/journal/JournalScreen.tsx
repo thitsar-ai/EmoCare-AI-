@@ -3,7 +3,6 @@ import {
   AppState,
   BackHandler,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -20,7 +19,12 @@ import { Lock, MessageCircle } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
-import { ScreenNavChrome, TAB_BAR_HEIGHT, type MainScreenKey } from '../navigation/AppNavigation';
+import {
+  ScreenNavChrome,
+  TAB_BAR_HEIGHT,
+  useAppNav,
+  type MainScreenKey,
+} from '../navigation/AppNavigation';
 import { useCircadianTheme, getCircadianIconColor } from '../../theme/circadianTheme';
 import { CircadianGlassCard, CircadianHeroGlow, SERIF } from '../shared/CircadianHeroGlow';
 import {
@@ -68,6 +72,7 @@ function moodEmoji(entry: JournalEntry) {
 export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
+  const { setImmersiveChromeHidden } = useAppNav();
   const { height: windowHeight } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
@@ -80,26 +85,53 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   const [todayMood, setTodayMood] = useState<{ emoji: string; label: string } | null>(null);
   const [showSaved, setShowSaved] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const dailyPrompt = useMemo(() => pickDailyJournalPrompt(), []);
   const recentEntries = useMemo(() => entries.slice(0, 3), [entries]);
   const journeyLine = useMemo(() => buildJourneyLine(entries), [entries]);
   const canSave = text.trim().length > 0;
-  const editorMinHeight = keyboardOpen
-    ? Math.max(260, Math.round(windowHeight * 0.36))
-    : Math.max(200, Math.round(windowHeight * 0.28));
-  const bottomPad = keyboardOpen ? 12 : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 16;
+
+  /**
+   * When the keyboard is open, size the editor to the remaining space above it.
+   * A fixed % of windowHeight was taller than the visible area on iPad, so typed
+   * lines disappeared under the keyboard.
+   */
+  const editorHeight = useMemo(() => {
+    if (!keyboardOpen) {
+      return Math.max(200, Math.round(windowHeight * 0.28));
+    }
+    const navChrome = insets.top + 56;
+    const promptBlock = 78;
+    const saveFooter = 68;
+    const gaps = 36;
+    const reserved = navChrome + promptBlock + saveFooter + gaps + keyboardHeight;
+    return Math.max(140, windowHeight - reserved);
+  }, [keyboardOpen, keyboardHeight, windowHeight, insets.top]);
+
+  const bottomPad = keyboardOpen
+    ? 16
+    : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 16;
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardOpen(true);
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      setImmersiveChromeHidden(true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardOpen(false);
+      setKeyboardHeight(0);
+      setImmersiveChromeHidden(false);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
+      setImmersiveChromeHidden(false);
     };
-  }, []);
+  }, [setImmersiveChromeHidden]);
 
   const refreshEntries = useCallback(async () => {
     const loaded = await loadJournalEntries();
@@ -280,15 +312,32 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
     );
   }
 
+  const saveButton = (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={onSavePress}
+      accessibilityRole="button"
+      accessibilityLabel={canSave ? 'Save reflection' : 'Write first, then save'}
+      style={[styles.saveTouch, primaryRestingShadow(theme)]}
+    >
+      <LinearGradient
+        colors={
+          canSave ? getSanctuaryButtonGradient(theme.phase) : ['#C4B7E8', '#B5A6DE']
+        }
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={styles.saveInner}
+      >
+        <Text style={styles.saveLabel}>Save Reflection →</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={[styles.flex, { backgroundColor: JOURNAL_BG }]}>
       <CircadianHeroGlow theme={theme} />
-      <ScreenSafeArea extraTop={4}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
-        >
+      <ScreenSafeArea extraTop={4} edges={['top', 'left', 'right']}>
+        <View style={styles.flex}>
           <View style={styles.chromeWrap}>
             <ScreenNavChrome theme={theme} title="Your Journal" />
           </View>
@@ -304,7 +353,11 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
           <ScrollView
             ref={scrollRef}
             style={styles.flex}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: bottomPad },
+              keyboardOpen && styles.scrollContentTyping,
+            ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="always"
             keyboardDismissMode="interactive"
@@ -318,7 +371,10 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                 ✨ Today's Reflection
               </Text>
               <Text
-                style={[keyboardOpen ? styles.heroPromptCompact : styles.heroPrompt, { color: theme.text }]}
+                style={[
+                  keyboardOpen ? styles.heroPromptCompact : styles.heroPrompt,
+                  { color: theme.text },
+                ]}
                 numberOfLines={keyboardOpen ? 2 : undefined}
               >
                 {dailyPrompt}
@@ -331,13 +387,23 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                 {
                   borderColor: tokens.border.standard,
                   backgroundColor: JOURNAL_EDITOR_SURFACE,
-                  minHeight: editorMinHeight,
+                  height: keyboardOpen ? editorHeight : undefined,
+                  minHeight: editorHeight,
+                  maxHeight: keyboardOpen ? editorHeight : undefined,
                 },
               ]}
             >
               <TextInput
                 ref={inputRef}
-                style={[styles.journalInput, { color: theme.text, minHeight: editorMinHeight - 28 }]}
+                style={[
+                  styles.journalInput,
+                  {
+                    color: theme.text,
+                    height: keyboardOpen ? editorHeight - 28 : undefined,
+                    minHeight: editorHeight - 28,
+                    maxHeight: keyboardOpen ? editorHeight - 28 : undefined,
+                  },
+                ]}
                 multiline
                 placeholder={EDITOR_PLACEHOLDER}
                 placeholderTextColor={theme.mutedText}
@@ -349,34 +415,15 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               />
             </View>
 
-            <TouchableOpacity
-              activeOpacity={0.88}
-              onPress={onSavePress}
-              accessibilityRole="button"
-              accessibilityLabel={canSave ? 'Save reflection' : 'Write first, then save'}
-              style={[styles.saveTouch, primaryRestingShadow(theme)]}
-            >
-              <LinearGradient
-                colors={
-                  canSave
-                    ? getSanctuaryButtonGradient(theme.phase)
-                    : ['#C4B7E8', '#B5A6DE']
-                }
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.saveInner}
-              >
-                <Text style={styles.saveLabel}>Save Reflection →</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            {!canSave ? (
-              <Text style={[styles.saveHint, { color: theme.mutedText }]}>
-                Tap here after writing — or tap to start typing.
-              </Text>
-            ) : null}
-
             {!keyboardOpen ? (
               <>
+                {saveButton}
+                {!canSave ? (
+                  <Text style={[styles.saveHint, { color: theme.mutedText }]}>
+                    Tap here after writing — or tap to start typing.
+                  </Text>
+                ) : null}
+
                 <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.reflectCard}>
                   <Text style={[styles.reflectEyebrow, { color: labelAccent }]}>
                     💜 Need help finding the words?
@@ -462,7 +509,23 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               </>
             ) : null}
           </ScrollView>
-        </KeyboardAvoidingView>
+
+          {/* Pin save above the keyboard — marginBottom tracks keyboard height (reliable on iPad). */}
+          {keyboardOpen ? (
+            <View
+              style={[
+                styles.saveFooter,
+                {
+                  paddingBottom: Math.max(insets.bottom, 8),
+                  marginBottom: keyboardHeight,
+                  backgroundColor: JOURNAL_BG,
+                },
+              ]}
+            >
+              {saveButton}
+            </View>
+          ) : null}
+        </View>
       </ScreenSafeArea>
 
       <JournalSaveOverlay
@@ -496,6 +559,15 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: H_PAD,
     gap: 14,
+  },
+  scrollContentTyping: {
+    flexGrow: 1,
+  },
+  saveFooter: {
+    paddingHorizontal: H_PAD,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(120, 100, 160, 0.18)',
   },
   heroCard: {
     paddingVertical: 22,

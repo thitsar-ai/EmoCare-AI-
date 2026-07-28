@@ -76,6 +76,8 @@ const styles = StyleSheet.create({
   },
   tabletColumn: {
     backgroundColor: tokens.bg.canvasTop,
+    // Let KeyboardAvoidingView expand above the keyboard without clipping.
+    overflow: 'visible',
   },
   columnWide: {
     borderLeftWidth: StyleSheet.hairlineWidth,

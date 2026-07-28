@@ -72,6 +72,11 @@ import {
   loadUserPronouns,
   saveUserPronouns,
 } from '../../utils/onboardingState';
+import {
+  OB_CONTENT_SLIDES,
+  nextContentSlide,
+  prevContentSlide,
+} from '../../utils/onboardingFlowOrder';
 import { loadSettings, saveSettings } from '../../utils/settingsStorage';
 import { CHAT_LANGUAGE_OPTIONS, normalizeChatLanguage } from '../../utils/chatLanguage';
 import { MIRA_LANGUAGE_OPTIONS, normalizeMiraLanguage } from '../../utils/miraLanguage';
@@ -80,8 +85,7 @@ const { width, height } = Dimensions.get('window');
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
 /** Visible first-run path: Welcome → Privacy → Tell Me About You (age is interstitial). */
-const OB_CONTENT_SLIDES = [2, 4, 5] as const;
-const OB_PROGRESS_SLIDES = [2, 4, 5] as const;
+const OB_PROGRESS_SLIDES = OB_CONTENT_SLIDES;
 const OB_LAST_SLIDE = 5;
 
 const OB_SLIDE_TITLES: Record<number, string> = {
@@ -640,13 +644,29 @@ export function OnboardingFlow({
     if (slide === WELCOME_ONBOARDING_SLIDE && target !== WELCOME_ONBOARDING_SLIDE) {
       void persistWelcomeName(nameRef.current);
     }
+    // Legacy splash (slide 1) is not part of first-run — send to Welcome.
     if (target === 1) {
-      closeOnboardingReview();
-      Animated.sequence([
-        Animated.timing(fadeAnim, { toValue: 0, duration: 220, useNativeDriver: true }),
-        Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
-      ]).start();
-      setTimeout(() => setSlide(1), 220);
+      setSlide(WELCOME_ONBOARDING_SLIDE);
+      return;
+    }
+
+    // Age gate is interstitial only (Privacy → About You / finish). Never open via swipe +1.
+    if (
+      target === OB_AGE_GATE_SLIDE &&
+      !ageVerificationOnly &&
+      !reviewMode
+    ) {
+      return;
+    }
+
+    // Privacy acknowledgement required before Tell Me About You.
+    if (
+      !reviewMode &&
+      !ageVerificationOnly &&
+      slide === OB_PRIVACY_SLIDE &&
+      target === OB_LAST_CONTENT_SLIDE &&
+      !privacyAcked
+    ) {
       return;
     }
 
@@ -680,23 +700,34 @@ export function OnboardingFlow({
   const goToRef = useRef(goTo);
   goToRef.current = goTo;
 
+  const privacyAckedRef = useRef(privacyAcked);
+  privacyAckedRef.current = privacyAcked;
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, g) => {
-        if (slideRef.current === 1) return false;
+        if (slideRef.current === 1 || slideRef.current === OB_AGE_GATE_SLIDE) return false;
         const threshold = slideRef.current >= OB_LAST_SLIDE ? 24 : 12;
         return Math.abs(g.dx) > threshold && Math.abs(g.dx) > Math.abs(g.dy) * 1.3;
       },
       onMoveShouldSetPanResponderCapture: (_, g) => {
-        if (slideRef.current === 1) return false;
+        if (slideRef.current === 1 || slideRef.current === OB_AGE_GATE_SLIDE) return false;
         const threshold = slideRef.current >= OB_LAST_SLIDE ? 24 : 12;
         return Math.abs(g.dx) > threshold && Math.abs(g.dx) > Math.abs(g.dy) * 1.3;
       },
       onPanResponderRelease: (_, g) => {
         const s = slideRef.current;
-        if (g.dx < -45 && s < OB_LAST_SLIDE && s !== OB_AGE_GATE_SLIDE) goToRef.current(s + 1);
-        else if (g.dx > 45 && s > 1) goToRef.current(s - 1);
+        // Use content order (2→4→5), never numeric +1 (that skipped Privacy via 2→3).
+        if (g.dx < -45) {
+          const next = nextContentSlide(s);
+          if (next == null) return;
+          if (s === OB_PRIVACY_SLIDE && !privacyAckedRef.current) return;
+          goToRef.current(next);
+        } else if (g.dx > 45) {
+          const prev = prevContentSlide(s);
+          if (prev != null) goToRef.current(prev);
+        }
       },
     }),
   ).current;
@@ -764,20 +795,25 @@ export function OnboardingFlow({
     if (slide === OB_PRIVACY_SLIDE) goTo(WELCOME_ONBOARDING_SLIDE);
     else if (slide === OB_LAST_CONTENT_SLIDE) goTo(OB_PRIVACY_SLIDE);
     else if (slide === OB_AGE_GATE_SLIDE) goTo(OB_PRIVACY_SLIDE);
-    else if (slide > 1) goTo(slide - 1);
   };
 
   const firstRunCanGoBack =
     !reviewMode &&
     !ageVerificationOnly &&
-    (slide === OB_PRIVACY_SLIDE || slide === OB_LAST_CONTENT_SLIDE || slide === WELCOME_ONBOARDING_SLIDE);
+    (slide === OB_PRIVACY_SLIDE || slide === OB_LAST_CONTENT_SLIDE || slide === OB_AGE_GATE_SLIDE);
 
   const handleFirstRunForward = () => {
     if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_PRIVACY_SLIDE);
-    else if (slide === OB_PRIVACY_SLIDE) goTo(OB_LAST_CONTENT_SLIDE);
-    else if (slide === OB_AGE_GATE_SLIDE && ageGatePassed) {
-      goTo(pendingAfterAgeRef.current === -1 ? OB_LAST_CONTENT_SLIDE : pendingAfterAgeRef.current || OB_LAST_CONTENT_SLIDE);
-    } else if (slide < OB_LAST_CONTENT_SLIDE && slide !== OB_AGE_GATE_SLIDE) goTo(slide + 1);
+    else if (slide === OB_PRIVACY_SLIDE) {
+      if (!privacyAcked) return;
+      goTo(OB_LAST_CONTENT_SLIDE);
+    } else if (slide === OB_AGE_GATE_SLIDE && ageGatePassed) {
+      goTo(
+        pendingAfterAgeRef.current === -1
+          ? OB_LAST_CONTENT_SLIDE
+          : pendingAfterAgeRef.current || OB_LAST_CONTENT_SLIDE,
+      );
+    }
   };
 
   const firstRunCanGoForward =
@@ -785,7 +821,7 @@ export function OnboardingFlow({
     !ageVerificationOnly &&
     ((slide === OB_AGE_GATE_SLIDE && ageGatePassed) ||
       slide === WELCOME_ONBOARDING_SLIDE ||
-      slide === OB_PRIVACY_SLIDE);
+      (slide === OB_PRIVACY_SLIDE && privacyAcked));
 
   if (!ageGateReady) {
     return (
@@ -801,7 +837,7 @@ export function OnboardingFlow({
       <View style={styles.flex}>
         <CircadianHeroGlow theme={theme} />
         <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-        <SplashSlide theme={theme} onContinue={() => goTo(OB_AGE_GATE_SLIDE)} />
+        <SplashSlide theme={theme} onContinue={() => goTo(WELCOME_ONBOARDING_SLIDE)} />
       </View>
     );
   }

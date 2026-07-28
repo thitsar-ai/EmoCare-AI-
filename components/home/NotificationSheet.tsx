@@ -3,7 +3,8 @@ import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
-import { loadSettings, saveSettings } from '../../utils/settingsStorage';
+import { loadSettings } from '../../utils/settingsStorage';
+import { syncDailyReminder } from '../../utils/dailyReminders';
 
 export const NOTIFICATION_TIME_OPTIONS = ['8:00 AM', '12:00 PM', '6:00 PM', '8:00 PM'];
 
@@ -33,9 +34,17 @@ export function NotificationSheet({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveSettings({ notificationsEnabled: enabled, notificationTime: time });
-      onSaved?.(enabled, time);
-      onClose();
+      const result = await syncDailyReminder({
+        enabled,
+        time,
+        requestPermission: true,
+        alertOnDenied: true,
+      });
+      onSaved?.(result.enabled, result.time);
+      if (!result.permissionDenied) onClose();
+      else {
+        setEnabled(false);
+      }
     } finally {
       setSaving(false);
     }
@@ -56,7 +65,7 @@ export function NotificationSheet({
               <View style={styles.flex}>
                 <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>Daily reminders</Text>
                 <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>
-                  A gentle nudge to check in — stored on this device only.
+                  A gentle local notification once a day — stored and scheduled on this device only.
                 </Text>
               </View>
             </View>

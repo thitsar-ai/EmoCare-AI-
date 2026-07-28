@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Keyboard,
@@ -10,6 +10,7 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,7 +40,7 @@ import {
   type EnergyCategoryId,
 } from '../../utils/todayTriage';
 import { loadLatestMoodLabel } from '../../utils/insightsData';
-import { ScreenNavChrome, type MainScreenKey } from '../navigation/AppNavigation';
+import { ScreenNavChrome, useAppNav, type MainScreenKey } from '../navigation/AppNavigation';
 import { hapticLight } from '../../utils/haptics';
 import {
   pressCardStyle,
@@ -120,7 +121,10 @@ function TaskCheckToggle({
 export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
   const insets = useSafeAreaInsets();
+  const { setImmersiveChromeHidden } = useAppNav();
   const { height: windowHeight } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const addCardYRef = useRef(0);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [moodLabel, setMoodLabel] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
@@ -128,6 +132,8 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [adding, setAdding] = useState(false);
   const [inputHighlight, setInputHighlight] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const refresh = useCallback(async () => {
     const [todayTasks, mood] = await Promise.all([loadTodayTasks(), loadLatestMoodLabel()]);
@@ -138,6 +144,26 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardOpen(true);
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      setImmersiveChromeHidden(true);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardOpen(false);
+      setKeyboardHeight(0);
+      setImmersiveChromeHidden(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      setImmersiveChromeHidden(false);
+    };
+  }, [setImmersiveChromeHidden]);
 
   useEffect(() => {
     if (!newTitle.trim()) {
@@ -171,6 +197,30 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
     const reserved = insets.top + insets.bottom + NAV_CONTENT_HEIGHT + 168;
     return Math.max(windowHeight - reserved, 420);
   }, [windowHeight, insets.top, insets.bottom]);
+
+  const scrollPadBottom = keyboardOpen
+    ? keyboardHeight + 28
+    : NAV_CONTENT_HEIGHT + insets.bottom + 28;
+
+  const onAddCardLayout = useCallback((e: LayoutChangeEvent) => {
+    addCardYRef.current = e.nativeEvent.layout.y;
+  }, []);
+
+  const scrollInputIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, addCardYRef.current - 24),
+        animated: true,
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (keyboardOpen && keyboardHeight > 0) {
+      const t = setTimeout(scrollInputIntoView, 80);
+      return () => clearTimeout(t);
+    }
+  }, [keyboardOpen, keyboardHeight, scrollInputIntoView]);
 
   const toggleDone = (taskId: string, current: string) => {
     void hapticLight();
@@ -246,61 +296,71 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   return (
     <View style={styles.flex}>
       <CircadianHeroGlow theme={theme} />
-      <ScreenSafeArea extraTop={4}>
+      <ScreenSafeArea extraTop={4} edges={['top', 'left', 'right']}>
         <View style={styles.chromeWrap}>
           <ScreenNavChrome theme={theme} title="My Day" />
         </View>
 
-        <View style={styles.headerBlock}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Your day ahead</Text>
-          <View style={styles.subtitleRow}>
-            <Text style={[styles.subtitle, { color: theme.mutedText }]}>
-              Intentions, not pressure — planning at your pace.
-            </Text>
-            <View
-              style={[
-                styles.datePill,
-                {
-                  borderColor: tokens.border.standard,
-                  backgroundColor: tokens.bg.card,
-                },
-              ]}
-            >
-              <Text style={[styles.datePillText, { color: theme.secondaryText }]}>{todayLabel}</Text>
-            </View>
-          </View>
-        </View>
-
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 28, minHeight: scrollMinHeight },
-          ]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Hero — Gentle note for today */}
-          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
-            <SectionEyebrow icon="💜" label="Gentle Note" color={tokens.text.primary} />
-            <Text style={[styles.heroQuote, { color: theme.text }]}>{heroInsight}</Text>
-            {moodLabel ? (
+        {!keyboardOpen ? (
+          <View style={styles.headerBlock}>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Your day ahead</Text>
+            <View style={styles.subtitleRow}>
+              <Text style={[styles.subtitle, { color: theme.mutedText }]}>
+                Intentions, not pressure — planning at your pace.
+              </Text>
               <View
                 style={[
-                  styles.moodBubble,
+                  styles.datePill,
                   {
-                    borderColor: tokens.border.strong,
-                    backgroundColor: tokens.surface.tint,
+                    borderColor: tokens.border.standard,
+                    backgroundColor: tokens.bg.card,
                   },
                 ]}
               >
-                <Text style={styles.moodEmoji}>{moodEmoji(moodLabel)}</Text>
-                <Text style={[styles.moodLabel, { color: theme.text }]}>{moodLabel}</Text>
+                <Text style={[styles.datePillText, { color: theme.secondaryText }]}>{todayLabel}</Text>
               </View>
-            ) : null}
-          </CircadianGlassCard>
+            </View>
+          </View>
+        ) : null}
+
+        <ScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingBottom: scrollPadBottom,
+              minHeight: keyboardOpen ? undefined : scrollMinHeight,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          {/* Hero — Gentle note for today */}
+          {!keyboardOpen ? (
+            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
+              <SectionEyebrow icon="💜" label="Gentle Note" color={tokens.text.primary} />
+              <Text style={[styles.heroQuote, { color: theme.text }]}>{heroInsight}</Text>
+              {moodLabel ? (
+                <View
+                  style={[
+                    styles.moodBubble,
+                    {
+                      borderColor: tokens.border.strong,
+                      backgroundColor: tokens.surface.tint,
+                    },
+                  ]}
+                >
+                  <Text style={styles.moodEmoji}>{moodEmoji(moodLabel)}</Text>
+                  <Text style={[styles.moodLabel, { color: theme.text }]}>{moodLabel}</Text>
+                </View>
+              ) : null}
+            </CircadianGlassCard>
+          ) : null}
 
           {/* Today's intentions */}
-          {hasTasks ? (
+          {!keyboardOpen && hasTasks ? (
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.intentionsCard}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Intentions</Text>
               {groups.map(({ category, tasks: groupTasks }) => (
@@ -358,117 +418,134 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
                 </View>
               ))}
             </CircadianGlassCard>
-          ) : (
+          ) : null}
+          {!keyboardOpen && !hasTasks ? (
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.intentionsCard}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Intentions</Text>
               <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
                 Nothing on your list yet — tap a gentle suggestion below, or write your own.
               </Text>
             </CircadianGlassCard>
-          )}
+          ) : null}
 
-          {/* Add intention */}
-          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-            <SectionEyebrow icon="✨" label="Add an Intention" color={labelAccent} />
-            <TextInput
-              style={[
-                styles.addInput,
-                {
-                  color: theme.text,
-                  borderColor: inputHighlight ? theme.accent : tokens.border.standard,
-                  backgroundColor: inputHighlight ? 'rgba(255, 255, 255, 0.72)' : 'rgba(255, 255, 255, 0.5)',
-                },
-                inputHighlight && styles.addInputHighlight,
-              ]}
-              placeholder="What matters today?"
-              placeholderTextColor={theme.mutedText}
-              value={newTitle}
-              onChangeText={setNewTitle}
-              returnKeyType="done"
-              onSubmitEditing={() => void handleAddTask()}
-            />
+          {/* Add intention — kept above keyboard via scroll + keyboard-height padding */}
+          <View onLayout={onAddCardLayout}>
+            <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
+              <SectionEyebrow icon="✨" label="Add an Intention" color={labelAccent} />
+              <TextInput
+                style={[
+                  styles.addInput,
+                  {
+                    color: theme.text,
+                    borderColor: inputHighlight ? theme.accent : tokens.border.standard,
+                    backgroundColor: inputHighlight
+                      ? 'rgba(255, 255, 255, 0.72)'
+                      : 'rgba(255, 255, 255, 0.5)',
+                  },
+                  inputHighlight && styles.addInputHighlight,
+                ]}
+                placeholder="What matters today?"
+                placeholderTextColor={theme.mutedText}
+                value={newTitle}
+                onChangeText={setNewTitle}
+                returnKeyType="done"
+                onFocus={scrollInputIntoView}
+                onSubmitEditing={() => void handleAddTask()}
+              />
 
-            {suggestions.length > 0 ? (
-              <View style={styles.suggestBlock}>
-                <Text style={[styles.suggestLabel, { color: labelAccent }]}>
-                  {hasTasks ? 'More ideas' : 'Try one'}
-                </Text>
-                <View style={styles.suggestRow}>
-                  {suggestions.map((item) => {
-                    const cat = ENERGY_CATEGORIES[item.energyCategory];
-                    return (
-                      <Pressable
-                        key={item.id}
-                        onPress={() => void handleAddSuggestion(item)}
-                        disabled={adding}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Add intention: ${item.title}`}
-                        style={({ pressed }) => [
-                          styles.suggestChip,
-                          {
-                            borderColor: cat.accent,
-                            backgroundColor: cat.chipBg,
-                          },
-                          pressChipStyle(cat.accent, pressed),
-                          adding && { opacity: 0.55 },
-                        ]}
-                      >
-                        <Text style={[styles.suggestChipText, { color: theme.text }]} numberOfLines={2}>
-                          + {item.title}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+              {suggestions.length > 0 && !keyboardOpen ? (
+                <View style={styles.suggestBlock}>
+                  <Text style={[styles.suggestLabel, { color: labelAccent }]}>
+                    {hasTasks ? 'More ideas' : 'Try one'}
+                  </Text>
+                  <View style={styles.suggestRow}>
+                    {suggestions.map((item) => {
+                      const cat = ENERGY_CATEGORIES[item.energyCategory];
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() => void handleAddSuggestion(item)}
+                          disabled={adding}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add intention: ${item.title}`}
+                          style={({ pressed }) => [
+                            styles.suggestChip,
+                            {
+                              borderColor: cat.accent,
+                              backgroundColor: cat.chipBg,
+                            },
+                            pressChipStyle(cat.accent, pressed),
+                            adding && { opacity: 0.55 },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.suggestChipText, { color: theme.text }]}
+                            numberOfLines={2}
+                          >
+                            + {item.title}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
+              ) : null}
+
+              <Text style={[styles.categoryPickLabel, { color: theme.mutedText }]}>
+                Activity type{inferredCategory && !categoryTouched ? ' · auto-matched' : ''}
+              </Text>
+              <Text style={[styles.categoryHint, { color: theme.mutedText }]}>
+                Choose where this intention belongs — Work, Home, Move, and more.
+              </Text>
+              <View style={styles.categoryRow}>
+                {ENERGY_CATEGORY_ORDER.map((id) => {
+                  const cat = ENERGY_CATEGORIES[id];
+                  const selected = newCategory === id;
+                  return (
+                    <Pressable
+                      key={id}
+                      onPress={() => {
+                        void hapticLight();
+                        setCategoryTouched(true);
+                        setNewCategory(id);
+                      }}
+                      style={({ pressed }) => [
+                        styles.categoryChip,
+                        {
+                          borderColor: cat.accent,
+                          backgroundColor: selected ? cat.chipBg : 'transparent',
+                        },
+                        pressChipStyle(cat.accent, pressed),
+                      ]}
+                    >
+                      <Text style={[styles.categoryChipText, { color: cat.accent }]}>
+                        {cat.shortLabel}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-            ) : null}
+            </CircadianGlassCard>
+          </View>
 
-            <Text style={[styles.categoryPickLabel, { color: theme.mutedText }]}>
-              Activity type{inferredCategory && !categoryTouched ? ' · auto-matched' : ''}
-            </Text>
-            <Text style={[styles.categoryHint, { color: theme.mutedText }]}>
-              Choose where this intention belongs — Work, Home, Move, and more.
-            </Text>
-            <View style={styles.categoryRow}>
-              {ENERGY_CATEGORY_ORDER.map((id) => {
-                const cat = ENERGY_CATEGORIES[id];
-                const selected = newCategory === id;
-                return (
-                  <Pressable
-                    key={id}
-                    onPress={() => {
-                      void hapticLight();
-                      setCategoryTouched(true);
-                      setNewCategory(id);
-                    }}
-                    style={({ pressed }) => [
-                      styles.categoryChip,
-                      {
-                        borderColor: cat.accent,
-                        backgroundColor: selected ? cat.chipBg : 'transparent',
-                      },
-                      pressChipStyle(cat.accent, pressed),
-                    ]}
-                  >
-                    <Text style={[styles.categoryChipText, { color: cat.accent }]}>{cat.shortLabel}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </CircadianGlassCard>
+          {!keyboardOpen ? (
+            <>
+              {/* Gentle growth */}
+              <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
+                <SectionEyebrow icon="✨" label="Gentle Growth" color={labelAccent} />
+                <Text style={[styles.growthLine1, { color: theme.text }]}>{gentleGrowth.line1}</Text>
+                <Text style={[styles.growthLine2, { color: theme.secondaryText }]}>
+                  {gentleGrowth.line2}
+                </Text>
+              </CircadianGlassCard>
 
-          {/* Gentle growth */}
-          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-            <SectionEyebrow icon="✨" label="Gentle Growth" color={labelAccent} />
-            <Text style={[styles.growthLine1, { color: theme.text }]}>{gentleGrowth.line1}</Text>
-            <Text style={[styles.growthLine2, { color: theme.secondaryText }]}>{gentleGrowth.line2}</Text>
-          </CircadianGlassCard>
-
-          {/* Emo's reflection */}
-          <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.cardLast}>
-            <SectionEyebrow icon="💜" label="Emo's Reflection" color={tokens.text.primary} />
-            <Text style={[styles.reflectionQuote, { color: theme.text }]}>{emoReflection}</Text>
-          </CircadianGlassCard>
+              {/* Emo's reflection */}
+              <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.cardLast}>
+                <SectionEyebrow icon="💜" label="Emo's Reflection" color={tokens.text.primary} />
+                <Text style={[styles.reflectionQuote, { color: theme.text }]}>{emoReflection}</Text>
+              </CircadianGlassCard>
+            </>
+          ) : null}
 
           <View style={styles.bottomSpacer} />
         </ScrollView>

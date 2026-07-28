@@ -43,7 +43,7 @@ import { useCircadianTheme, getCircadianIconColor, type CircadianTheme } from '.
 import {
   isSanctuaryDayArt,
 } from '../../theme/sanctuaryHeroArt';
-import { getSanctuaryIconAccent, getSanctuaryIconLink, getSanctuaryLabelAccent } from '../../theme/sanctuaryBrand';
+import { getSanctuaryIconAccent, getSanctuaryIconLink } from '../../theme/sanctuaryBrand';
 import { hapticLight } from '../../utils/haptics';
 import {
   pressCardStyle,
@@ -369,42 +369,6 @@ function SanctuaryMiraCard({
   );
 }
 
-function QuickActionCard({
-  theme,
-  icon: Icon,
-  iconColor,
-  title,
-  subtitle,
-  onPress,
-}: {
-  theme: CircadianTheme;
-  icon: typeof Heart;
-  iconColor: string;
-  title: string;
-  subtitle: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={() => {
-        void hapticLight();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.quickCardWrap, pressCardStyle(theme, pressed, iconColor)]}
-    >
-      <SanctuaryGlassSurface variant="lavender" style={styles.quickCard}>
-        <View style={[styles.quickIconWrap, { backgroundColor: `${iconColor}18` }]}>
-          <Icon size={18} color={iconColor} strokeWidth={2.2} />
-        </View>
-        <Text style={[styles.quickTitle, { color: theme.text }]}>{title}</Text>
-        <Text style={[styles.quickSub, { color: theme.secondaryText }]}>
-          {subtitle}
-        </Text>
-      </SanctuaryGlassSurface>
-    </Pressable>
-  );
-}
-
 function SanctuaryHeaderBar({
   theme,
   notificationsOn,
@@ -525,7 +489,6 @@ export function SanctuaryDashboard({
   const showEveningReflection = localHour >= 17;
   const iconAccent = getSanctuaryIconAccent(theme);
   const iconLink = getSanctuaryIconLink(theme);
-  const labelAccent = getSanctuaryLabelAccent(theme);
 
   useEffect(() => {
     void loadEmoPersonalContext(userName).then(({ active, chipLabel }) => {
@@ -678,18 +641,6 @@ export function SanctuaryDashboard({
           <SanctuaryMiraCard theme={theme} narrow={narrow} onPress={() => onNav('oracle')} />
 
           <DailyReflectionHero theme={theme} />
-
-          <Text style={[styles.sectionEyebrow, { color: labelAccent }]}>QUICK ACTIONS</Text>
-          <View style={styles.quickRow}>
-            <QuickActionCard
-              theme={theme}
-              icon={Heart}
-              iconColor="#E97D6A"
-              title="Check In"
-              subtitle="How are you feeling?"
-              onPress={() => navigateToCheckIn(false)}
-            />
-          </View>
 
           <GentleInsightCard
             theme={theme}
@@ -949,30 +900,6 @@ const styles = StyleSheet.create({
   talkHeroBtnIcon: {
     flexShrink: 0,
   },
-  sectionEyebrow: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    marginBottom: 8,
-  },
-  quickRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  quickCardWrap: { flex: 1 },
-  quickCard: {
-    flex: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 11,
-    minHeight: 108,
-  },
-  quickIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  quickTitle: { fontSize: 12, fontWeight: '700', marginBottom: 3 },
-  quickSub: { fontSize: 10, lineHeight: 14, fontWeight: '500' },
   listSection: { gap: 10, marginBottom: 20 },
   listRowWrap: {},
   listRowOuter: {},

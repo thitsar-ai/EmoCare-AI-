@@ -19,6 +19,7 @@ import {
 } from './onboardingState';
 import { HELPED_STORAGE_KEY } from './thingsThatHelped';
 import { clearPasscode } from './passcodeLock';
+import { cancelDailyReminder } from './dailyReminders';
 
 const EXPORT_KEYS = [
   'userName',
@@ -80,6 +81,7 @@ export async function exportUserData() {
 }
 
 export async function deleteAllUserData() {
+  await cancelDailyReminder();
   await AsyncStorage.multiRemove(EXPORT_KEYS);
   await AsyncStorage.setItem('onboarded', 'false');
   await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, 'false');

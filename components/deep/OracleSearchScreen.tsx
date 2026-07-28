@@ -66,7 +66,6 @@ import {
 import { hapticLight } from '../../utils/haptics';
 
 const ORACLE_CHAT_KEY = 'oracleChatCurrent';
-const NAV_CONTENT_HEIGHT = 72;
 const NEAR_BOTTOM_PX = 80;
 const USER_GRADIENT = [...CHAT_USER_BUBBLE_GRADIENT] as [string, string, string, string];
 const SEND_GRADIENT = [...BRAND_CTA_GRADIENT] as [string, string];
@@ -147,12 +146,24 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const [miraLanguage, setMiraLanguage] = useState<'auto' | 'en' | 'my' | 'id'>('auto');
   const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
     useAnthropicAiConsent();
 
   const narrow = windowWidth < 390;
   const miraPlaceholder = miraInputPlaceholder(miraLanguage);
   const isEmpty = messages.length === 0;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const accent = tokens.oracle.accent;
 
   const activeMode = useMemo(
@@ -488,7 +499,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
         >
           <View style={styles.headerWrap}>
             <ScreenNavChrome
@@ -507,16 +518,19 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 </NavChromeBtn>
               }
             />
-            <View style={styles.brandFaceBlock}>
-              <TalkHeroMira theme={theme} size="header" />
-              <Text
-                style={[styles.brandTaglineUnderFace, { color: theme.secondaryText }]}
-                numberOfLines={2}
-              >
-                {ORACLE_HEADER_TAGLINE}
-              </Text>
-            </View>
-            {statusLine ? (
+            {/* Empty state shows the large hero below — avoid a second Mira + tagline here. */}
+            {!isEmpty && !keyboardOpen ? (
+              <View style={styles.brandFaceBlock}>
+                <TalkHeroMira theme={theme} size="header" />
+                <Text
+                  style={[styles.brandTaglineUnderFace, { color: theme.secondaryText }]}
+                  numberOfLines={2}
+                >
+                  {ORACLE_HEADER_TAGLINE}
+                </Text>
+              </View>
+            ) : null}
+            {statusLine && !keyboardOpen ? (
               <View style={styles.presenceRow}>
                 <Text style={[styles.presenceText, { color: theme.text }]} numberOfLines={1}>
                   {statusLine}
@@ -540,11 +554,15 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             }
           >
             {isEmpty ? (
-              <View style={styles.emptyBlock}>
-                <TalkHeroMira theme={theme} size="hero" />
-                <Text style={[styles.emptyTagline, { color: theme.secondaryText }]}>
-                  {ORACLE_HEADER_TAGLINE}
-                </Text>
+              <View style={[styles.emptyBlock, keyboardOpen && styles.emptyBlockCompact]}>
+                {!keyboardOpen ? (
+                  <>
+                    <TalkHeroMira theme={theme} size="hero" />
+                    <Text style={[styles.emptyTagline, { color: theme.secondaryText }]}>
+                      {ORACLE_HEADER_TAGLINE}
+                    </Text>
+                  </>
+                ) : null}
                 <Text
                   style={[
                     styles.emptyPrompt,
@@ -645,7 +663,9 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             style={[
               styles.composerWrap,
               {
-                paddingBottom: NAV_CONTENT_HEIGHT + Math.max(insets.bottom, 6),
+                paddingBottom: keyboardOpen
+                  ? Math.max(insets.bottom, 10)
+                  : Math.max(insets.bottom, 12),
                 borderTopColor: tokens.border.standard,
                 backgroundColor: TALK_INPUT_SURFACE,
               },
@@ -654,20 +674,22 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             ]}
             pointerEvents={controlsOpen ? 'none' : 'auto'}
           >
-            <Pressable
-              onPress={() => {
-                void hapticLight();
-                setLanguageSheetOpen(true);
-              }}
-              style={styles.langChip}
-              accessibilityRole="button"
-              accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
-            >
-              <Globe size={13} color={theme.accent} strokeWidth={2.2} />
-              <Text style={[styles.langChipText, { color: theme.accent }]}>
-                {getMiraLanguageLabel(miraLanguage)}
-              </Text>
-            </Pressable>
+            {!keyboardOpen ? (
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setLanguageSheetOpen(true);
+                }}
+                style={styles.langChip}
+                accessibilityRole="button"
+                accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+              >
+                <Globe size={13} color={theme.accent} strokeWidth={2.2} />
+                <Text style={[styles.langChipText, { color: theme.accent }]}>
+                  {getMiraLanguageLabel(miraLanguage)}
+                </Text>
+              </Pressable>
+            ) : null}
 
             <View style={styles.composerRow}>
               <Pressable
@@ -748,12 +770,14 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               </Pressable>
             </View>
 
-            <View style={styles.privacyRow}>
-              <Lock size={12} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
-              <Text style={[styles.privacyText, { color: theme.secondaryText }]}>
-                Private to you · Mira thinks carefully
-              </Text>
-            </View>
+            {!keyboardOpen ? (
+              <View style={styles.privacyRow}>
+                <Lock size={12} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
+                <Text style={[styles.privacyText, { color: theme.secondaryText }]}>
+                  Private to you · Mira thinks carefully
+                </Text>
+              </View>
+            ) : null}
           </View>
         </KeyboardAvoidingView>
       </ScreenSafeArea>
@@ -847,6 +871,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 14,
     paddingVertical: 20,
+  },
+  emptyBlockCompact: {
+    paddingVertical: 8,
   },
   emptyPrompt: {
     textAlign: 'center',

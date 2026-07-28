@@ -75,7 +75,7 @@ const SWIPE_EDGE_WIDTH = Platform.OS === 'ios' ? 36 : 28;
 const SWIPE_DISTANCE_PX = 24;
 const SWIPE_VELOCITY = 200;
 
-/** Linear back / forward order — Welcome → Privacy → Mood → Home → … → Settings. */
+/** Linear back / forward order — Welcome → Privacy → Tell Me About You → Home → … → Settings. */
 export type FlowStep =
   | { kind: 'onboarding'; slide: 2 | 4 | 5 }
   | { kind: 'screen'; key: MainScreenKey };
@@ -114,7 +114,7 @@ export const WELCOME_ONBOARDING_SLIDE = 2 as const;
 /** Onboarding content the user can step through with back / forward (excludes splash + age gate). */
 export const OB_FIRST_CONTENT_SLIDE = 2 as const;
 export const OB_LAST_CONTENT_SLIDE = 5 as const;
-/** First-run only — after Welcome, before Privacy. */
+/** First-run only interstitial — after Privacy, before Tell Me About You. */
 export const OB_AGE_GATE_SLIDE = 3 as const;
 export const OB_PRIVACY_SLIDE = 4 as const;
 
