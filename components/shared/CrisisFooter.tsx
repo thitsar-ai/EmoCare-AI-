@@ -8,6 +8,7 @@ import {
   openCrisisText,
   type CrisisRegion,
 } from '../../utils/crisisLine';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 type CrisisFooterProps = {
   theme: CircadianTheme;
@@ -25,6 +26,7 @@ export function CrisisFooter({
   variant = 'full',
   align = 'center',
 }: CrisisFooterProps) {
+  const { t } = useUiCopy();
   const line = getCrisisLine(region);
   const linkColor = theme.accent;
   const hasNumber = Boolean(line.phone);
@@ -34,7 +36,7 @@ export function CrisisFooter({
     return (
       <View style={[styles.homeWrap, style]}>
         <Text style={[styles.text, styles.homeLead, { color: theme.mutedText, textAlign }]}>
-          Need immediate help?
+          {t('home.needHelp')}
         </Text>
         <Text style={[styles.text, styles.homeLine, { color: theme.mutedText, textAlign }]}>
           {hasNumber ? (
@@ -53,7 +55,7 @@ export function CrisisFooter({
           )}
         </Text>
         <Text style={[styles.text, styles.homeDisclaimer, { color: theme.mutedText, textAlign }]}>
-          EmoCare is not emergency care.
+          {t('home.sanctuaryFooter')}
         </Text>
       </View>
     );
@@ -76,7 +78,7 @@ export function CrisisFooter({
             </CrisisLink>
           </>
         ) : null}
-        . EmoCare is a companion app — Emo is not emergency care.
+        . {t('settings.crisisCompanion')}
       </Text>
     );
   }
@@ -84,8 +86,7 @@ export function CrisisFooter({
   return (
     <View style={style}>
       <Text style={[styles.text, { color: theme.mutedText, textAlign }]}>
-        If you are in crisis or may hurt yourself, please contact local emergency services or a crisis
-        helpline immediately.
+        {t('settings.crisisBody')}
         {hasNumber ? (
           <>
             {' '}
@@ -102,7 +103,7 @@ export function CrisisFooter({
         ) : (
           <> {line.regionLabel}, reach {line.display}.</>
         )}{' '}
-        EmoCare is a companion app — Emo is not emergency care.
+        {t('settings.crisisCompanion')}
       </Text>
     </View>
   );

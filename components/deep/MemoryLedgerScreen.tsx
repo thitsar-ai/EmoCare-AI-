@@ -27,6 +27,7 @@ import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
 import { ScreenNavChrome, useAppNav } from '../navigation/AppNavigation';
 import { MemoryItemDetailSheet, type MemoryDetailItem } from './MemoryItemDetailSheet';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const H_PAD = 22;
 
@@ -64,6 +65,7 @@ function RememberStat({ label, value, theme }: { label: string; value: string; t
 
 export function MemoryLedgerScreen() {
   const theme = useCircadianTheme();
+  const { t } = useUiCopy();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { userName } = useAppNav();
@@ -139,10 +141,10 @@ export function MemoryLedgerScreen() {
   const handleForget = useCallback(
     (item: MemoryDetailItem) => {
       const label = item.label || item.text || 'this memory';
-      Alert.alert('Forget this memory?', `Emo will stop surfacing “${label}” on this device.`, [
-        { text: 'Cancel', style: 'cancel' },
+      Alert.alert(t('memory.forgetTitle'), t('memory.forgetBody', { label }), [
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Forget',
+          text: t('common.forget'),
           style: 'destructive',
           onPress: () => {
             setSelected(null);
@@ -153,7 +155,7 @@ export function MemoryLedgerScreen() {
         },
       ]);
     },
-    [refresh],
+    [refresh, t],
   );
 
   const handleSaveEdit = useCallback(
@@ -161,7 +163,7 @@ export function MemoryLedgerScreen() {
       if (!item.personalMemory) return;
       const updated = await updatePersonalMemory(item.id, { text, confirmedByUser: true });
       if (!updated) {
-        Alert.alert('Could not save', 'Please keep the memory at least a few words long.');
+        Alert.alert(t('common.couldNotSave'), t('common.tryAgain'));
         return;
       }
       if ('duplicate' in updated && updated.duplicate) {
@@ -181,7 +183,7 @@ export function MemoryLedgerScreen() {
       );
       void refresh();
     },
-    [refresh],
+    [refresh, t],
   );
 
   const handleToggleEmoMayUse = useCallback(
@@ -203,12 +205,12 @@ export function MemoryLedgerScreen() {
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} title="Memory Ledger" />
+          <ScreenNavChrome theme={theme} title={t('memory.title')} />
         </View>
 
         <View style={styles.headerBlock}>
           <Text style={[styles.headerSubtitle, { color: theme.mutedText }]}>
-            A record of moments that helped shape your journey.
+            {t('memory.subtitle')}
           </Text>
         </View>
 
@@ -221,7 +223,7 @@ export function MemoryLedgerScreen() {
         >
           {/* Emo remembers summary */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Emo remembers</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('memory.emoRemembers')}</Text>
             <View style={styles.rememberGrid}>
               <RememberStat theme={theme} value={String(emoRemembers.reflectionsCount)} label="reflections" />
               <RememberStat theme={theme} value={String(emoRemembers.conversationsCount)} label="conversations" />
@@ -240,7 +242,7 @@ export function MemoryLedgerScreen() {
 
           {/* Featured memory */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.featuredCard}>
-            <Text style={[styles.featuredEyebrow, { color: tokens.text.primary }]}>Featured Memory</Text>
+            <Text style={[styles.featuredEyebrow, { color: tokens.text.primary }]}>{t('memory.featured')}</Text>
             {featuredMemory.dayLabel ? (
               <Text style={[styles.featuredDate, { color: theme.secondaryText }]}>
                 {featuredMemory.dayLabel}
@@ -292,9 +294,9 @@ export function MemoryLedgerScreen() {
             })}
           </View>
 
-          {/* What Emo remembers */}
+          {/* What Emo Remembers */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>What Emo Remembers</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('memory.whatRemembers')}</Text>
             {emotionalPatterns.map((line) => (
               <Text key={line} style={[styles.patternLine, { color: theme.text }]}>
                 {line}
@@ -304,14 +306,14 @@ export function MemoryLedgerScreen() {
 
           {/* Timeline */}
           <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>
-            {selectedCategory ? 'Filtered timeline' : 'Your journey'}
+            {selectedCategory ? 'Filtered timeline' : t('memory.yourJourney')}
           </Text>
           {filteredTimeline.length === 0 ? (
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
               <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
                 {selectedCategory
-                  ? 'No memories in this category yet — your story is still unfolding.'
-                  : 'Your timeline will grow as you check in, journal, and talk with Emo.'}
+                  ? t('memory.emptyCategory')
+                  : t('memory.empty')}
               </Text>
             </CircadianGlassCard>
           ) : (
@@ -347,14 +349,14 @@ export function MemoryLedgerScreen() {
 
           {/* Memory reflection */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.cardLast}>
-            <SectionEyebrow icon="💜" label="Memory Reflection" color={tokens.text.primary} />
+            <SectionEyebrow icon="💜" label={t('memory.reflection')} color={tokens.text.primary} />
             <Text style={[styles.reflectionQuote, { color: theme.text }]}>{memoryReflection}</Text>
           </CircadianGlassCard>
 
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.privacyCard}>
             <Smartphone size={16} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2} />
             <Text style={[styles.privacyText, { color: theme.mutedText }]}>
-              Stored only on this device. Nothing shared. Nothing sold.
+              {t('memory.privacyNote')}
             </Text>
           </CircadianGlassCard>
 

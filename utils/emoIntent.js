@@ -39,6 +39,14 @@ export function classifyEmoIntent(message) {
   if (/^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|bye|good morning|good night)[\s!.?]*$/i.test(m)) {
     return { mode: 'sanctuary', reason: 'greeting' };
   }
+  // Self-identity stays with Emo — never route Talk to Mira/Oracle mode.
+  if (
+    /what(?:'s| is) your name|who are you|your name\??$|မင်း(?:ရဲ့)?နာမည်|နင်(?:ရဲ့)?နာမည်|နာမည်ဘာလဲ|မင်းဘယ်သူ|နင်ဘယ်သူ|အီမို.?ဘယ်သူ/i.test(
+      m,
+    )
+  ) {
+    return { mode: 'sanctuary', reason: 'emo_identity' };
+  }
 
   let sanctuaryScore = 0;
   let oracleScore = 0;

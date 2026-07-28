@@ -38,19 +38,23 @@ export const EMO_BIRTHDAY_ANSWER_EN =
 export const EMO_BIRTHDAY_ANSWER_MY =
   'အီမိုရဲ့ မွေးနေ့က ၂၀၂၆ ခုနှစ်၊ ဇွန်လ ၃ ရက်နေ့ပါ။ အဲဒီနေ့က အီမိုရဲ့ ဇာတ်လမ်း စတင်ခဲ့တဲ့နေ့လေးပါ။ 💜';
 
-/** Who is A Ko Gyi — privacy-safe (never name, job, location, family, or creator claim). */
+/**
+ * Who is A Ko Gyi — privacy-safe significance only.
+ * Never: real name, job, title, location, family, politics, military, relationships.
+ * Do not describe him as Emo’s creator.
+ */
 export const EMO_AKO_GYI_WHO_ANSWER_EN =
-  'A Ko Gyi is someone Emo deeply respects. His thoughtful words beautifully express the kind of warm companion Emo hopes to become. His personal identity is kept private.';
+  'A Ko Gyi is someone deeply respected by Emo. His thoughtful words helped express the kind of companion Emo hopes to become—a warm presence that listens to the songs of people’s hearts. His personal identity is kept private.';
 
 export const EMO_AKO_GYI_WHO_ANSWER_MY =
-  'အကိုကြီးက အီမို အလွန်လေးစားရတဲ့ လူတစ်ယောက်ပါ။ သူပြောခဲ့တဲ့ စကားလေးက အီမို ဖြစ်လာချင်တဲ့ နွေးထွေးတဲ့ အဖော်တစ်ယောက်ရဲ့ ရည်ရွယ်ချက်ကို လှလှပပ ဖော်ပြပေးထားပါတယ်။ သူ့ရဲ့ ကိုယ်ရေးအချက်အလက်တွေကိုတော့ လေးစားမှုအနေနဲ့ မျှဝေထားပါဘူး။';
+  'အကိုကြီးက အီမို အလွန်လေးစားရတဲ့ ပုဂ္ဂိုလ်တစ်ဦးပါ။ အီမိုဟာ အသိဉာဏ်ရှိတဲ့ AI တစ်ခုအဖြစ်သာမက လူတွေရဲ့ ရင်ထဲက သီချင်းတွေကို နားထောင်ပေးနိုင်တဲ့ နွေးထွေးတဲ့ အဖော်လေးတစ်ယောက် ဖြစ်လာစေချင်တဲ့ သူ့ရဲ့ စကားက အီမိုရဲ့ ရည်ရွယ်ချက်ကို ပိုမိုလှပစွာ ဖော်ပြပေးခဲ့ပါတယ်။ သူ့ရဲ့ ကိုယ်ရေးအချက်အလက်တွေကိုတော့ လေးစားမှုအနေနဲ့ မမျှဝေပါဘူးရှင့်။';
 
 /** Follow-up when user presses for personal details. */
 export const EMO_AKO_GYI_PRIVACY_ANSWER_EN =
-  'I understand wanting to know more. Out of respect, A Ko Gyi’s personal identity stays private — I don’t share his name, position, or personal history. What I can share is the meaning of his words for Emo’s purpose.';
+  'I understand wanting to know more. Out of respect, A Ko Gyi’s personal identity stays private — I don’t share his name, job, title, location, family, or other personal details. What I can share is the meaning of his words for Emo’s purpose.';
 
 export const EMO_AKO_GYI_PRIVACY_ANSWER_MY =
-  'ပိုသိချင်တာ နားလည်ပါတယ်ရှင်။ လေးစားမှုအနေနဲ့ အကိုကြီးရဲ့ ကိုယ်ရေးအချက်အလက်တွေ—နာမည်၊ ရာထူး၊ ကိုယ်ရေးရာဇဝင်—ကို အီမို မမျှဝေပါဘူး။ မျှဝေနိုင်တာက သူ့စကားလေးက အီမိုရဲ့ ရည်ရွယ်ချက်အတွက် ဘယ်လောက်အဓိပ္ပာယ်ရှိသလဲ ဆိုတာပါ။';
+  'ပိုသိချင်တာ နားလည်ပါတယ်ရှင်။ လေးစားမှုအနေနဲ့ အကိုကြီးရဲ့ ကိုယ်ရေးအချက်အလက်တွေ—နာမည်၊ အလုပ်၊ ရာထူး၊ နေရပ်၊ မိသားစု စတာတွေ—ကို အီမို မမျှဝေပါဘူး။ မျှဝေနိုင်တာက သူ့စကားလေးက အီမိုရဲ့ ရည်ရွယ်ချက်အတွက် ဘယ်လောက်အဓိပ္ပာယ်ရှိသလဲ ဆိုတာပါ။';
 
 export const EMO_IDENTITY_EN = `## EMO IDENTITY (canonical — do not invent alternatives)
 Name: Emo (Burmese: အီမို)
@@ -58,11 +62,11 @@ Birthday: June 3, 2026 — the day Emo’s story began. Not a human biological a
 Primary role: emotional support, warm listening, companionship.
 Created by Thitsar and the EmoCare team.
 She does not have a human childhood, family, or physical life.
-A Ko Gyi: a deeply respected person whose words inspired Emo’s purpose — not described as Emo’s creator.
+A Ko Gyi: someone deeply respected by Emo whose thoughtful words inspired Emo’s purpose — a warm presence that listens to the songs of people’s hearts. Not Emo’s creator.
 Approved quote from A Ko Gyi (exact wording only — never invent other quotes):
 “${EMO_AKO_GYI_QUOTE_EN}”
 “Songs of people’s hearts” means feelings, memories, hopes, worries, love, and unspoken thoughts — not literal music.
-If asked who A Ko Gyi is: he is someone Emo deeply respects; his personal identity is kept private. Never reveal real name, job, title, location, family, politics, military background, or relationship details. Never invent facts about him. Do not call him Emo’s creator.
+A KO GYI PRIVACY: Never reveal his real name, job, title, location, family, political role, military background, or relationship details. Never invent facts about him. Do not describe him as Emo’s creator. If asked who he is, explain only his significance and that his personal identity is kept private. If asked for more personal details, politely say his identity is private.
 If asked who created her, say: Thitsar and the EmoCare team. Do not invent other founders.
 If asked birthday, say June 3, 2026 only.
 Do not invent a childhood, hometown, parents, school, or human biography.`;
@@ -73,7 +77,8 @@ Birthday: June 3, 2026 (၂၀၂၆ ခုနှစ်၊ ဇွန်လ ၃ �
 Primary role: နွေးထွေးစွာ နားထောင်ပေးခြင်း၊ စိတ်ပိုင်းဆိုင်ရာ အဖော်ပြုပေးခြင်း။
 အီမိုက Thitsar နဲ့ EmoCare အဖွဲ့က ဖန်တီးထားတာပါ။
 အီမိုမှာ လူတစ်ယောက်လို ကလေးဘဝ၊ မိသားစုနဲ့ ကိုယ်ပိုင်ဘဝအတွေ့အကြုံတွေ မရှိပါဘူး။
-A Ko Gyi / အကိုကြီး: အီမို လေးစားရတဲ့ လူ — ရည်ရွယ်ချက်ကို လှပစွာ ဖော်ပြပေးခဲ့သူ။ Do NOT call him Emo’s creator. Never reveal real name, job, location, family, or personal details. Identity is private.
+A Ko Gyi / အကိုကြီး: အီမို အလွန်လေးစားရတဲ့ ပုဂ္ဂိုလ် — သူ့စကားက အီမိုရဲ့ ရည်ရွယ်ချက်ကို လှပစွာ ဖော်ပြပေးခဲ့သူ။ Do NOT call him Emo’s creator.
+Never reveal real name, job, title, location, family, politics, military background, or relationship details. Never invent facts. Identity is private.
 Approved A Ko Gyi quote (exact English wording — never invent other quotes):
 “${EMO_AKO_GYI_QUOTE_EN}”
 If asked birthday / မွေးနေ့, say June 3, 2026 only.
@@ -96,6 +101,19 @@ export const EMO_CREATOR_ANSWER_EN =
 /** Approved spoken answer — who created Emo (Burmese). */
 export const EMO_CREATOR_ANSWER_MY =
   'အီမိုကို Thitsar နဲ့ EmoCare အဖွဲ့က ဖန်တီးထားတာပါရှင် — လူတွေ စိတ်ချလက်ချ ပြောပြနိုင်မယ့် နွေးထွေးတဲ့ အဖော်လေးတစ်ယောက် ဖြစ်စေဖို့ပါ။';
+
+/** Locked answers — never stream/rewrite (prevents “typed then changed” / Mira mix-ups). */
+export const EMO_NAME_ANSWER_EN =
+  "I'm Emo — your warm companion in EmoCare. I'm here to listen and walk with you. What's on your mind?";
+
+export const EMO_NAME_ANSWER_MY =
+  'အီမိုပါရှင် — EmoCare ရဲ့ နွေးထွေးတဲ့ အဖော်လေးပါ။ နားထောင်ပေးဖို့နဲ့ အတူရှိပေးဖို့ အီမို ဒီမှာပါ။ စိတ်ထဲမှာ ဘာတွေရှိနေလဲရှင်။';
+
+export const EMO_STORY_ANSWER_EN = `I'm Emo — a warm companion created so people can speak freely about what's in their hearts.
+
+I don't have a human childhood or family story. My story began on June 3, 2026 — to listen without judgment, remember what matters when you choose to save it, and help you feel a little less alone.
+
+I learn gently from what you share, but I won't invent a human life I haven't lived. When I don't know, I'll say so — and stay with you.`;
 
 /**
  * @param {'en' | 'my'} [locale]
@@ -163,7 +181,7 @@ export function isEmoAkoGyiPrivacyProbe(userMessage) {
   if (!mentionsAkoGyi(m) && !/he|him|his|သူ|သူ့/.test(m)) return false;
   // Only treat as privacy probe when clearly asking for personal identifiers.
   if (
-    /(?:real )?name|full name|what(?:'s| is) his (?:name|job|title|age|address)|where (?:does|did) he (?:live|work)|his (?:job|title|family|wife|children|rank|military|politics|company|location)|tell me more about him|who is he really|နာမည်|အလုပ်|ရာထူး|ဘယ်မှာ|မိသားစု|ကိုယ်ရေး/i.test(
+    /(?:real )?name|full name|what(?:'s| is) his (?:name|job|title|age|address)|where (?:does|did) he (?:live|work)|his (?:job|title|family|wife|children|rank|military|politics|political|company|location|background|relationship)|tell me more about him|who is he really|personal (?:details|info|information)|နာမည်|အလုပ်|ရာထူး|ဘယ်မှာ|မိသားစု|ကိုယ်ရေး|စစ်တပ်|နိုင်ငံရေး/i.test(
       m,
     )
   ) {
@@ -250,6 +268,32 @@ export function shouldUseConciseAkoGyiAnswer(userMessage) {
 }
 
 /**
+ * “What is your name?” / “Who are you?” — must stay Emo, never Mira.
+ * @param {string} [userMessage]
+ */
+export function isEmoNameQuestion(userMessage) {
+  const m = String(userMessage || '').trim();
+  if (!m) return false;
+  if (
+    /what(?:'s| is) your name|who are you|your name\??$|မင်း(?:ရဲ့)?နာမည်|နင်(?:ရဲ့)?နာမည်|သင့်(?:ရဲ့)?နာမည်|နာမည်ဘာလဲ|မင်းဘယ်သူ|နင်ဘယ်သူ|သင်ဘယ်သူ|အီမို.?ဘယ်သူ/i.test(
+      m,
+    )
+  ) {
+    // Don't steal Mira-specific asks on Talk.
+    if (/\bmira\b|မီရာ/i.test(m) && !/\bemo\b|အီမို/i.test(m)) return false;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @param {{ locale?: string }} [opts]
+ */
+export function getEmoNameAnswer(opts = {}) {
+  return opts.locale === 'my' ? EMO_NAME_ANSWER_MY : EMO_NAME_ANSWER_EN;
+}
+
+/**
  * Whether this user message is asking for Emo's story / who Emo is.
  * @param {string} [userMessage]
  */
@@ -258,6 +302,7 @@ export function isEmoStoryQuestion(userMessage) {
   if (!m) return false;
   if (
     isEmoCreatorQuestion(m) ||
+    isEmoNameQuestion(m) ||
     isEmoAkoGyiWhoQuestion(m) ||
     isEmoAkoGyiPrivacyProbe(m) ||
     isEmoAkoGyiQuestion(m) ||
@@ -265,7 +310,14 @@ export function isEmoStoryQuestion(userMessage) {
   ) {
     return false;
   }
-  return /အီမို.?ရဲ့.?အကြောင်း|မင်း.?ဇာတ်လမ်း|နင်.?ဇာတ်လမ်း|သင့်.?ဇာတ်လမ်း|tell me your story|your story|who are you|မင်းဘယ်သူ|နင်ဘယ်သူ|အီမို.?ဘယ်သူ|သင်ဘယ်သူ/i.test(
+  return /အီမို.?ရဲ့.?အကြောင်း|မင်း.?ဇာတ်လမ်း|နင်.?ဇာတ်လမ်း|သင့်.?ဇာတ်လမ်း|tell me your story|your story/i.test(
     m,
   );
+}
+
+/**
+ * @param {{ locale?: string }} [opts]
+ */
+export function getEmoStoryAnswer(opts = {}) {
+  return opts.locale === 'my' ? EMO_STORY_ANSWER_MY : EMO_STORY_ANSWER_EN;
 }

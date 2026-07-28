@@ -9,6 +9,7 @@ import {
   getChatLanguageOptionsForUi,
 } from '../../utils/chatLanguage';
 import { localeAwareTextStyle, textNeedsMyanmarMetrics } from '../../utils/localeText';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 type ChatLanguageId = 'auto' | 'en' | 'my' | 'es' | 'id' | 'pt-BR' | 'fr';
 
@@ -60,42 +61,17 @@ const HINTS_FR: Record<ChatLanguageId, string> = {
   fr: 'Emo répond uniquement en français',
 };
 
-function sheetChrome(value: ChatLanguageId) {
-  if (value === 'id') {
-    return {
-      hints: HINTS_ID,
-      title: 'Bahasa Emo',
-      hint: 'Pilih bagaimana Emo berbicara denganmu. Disimpan untuk Talk (terpisah dari Mira).',
-      done: 'Selesai',
-    };
-  }
-  if (value === 'pt-BR') {
-    return {
-      hints: HINTS_PT,
-      title: 'Idioma da Emo',
-      hint: 'Escolha como a Emo fala com você. Salvo para Conversar (separado da Mira).',
-      done: 'Concluído',
-    };
-  }
-  if (value === 'fr') {
-    return {
-      hints: HINTS_FR,
-      title: 'Langue d’Emo',
-      hint: 'Choisissez comment Emo vous parle. Enregistré pour Parler (séparé de Mira).',
-      done: 'Terminé',
-    };
-  }
-  return {
-    hints: HINTS_EN,
-    title: 'Emo language',
-    hint: 'Choose how Emo talks with you. Saved for Talk (separate from Mira).',
-    done: 'Done',
-  };
+function optionHints(value: ChatLanguageId): Record<ChatLanguageId, string> {
+  if (value === 'id') return HINTS_ID;
+  if (value === 'pt-BR') return HINTS_PT;
+  if (value === 'fr') return HINTS_FR;
+  return HINTS_EN;
 }
 
 export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: Props) {
+  const { t } = useUiCopy();
   const options = getChatLanguageOptionsForUi(value);
-  const chrome = sheetChrome(value);
+  const hints = optionHints(value);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -110,8 +86,8 @@ export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                 <Globe size={18} color={theme.accent} strokeWidth={2.2} />
               </View>
               <View style={styles.flex}>
-                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>{chrome.title}</Text>
-                <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>{chrome.hint}</Text>
+                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>{t('talkLang.title')}</Text>
+                <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>{t('talkLang.hint')}</Text>
               </View>
             </View>
 
@@ -156,7 +132,7 @@ export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                         {option.label}
                       </Text>
                       <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontSize: 12, marginTop: 3 }}>
-                        {chrome.hints[option.id as ChatLanguageId]}
+                        {hints[option.id as ChatLanguageId]}
                       </Text>
                     </View>
                     <View
@@ -175,7 +151,7 @@ export function TalkLanguageSheet({ visible, theme, value, onClose, onSelect }: 
 
             <Pressable onPress={onClose} style={styles.doneBtn}>
               <Text style={{ color: tokens.brand.ctaStart, fontWeight: '700', fontSize: 15 }}>
-                {chrome.done}
+                {t('common.done')}
               </Text>
             </Pressable>
           </Pressable>

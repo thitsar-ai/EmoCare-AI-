@@ -18,7 +18,7 @@ export function getAskMiraMenuCopy(preference) {
       subtitle: 'Knowledge, strategy, and wise perspective',
     },
     my: {
-      title: 'Mira ကို မေးမယ်',
+      title: 'အတွင်းစိတ် လမ်းညွှန်မှု',
       subtitle: 'အသိပညာနှင့် အမြင်သစ်များ',
     },
     es: {
@@ -54,7 +54,7 @@ export function getTalkToEmoMenuCopy(preference) {
       subtitle: 'Feelings, support, and a caring presence',
     },
     my: {
-      title: 'အီမိုနဲ့ ပြောမယ်',
+      title: 'Emo နဲ့ စကားပြောမယ်',
       subtitle: 'ခံစားချက်နှင့် နားထောင်ပေးခြင်း',
     },
     es: {
@@ -106,17 +106,17 @@ export function getMainMenuLabel(preference, key) {
       profile: 'Your Name & Profile',
     },
     my: {
-      checkin: 'စိတ်ခံစားချက် စစ်မယ်',
-      journal: 'ဂျာနယ်',
-      insights: 'သိမြင်ချက်များ',
+      checkin: 'ခံစားချက် မှတ်မယ်',
+      journal: 'ရင်ဖွင့်မှတ်တမ်း',
+      insights: 'ထိုးထွင်းသိမြင်မှုများ',
       settings: 'ဆက်တင်များ',
-      home: 'ပင်မ',
-      today: 'ဒီနေ့အတွက်',
-      memoryledger: 'အမှတ်တရ မှတ်တမ်း',
+      home: 'စိတ်နားခိုရာ',
+      today: 'ယနေ့အတွက်',
+      memoryledger: 'မှတ်သားထားမှုများ',
       welcome: 'ကြိုဆိုပါတယ်',
-      privacy: 'ကိုယ်ရေးကိုယ်တာ',
-      aboutyou: 'ကိုယ့်အကြောင်း ပြောပြမယ်',
-      profile: 'အမည်နှင့် ကိုယ်ရေးအချက်အလက်',
+      privacy: 'ကိုယ်ရေးလုံခြုံမှု',
+      aboutyou: 'သင့်အကြောင်း',
+      profile: 'အမည်နှင့် ပရိုဖိုင်',
     },
     es: {
       checkin: 'Check-in',

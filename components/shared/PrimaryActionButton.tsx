@@ -10,6 +10,8 @@ import {
 } from '../../theme/primaryButton';
 import { hapticLight } from '../../utils/haptics';
 import { pressPrimaryStyle, primaryRestingShadow } from '../../utils/pressFeedback';
+import { textNeedsMyanmarMetrics } from '../../utils/localeText';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 type PrimaryActionButtonProps = {
   label: string;
@@ -34,6 +36,8 @@ export function PrimaryActionButton({
   style,
   testID,
 }: PrimaryActionButtonProps) {
+  const { locale } = useUiCopy();
+  const myanmar = locale === 'my' || textNeedsMyanmarMetrics(label);
   const displayLabel = prefix ? `${prefix}  ${label}` : label;
   const gradient = getSanctuaryButtonGradient(theme.phase);
 
@@ -52,6 +56,7 @@ export function PrimaryActionButton({
         style={({ pressed }) => [
           primaryButtonShell,
           styles.button,
+          myanmar && styles.buttonMyanmar,
           disabled ? styles.buttonDisabled : styles.buttonVisible,
           primaryRestingShadow(theme),
           !disabled && pressPrimaryStyle(theme, pressed),
@@ -65,12 +70,12 @@ export function PrimaryActionButton({
           }
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
-          style={primaryButtonInner}
+          style={[primaryButtonInner, myanmar && styles.innerMyanmar]}
         >
           <Text
-            style={primaryButtonLabel}
-            numberOfLines={1}
-            adjustsFontSizeToFit
+            style={[primaryButtonLabel, myanmar && styles.labelMyanmar]}
+            numberOfLines={myanmar ? 2 : 1}
+            adjustsFontSizeToFit={!myanmar}
             minimumFontScale={0.88}
           >
             {displayLabel}
@@ -89,6 +94,23 @@ export function PrimaryActionButton({
 const styles = StyleSheet.create({
   wrap: { marginBottom: 4, alignSelf: 'stretch', width: '100%' },
   button: { width: '100%' },
+  buttonMyanmar: {
+    overflow: 'visible',
+    minHeight: 60,
+  },
+  innerMyanmar: {
+    minHeight: 60,
+    paddingTop: 16,
+    paddingBottom: 14,
+  },
+  labelMyanmar: {
+    fontSize: 15,
+    lineHeight: 26,
+    paddingTop: 3,
+    fontFamily: undefined,
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
   buttonVisible: { opacity: 1 },
   buttonDisabled: { opacity: 0.72 },
   hint: {

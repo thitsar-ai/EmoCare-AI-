@@ -49,16 +49,18 @@ export const TALK_INPUT_PLACEHOLDER = "What's on your heart?";
  * Internal route/storage keys may still say "oracle" (legacy).
  */
 export const ORACLE_HEADER_TITLE = 'Mira';
-export const ORACLE_HEADER_TAGLINE = 'Research • Strategy • Wise Perspective';
-export const ORACLE_INPUT_PLACEHOLDER = 'Ask Mira…';
+export const ORACLE_HEADER_TAGLINE = 'Research · Strategy · Wise Perspective';
+/** Prefer utils/miraLanguage miraInputPlaceholder — kept for legacy imports. */
+export const ORACLE_INPUT_PLACEHOLDER = 'What would you like Mira to explore?';
 export const ORACLE_STATUS_MESSAGE = 'Searching trusted sources and synthesizing…';
 export const ORACLE_STATUS_SHORT = 'Researching…';
 export const MIRA_EMPTY_ROLE =
-  'When you need clarity, perspective, or deeper understanding.';
-export const MIRA_EMPTY_PROMPT = 'Is there something I can help you understand today?';
+  'Whether you want to research a topic, analyze a decision, or find a more balanced perspective, Mira will think it through with you.';
+/** Prefer miraInputPlaceholder() for localized empty + composer copy. */
+export const MIRA_EMPTY_PROMPT = 'What would you like Mira to explore?';
 export const MIRA_EMPTY_ROLE_MY =
-  'ပိုမိုရှင်းလင်းစွာ နားလည်ဖို့၊ မတူညီတဲ့ အမြင်တစ်ခု ရဖို့၊ ဒါမှမဟုတ် နက်နက်ရှိုင်းရှိုင်း လေ့လာဖို့ လိုတဲ့အခါ Mira က ကူညီပေးနိုင်ပါတယ်ရှင်။';
-export const MIRA_EMPTY_PROMPT_MY = 'ဒီနေ့ ဘာအကြောင်းကို နားလည်ချင်ပါသလဲရှင်။';
+  'သုတေသနတစ်ခု လုပ်ချင်တာပဲဖြစ်ဖြစ်၊ ဆုံးဖြတ်ချက်တစ်ခုကို ခွဲခြမ်းစိတ်ဖြာချင်တာပဲဖြစ်ဖြစ်၊ ပိုမျှတတဲ့အမြင်လိုချင်တာပဲဖြစ်ဖြစ် — Mira က သင့်နဲ့အတူ စဉ်းစားပေးမယ်။';
+export const MIRA_EMPTY_PROMPT_MY = 'Mira နဲ့ ဘာအကြောင်း ဆွေးနွေးချင်ပါသလဲရှင်။';
 export const MIRA_INTRO =
   "Hi, I'm Mira. I'm here to help you reflect, understand patterns, and find clarity within yourself.";
 

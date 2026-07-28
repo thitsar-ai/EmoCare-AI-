@@ -15,10 +15,19 @@
     "secret:api": "node scripts/generate-api-secret.mjs",
     "voice-server": "node server/voiceRelay.mjs",
     "test:eos": "node scripts/test-emo-eos.mjs",
+    "test:i18n": "node scripts/validate-localization.mjs",
+    "test:ui-language": "node scripts/test-ui-language.mjs",
+    "test:identity": "node scripts/test-companion-identity.mjs",
+    "test:reminders": "node scripts/test-daily-reminders.mjs",
+    "test:onboarding": "node scripts/test-onboarding-flow.mjs",
+    "test:nav": "node scripts/verifyNavigation.mjs",
+    "test:keyboard": "node scripts/test-keyboard-inset.mjs",
+    "test:smoke": "npm run test:identity && npm run test:reminders && npm run test:ui-language && npm run test:i18n && npm run test:onboarding && npm run test:nav && npm run test:keyboard && npm run test:myanmar-text && npm run test:eos",
     "generate:breath-clips": "node scripts/generateBreathClips.mjs",
     "generate:nature-sounds": "python3 scripts/generateNatureSounds.py",
     "build:ios": "npx eas-cli build --platform ios --profile production",
-    "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"
+    "submit:ios": "npx eas-cli submit --platform ios --profile production --latest",
+    "test:myanmar-text": "node scripts/test-myanmar-text-metrics.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

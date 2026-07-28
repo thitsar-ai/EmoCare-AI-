@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -33,7 +32,9 @@ import { callAnthropicMessages, describeAnthropicError } from '../../utils/anthr
 import { loadSettings, saveSettings } from '../../utils/settingsStorage';
 import {
   getMiraLanguageLabel,
+  miraEmptyInvite,
   miraInputPlaceholder,
+  miraTagline,
   normalizeMiraLanguage,
   resolveMiraComposeLocale,
 } from '../../utils/miraLanguage';
@@ -45,7 +46,11 @@ import {
   isMiraStoryQuestion,
   shouldUseConciseMiraStory,
 } from '../../utils/miraIdentity';
-import { localeAwareTextStyle, localeTextMetrics } from '../../utils/localeText';
+import {
+  localeAwareTextStyle,
+  localeTextMetrics,
+  textNeedsMyanmarMetrics,
+} from '../../utils/localeText';
 import { BRAND_CTA_GRADIENT, CHAT_USER_BUBBLE_GRADIENT, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
 import { TalkHeroMira } from '../talk/TalkHeroMira';
@@ -54,16 +59,18 @@ import { MiraControlsSheet } from '../talk/MiraControlsSheet';
 import { TalkAiConsentSheet } from '../talk/TalkAiConsentSheet';
 import { useAnthropicAiConsent } from '../../hooks/useAnthropicAiConsent';
 import {
-  ORACLE_HEADER_TAGLINE,
-  ORACLE_HEADER_TITLE,
+  stickyComposerBottomPad,
+  useKeyboardBottomInset,
+} from '../../hooks/useKeyboardBottomInset';
+import {
   ORACLE_MODES,
-  ORACLE_STATUS_SHORT,
   TALK_BG,
   TALK_INPUT_SURFACE,
-  oracleSourcesLabel,
   type OracleModeId,
 } from '../../constants/brandCopy';
 import { hapticLight } from '../../utils/haptics';
+import { useUiCopy } from '../i18n/UiCopyProvider';
+import { MessageActions } from '../shared/MessageActions';
 
 const ORACLE_CHAT_KEY = 'oracleChatCurrent';
 const NEAR_BOTTOM_PX = 80;
@@ -83,13 +90,14 @@ function maxTokensForMode(mode: OracleModeId): number {
   return 1200;
 }
 
-function statusForMode(mode: OracleModeId): string {
-  if (mode === 'quick') return 'Mira is thinking…';
-  if (mode === 'wise') return 'Gathering knowledge and perspective…';
-  return ORACLE_STATUS_SHORT;
+function statusForMode(mode: OracleModeId, t: (key: string) => string): string {
+  if (mode === 'quick') return t('mira.thinkingQuick');
+  if (mode === 'wise') return t('mira.thinkingWise');
+  return t('mira.thinking');
 }
 
 type OracleMessage = {
+  savedToMemory?: boolean;
   id: string;
   role: 'user' | 'bot';
   text: string;
@@ -130,6 +138,7 @@ async function persistOracleChat(messages: OracleMessage[]): Promise<void> {
 
 export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { t, locale: uiLocale } = useUiCopy();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const { userName } = useAppNav();
@@ -137,33 +146,47 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const inputRef = useRef<TextInput>(null);
   const nearBottomRef = useRef(true);
   const forceScrollRef = useRef(false);
+  const sendLockRef = useRef(false);
+  const activeRequestIdRef = useRef<string | null>(null);
 
   const [input, setInput] = useState('');
   const [waiting, setWaiting] = useState(false);
   const [mode, setMode] = useState<OracleModeId>('deep');
   const [messages, setMessages] = useState<OracleMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [miraLanguage, setMiraLanguage] = useState<'auto' | 'en' | 'my' | 'id'>('auto');
+  const [miraLanguage, setMiraLanguage] = useState<
+    'auto' | 'en' | 'my' | 'id' | 'es' | 'pt-BR' | 'fr'
+  >('auto');
   const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
     useAnthropicAiConsent();
 
+  const onKeyboardOpenChange = useCallback((open: boolean) => {
+    if (open) {
+      nearBottomRef.current = true;
+      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    }
+  }, []);
+  const { keyboardOpen, keyboardHeight } = useKeyboardBottomInset({
+    onOpenChange: onKeyboardOpenChange,
+  });
+  // Mira hides the tab bar — only lift by keyboard height (or home-indicator when closed).
+  const composerBottomPad = stickyComposerBottomPad({
+    keyboardOpen,
+    keyboardHeight,
+    tabBarHeight: 0,
+    safeBottom: Math.max(insets.bottom, 10),
+  });
+
   const narrow = windowWidth < 390;
-  const miraPlaceholder = miraInputPlaceholder(miraLanguage);
+  // When Mira language is Auto, chrome copy follows app UI locale (e.g. Burmese Settings).
+  const miraCopyCtx = useMemo(() => ({ uiLocale }), [uiLocale]);
+  const miraPlaceholder = miraInputPlaceholder(miraLanguage, miraCopyCtx);
+  const miraFaceTagline = miraTagline(miraLanguage, miraCopyCtx);
+  const miraInvite = miraEmptyInvite(miraLanguage, miraCopyCtx);
   const isEmpty = messages.length === 0;
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
   const accent = tokens.oracle.accent;
 
   const activeMode = useMemo(
@@ -186,10 +209,10 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
       canSave: Boolean(lastBot?.text?.trim()),
       canClear: messages.length > 0,
       sourcesDisabledHint: lastBot
-        ? 'Available after sourced research'
-        : 'Available after Mira replies',
+        ? t('mira.availableAfterSources')
+        : t('mira.availableAfterReply'),
     }),
-    [lastBot, messages.length, waiting],
+    [lastBot, messages.length, waiting, t],
   );
 
   useEffect(() => {
@@ -236,15 +259,23 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const submitText = useCallback(
     async (rawText: string, activeMode: OracleModeId = mode, opts?: { skipUserBubble?: boolean }) => {
       const trimmed = rawText.trim();
-      if (!trimmed || waiting || showAiConsentSheet) return;
-      if (!(await ensureConsentBeforeSend())) return;
+      if (!trimmed || waiting || sendLockRef.current || showAiConsentSheet) return;
+      sendLockRef.current = true;
+      setWaiting(true);
+      if (!(await ensureConsentBeforeSend())) {
+        sendLockRef.current = false;
+        setWaiting(false);
+        return;
+      }
+      const requestId = `mira-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      activeRequestIdRef.current = requestId;
       const name = userName.trim() || 'friend';
       setInput('');
-      setWaiting(true);
       forceScrollRef.current = true;
 
+      const assistantId = `b-${Date.now()}-${requestId.slice(-6)}`;
       const userMsg: OracleMessage = {
-        id: `u-${Date.now()}`,
+        id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         role: 'user',
         text: trimmed,
         time: nowTime(),
@@ -268,6 +299,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         const composeLocale = resolveMiraComposeLocale(lang, trimmed, recentUserTexts);
 
         const miraLocale = composeLocale === 'my' ? 'my' : 'en';
+        if (activeRequestIdRef.current !== requestId) return;
         if (isMiraBirthdayQuestion(trimmed)) {
           const replyText = getMiraBirthdayAnswer({
             locale: miraLocale,
@@ -276,7 +308,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           setMessages((prev) => [
             ...prev,
             {
-              id: `b-${Date.now()}`,
+              id: assistantId,
               role: 'bot',
               text: replyText,
               time: nowTime(),
@@ -296,7 +328,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           setMessages((prev) => [
             ...prev,
             {
-              id: `b-${Date.now()}`,
+              id: assistantId,
               role: 'bot',
               text: replyText,
               time: nowTime(),
@@ -344,14 +376,22 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             ? result.data.content.find((b: { type?: string }) => b.type === 'text')?.text?.trim()
             : '';
 
+        if (activeRequestIdRef.current !== requestId) return;
+
         if (!replyText) {
-          const errMsg = result.error
-            ? describeAnthropicError({ error: result.error })
-            : `I couldn't reach an answer just now, ${name}. Try again in a moment.`;
+          if (__DEV__ && result.error) {
+            console.warn('[Mira] request failed', { requestId, error: result.error });
+          }
+          const errMsg =
+            uiLocale === 'my'
+              ? t('talk.errorGentle')
+              : result.error
+                ? describeAnthropicError({ error: result.error })
+                : `I couldn't reach an answer just now, ${name}. Try again in a moment.`;
           setMessages((prev) => [
             ...prev,
             {
-              id: `b-err-${Date.now()}`,
+              id: assistantId,
               role: 'bot',
               text: errMsg,
               time: nowTime(),
@@ -372,7 +412,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         setMessages((prev) => [
           ...prev,
           {
-            id: `b-${Date.now()}`,
+            id: assistantId,
             role: 'bot',
             text: replyText,
             time: nowTime(),
@@ -381,24 +421,42 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             sources: research.sources || [],
           },
         ]);
-      } catch {
+      } catch (err) {
+        if (__DEV__) console.warn('[Mira] unexpected error', { requestId, err });
+        if (activeRequestIdRef.current !== requestId) return;
         setMessages((prev) => [
           ...prev,
           {
-            id: `b-err-${Date.now()}`,
+            id: assistantId,
             role: 'bot',
-            text: `I couldn't reply just now, ${name}. Please try again in a moment.`,
+            text:
+              uiLocale === 'my'
+                ? t('talk.errorGentle')
+                : `I couldn't reply just now, ${name}. Please try again in a moment.`,
             time: nowTime(),
             sourceCount: 0,
             query: trimmed,
           },
         ]);
       } finally {
+        if (activeRequestIdRef.current === requestId) {
+          activeRequestIdRef.current = null;
+        }
+        sendLockRef.current = false;
         setWaiting(false);
         scrollToLatestIfNeeded(true);
       }
     },
-    [waiting, showAiConsentSheet, ensureConsentBeforeSend, userName, mode, scrollToLatestIfNeeded],
+    [
+      waiting,
+      showAiConsentSheet,
+      ensureConsentBeforeSend,
+      userName,
+      mode,
+      scrollToLatestIfNeeded,
+      uiLocale,
+      t,
+    ],
   );
 
   const send = useCallback(() => {
@@ -420,10 +478,10 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
 
   const clearHistory = useCallback(() => {
     afterSheetClose(() => {
-      Alert.alert('Clear conversation', 'Remove all Mira messages?', [
-        { text: 'Cancel', style: 'cancel' },
+      Alert.alert(t('mira.clearChat'), t('mira.clearConfirm'), [
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear',
+          text: t('mira.clear'),
           style: 'destructive',
           onPress: () => {
             setMessages([]);
@@ -432,13 +490,13 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         },
       ]);
     });
-  }, [afterSheetClose]);
+  }, [afterSheetClose, t]);
 
   const saveLatestInsight = useCallback(() => {
     afterSheetClose(() => {
       void (async () => {
         if (!lastBot?.text.trim()) {
-          Alert.alert('Nothing to save', 'Ask Mira a question first.');
+          Alert.alert(t('mira.nothingToSave'), t('mira.nothingToSaveBody'));
           return;
         }
         const lastUser = [...messages].reverse().find((m) => m.role === 'user');
@@ -449,26 +507,26 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           sourceTitles: (lastBot.sources || []).map((s) => s.title || '').filter(Boolean),
         });
         if (ok) {
-          Alert.alert('Saved', 'This Mira answer was saved to your library.', [
-            { text: 'Stay here', style: 'cancel' },
-            { text: 'View Insights', onPress: () => onNav('insights') },
+          Alert.alert(t('mira.savedTitle'), t('mira.savedBody'), [
+            { text: t('mira.stayHere'), style: 'cancel' },
+            { text: t('mira.viewInsights'), onPress: () => onNav('insights') },
           ]);
         }
       })();
     });
-  }, [afterSheetClose, lastBot, messages, onNav]);
+  }, [afterSheetClose, lastBot, messages, onNav, t]);
 
   const showSources = useCallback(() => {
     afterSheetClose(() => {
       if (!lastBot) return;
       const titles = (lastBot.sources || []).map((s) => s.title).filter(Boolean);
       if (!titles.length) {
-        Alert.alert('Sources', 'No published sources were attached to this reply.');
+        Alert.alert(t('mira.sources'), t('mira.noSources'));
         return;
       }
-      Alert.alert('Published sources', titles.join('\n\n'));
+      Alert.alert(t('mira.publishedSources'), titles.join('\n\n'));
     });
-  }, [afterSheetClose, lastBot]);
+  }, [afterSheetClose, lastBot, t]);
 
   const researchDeeper = useCallback(() => {
     if (!lastBot) return;
@@ -489,22 +547,24 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
     setControlsOpen(true);
   }, []);
 
-  const statusLine = waiting ? statusForMode(mode) : null;
+  const statusLine = waiting ? statusForMode(mode, t) : null;
+  const sourcesLabel = (count: number) =>
+    count <= 0
+      ? ''
+      : count === 1
+        ? t('mira.drawnFromOne')
+        : t('mira.drawnFromSources', { count });
 
   return (
     <View style={[styles.flex, { backgroundColor: TALK_BG }]}>
       <OracleAmbientCanvas />
 
       <ScreenSafeArea extraTop={4} edges={['top', 'left', 'right']}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
-        >
+        <View style={styles.flex}>
           <View style={styles.headerWrap}>
             <ScreenNavChrome
               theme={theme}
-              title={ORACLE_HEADER_TITLE}
+              title={t('nav.mira')}
               actionsBeforeNav={
                 <NavChromeBtn
                   theme={theme}
@@ -512,7 +572,9 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                     void hapticLight();
                     setLanguageSheetOpen(true);
                   }}
-                  accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+                  accessibilityLabel={t('mira.languageA11y', {
+                    language: getMiraLanguageLabel(miraLanguage),
+                  })}
                 >
                   <Globe size={18} color={theme.text} strokeWidth={2.4} />
                 </NavChromeBtn>
@@ -523,10 +585,18 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               <View style={styles.brandFaceBlock}>
                 <TalkHeroMira theme={theme} size="header" />
                 <Text
-                  style={[styles.brandTaglineUnderFace, { color: theme.secondaryText }]}
+                  style={[
+                    styles.brandTaglineUnderFace,
+                    { color: theme.secondaryText },
+                    localeAwareTextStyle(miraFaceTagline, {
+                      fontSize: 15,
+                      englishLineHeight: 22,
+                    }),
+                    textNeedsMyanmarMetrics(miraFaceTagline) && { letterSpacing: 0 },
+                  ]}
                   numberOfLines={2}
                 >
-                  {ORACLE_HEADER_TAGLINE}
+                  {miraFaceTagline}
                 </Text>
               </View>
             ) : null}
@@ -558,24 +628,50 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 {!keyboardOpen ? (
                   <>
                     <TalkHeroMira theme={theme} size="hero" />
-                    <Text style={[styles.emptyTagline, { color: theme.secondaryText }]}>
-                      {ORACLE_HEADER_TAGLINE}
+                    <Text
+                      style={[
+                        styles.emptyTagline,
+                        { color: theme.secondaryText },
+                        localeAwareTextStyle(miraFaceTagline, {
+                          fontSize: 18,
+                          englishLineHeight: 28,
+                        }),
+                        textNeedsMyanmarMetrics(miraFaceTagline) && { letterSpacing: 0 },
+                      ]}
+                    >
+                      {miraFaceTagline}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.emptyPrompt,
+                        { color: theme.secondaryText },
+                        localeAwareTextStyle(miraInvite, {
+                          fontSize: 16,
+                          englishLineHeight: 24,
+                          baseFontFamily: SERIF,
+                        }),
+                        textNeedsMyanmarMetrics(miraInvite) && { letterSpacing: 0 },
+                      ]}
+                    >
+                      {miraInvite}
                     </Text>
                   </>
-                ) : null}
-                <Text
-                  style={[
-                    styles.emptyPrompt,
-                    { color: theme.secondaryText },
-                    localeAwareTextStyle('What would you like Mira to explore?', {
-                      fontSize: 16,
-                      englishLineHeight: 24,
-                      baseFontFamily: SERIF,
-                    }),
-                  ]}
-                >
-                  What would you like Mira to explore?
-                </Text>
+                ) : (
+                  <Text
+                    style={[
+                      styles.emptyPrompt,
+                      { color: theme.secondaryText },
+                      localeAwareTextStyle(miraInvite, {
+                        fontSize: 16,
+                        englishLineHeight: 24,
+                        baseFontFamily: SERIF,
+                      }),
+                      textNeedsMyanmarMetrics(miraInvite) && { letterSpacing: 0 },
+                    ]}
+                  >
+                    {miraInvite}
+                  </Text>
+                )}
               </View>
             ) : (
               messages.map((m) =>
@@ -603,10 +699,41 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                       >
                         {m.text}
                       </Text>
+                      {m.text.trim() ? (
+                        <MessageActions
+                          theme={theme}
+                          messageId={m.id}
+                          text={m.text}
+                          saved={Boolean(m.savedToMemory)}
+                          onSave={async (messageId) => {
+                            const target = messages.find((msg) => msg.id === messageId);
+                            if (!target || target.savedToMemory) return;
+                            const lastUser = [...messages].reverse().find((msg) => msg.role === 'user');
+                            const ok = await saveOracleInsight({
+                              query: target.query || lastUser?.text || '',
+                              insight: target.text,
+                              sourceCount: target.sourceCount || 0,
+                              sourceTitles: (target.sources || [])
+                                .map((s) => s.title || '')
+                                .filter(Boolean),
+                            });
+                            if (!ok) return;
+                            setMessages((prev) =>
+                              prev.map((msg) =>
+                                msg.id === messageId ? { ...msg, savedToMemory: true } : msg,
+                              ),
+                            );
+                            Alert.alert(t('mira.savedTitle'), t('msg.savedToMemory'));
+                          }}
+                          onDelete={(messageId) => {
+                            setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+                          }}
+                        />
+                      ) : null}
                     </View>
                     {(m.sourceCount ?? 0) > 0 ? (
                       <Text style={[styles.sourceLine, { color: theme.secondaryText }]}>
-                        {oracleSourcesLabel(m.sourceCount || 0)}
+                        {sourcesLabel(m.sourceCount || 0)}
                       </Text>
                     ) : null}
                     {m.time ? (
@@ -663,9 +790,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             style={[
               styles.composerWrap,
               {
-                paddingBottom: keyboardOpen
-                  ? Math.max(insets.bottom, 10)
-                  : Math.max(insets.bottom, 12),
+                paddingBottom: composerBottomPad,
                 borderTopColor: tokens.border.standard,
                 backgroundColor: TALK_INPUT_SURFACE,
               },
@@ -682,7 +807,9 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 }}
                 style={styles.langChip}
                 accessibilityRole="button"
-                accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+                accessibilityLabel={t('mira.languageA11y', {
+                  language: getMiraLanguageLabel(miraLanguage),
+                })}
               >
                 <Globe size={13} color={theme.accent} strokeWidth={2.2} />
                 <Text style={[styles.langChipText, { color: theme.accent }]}>
@@ -702,8 +829,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                   },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Select Mira response style"
-                accessibilityHint={`Current mode ${activeMode.label}`}
+                accessibilityLabel={t('mira.selectModeA11y')}
+                accessibilityHint={t('mira.currentModeHint', { mode: activeMode.label })}
                 accessibilityState={{ expanded: controlsOpen }}
               >
                 <Text
@@ -726,7 +853,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               >
                 <TextInput
                   ref={inputRef}
-                  placeholder="What would you like Mira to explore?"
+                  placeholder={miraPlaceholder}
                   placeholderTextColor={theme.secondaryText}
                   value={input}
                   onChangeText={setInput}
@@ -735,7 +862,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                   returnKeyType="send"
                   submitBehavior="submit"
                   blurOnSubmit={false}
-                  multiline={false}
+                  multiline
+                  numberOfLines={2}
                   style={[
                     styles.composerInput,
                     { color: theme.text },
@@ -750,6 +878,9 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                         lineHeight: m.lineHeight,
                         paddingTop: Math.max(8, m.paddingTop - 4),
                         paddingBottom: Math.max(8, m.paddingBottom - 4),
+                        minHeight: Math.max(40, m.lineHeight + 16),
+                        maxHeight: 100,
+                        textAlignVertical: 'center' as const,
                         ...(m.myanmar ? { fontFamily: undefined } : {}),
                       };
                     })(),
@@ -762,7 +893,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 onPress={send}
                 disabled={waiting || !input.trim()}
                 accessibilityRole="button"
-                accessibilityLabel="Send to Mira"
+                accessibilityLabel={t('mira.sendA11y')}
               >
                 <LinearGradient colors={SEND_GRADIENT} style={styles.sendBtn}>
                   <Text style={styles.sendGlyph}>↑</Text>
@@ -774,12 +905,12 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               <View style={styles.privacyRow}>
                 <Lock size={12} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
                 <Text style={[styles.privacyText, { color: theme.secondaryText }]}>
-                  Private to you · Mira thinks carefully
+                  {t('mira.privacyFooter')}
                 </Text>
               </View>
             ) : null}
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </ScreenSafeArea>
 
       <MiraControlsSheet
@@ -832,18 +963,20 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   brandTaglineUnderFace: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 16,
+    marginTop: 8,
+    lineHeight: 22,
     letterSpacing: 0.15,
   },
   emptyTagline: {
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
     letterSpacing: 0.2,
+    lineHeight: 28,
+    paddingHorizontal: 8,
   },
   composerHidden: {
     opacity: 0,

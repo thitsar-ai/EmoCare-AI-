@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
+  KeyboardAvoidingView,
   Modal,
   PanResponder,
   Platform,
@@ -44,6 +45,7 @@ import {
 } from '../../utils/appMenuCopy';
 import { textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { loadUserPronouns, saveUserPronouns } from '../../utils/onboardingState';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 export type MainScreenKey =
   | 'home'
@@ -69,18 +71,18 @@ export const TAB_BAR_TAB_ORDER: MainScreenKey[] = [
 export const TAB_BAR_SCREENS: MainScreenKey[] = [...TAB_BAR_TAB_ORDER];
 
 /** Bottom tab bar height (excluding safe area). Keep in sync with App.tsx NavBar. */
-export const TAB_BAR_HEIGHT = 72;
+export const TAB_BAR_HEIGHT = 80;
 
 const SWIPE_EDGE_WIDTH = Platform.OS === 'ios' ? 36 : 28;
 const SWIPE_DISTANCE_PX = 24;
 const SWIPE_VELOCITY = 200;
 
-/** Linear back / forward order — Welcome → Privacy → Tell Me About You → Home → … → Settings. */
+/** Linear back / forward order — Welcome → Privacy → About You → Home → … → Settings. */
 export type FlowStep =
   | { kind: 'onboarding'; slide: 2 | 4 | 5 }
   | { kind: 'screen'; key: MainScreenKey };
 
-/** Onboarding slides listed in the app menu (age gate slide 3 is first-run only — not in menu). */
+/** Onboarding slides listed in the app menu (age / feeling / ready are first-run only). */
 export const ONBOARDING_MENU_SLIDES = [2, 4, 5] as const;
 
 /**
@@ -113,10 +115,14 @@ export const APP_SCREEN_FLOW: MainScreenKey[] = FULL_APP_FLOW.filter(
 export const WELCOME_ONBOARDING_SLIDE = 2 as const;
 /** Onboarding content the user can step through with back / forward (excludes splash + age gate). */
 export const OB_FIRST_CONTENT_SLIDE = 2 as const;
-export const OB_LAST_CONTENT_SLIDE = 5 as const;
 /** First-run only interstitial — after Privacy, before Tell Me About You. */
 export const OB_AGE_GATE_SLIDE = 3 as const;
 export const OB_PRIVACY_SLIDE = 4 as const;
+export const OB_ABOUT_YOU_SLIDE = 5 as const;
+export const OB_FEELING_SLIDE = 6 as const;
+export const OB_READY_SLIDE = 7 as const;
+/** Last first-run content slide (Ready). Menu review still ends at About You (5). */
+export const OB_LAST_CONTENT_SLIDE = 7 as const;
 
 function findFlowIndex(onboardingSlide: number | null, screenKey: MainScreenKey): number {
   if (onboardingSlide != null) {
@@ -167,7 +173,7 @@ export type OnboardingSlideKey = 'ob-welcome' | 'ob-privacy' | 'ob-checkin';
 
 export type NavTarget =
   | { kind: 'screen'; key: MainScreenKey }
-  | { kind: 'onboarding'; slide: 1 | 2 | 3 | 4 | 5 };
+  | { kind: 'onboarding'; slide: 1 | 2 | 3 | 4 | 5 | 6 | 7 };
 
 type AppNavContextValue = {
   screen: MainScreenKey;
@@ -189,7 +195,7 @@ type AppNavContextValue = {
   onboardingReviewSlide: number | null;
   onboardingSplashActive: boolean;
   setOnboardingSplashActive: (active: boolean) => void;
-  openOnboardingSlide: (slide: 1 | 2 | 3 | 4 | 5) => void;
+  openOnboardingSlide: (slide: 1 | 2 | 3 | 4 | 5 | 6 | 7) => void;
   closeOnboardingReview: () => void;
   userName: string;
   setUserName: (name: string) => void;
@@ -385,7 +391,7 @@ export function AppNavProvider({
       : forwardHistoryRef.current.length > 0 || getNextScreenInFlow(screen) != null;
 
   const openOnboardingSlide = useCallback(
-    (slide: 1 | 2 | 3 | 4 | 5) => {
+    (slide: 1 | 2 | 3 | 4 | 5 | 6 | 7) => {
       if (slide === 1) {
         setMenuOpen(false);
         setOnboardingReviewSlide(null);
@@ -758,27 +764,85 @@ export function ProfileNameSheet({
   onClose: () => void;
   onSave: (name: string) => void;
 }) {
+  const { t } = useUiCopy();
   const [draft, setDraft] = useState(userName);
   const [pronounDraft, setPronounDraft] = useState('');
+  const [pronounCustomMode, setPronounCustomMode] = useState(false);
+  const [pronounPickerOpen, setPronounPickerOpen] = useState(false);
+
+  const pronounOptions = useMemo(
+    () => [
+      { id: 'she', label: t('onboarding.pronounShe'), value: 'She / her' },
+      { id: 'he', label: t('onboarding.pronounHe'), value: 'He / him' },
+      { id: 'they', label: t('onboarding.pronounThey'), value: 'They / them' },
+      { id: 'useName', label: t('onboarding.pronounUseName'), value: 'use-name' },
+      { id: 'preferNot', label: t('onboarding.pronounPreferNot'), value: 'prefer-not' },
+      { id: 'custom', label: t('onboarding.pronounCustom'), value: 'custom' },
+    ],
+    [t],
+  );
 
   React.useEffect(() => {
     if (!visible) return;
     setDraft(userName);
-    void loadUserPronouns().then(setPronounDraft);
-  }, [visible, userName]);
+    void loadUserPronouns().then((stored) => {
+      const known = pronounOptions.find((o) => o.value === stored || o.label === stored);
+      if (known && known.id !== 'custom') {
+        setPronounCustomMode(false);
+        setPronounDraft(known.value);
+      } else if (stored) {
+        setPronounCustomMode(true);
+        setPronounDraft(stored);
+      } else {
+        setPronounCustomMode(false);
+        setPronounDraft('');
+      }
+    });
+  }, [visible, userName, pronounOptions]);
+
+  const pronounFieldLabel = pronounCustomMode
+    ? t('onboarding.pronounCustom')
+    : pronounOptions.find((o) => o.value === pronounDraft)?.label ||
+      (pronounDraft ? pronounDraft : t('onboarding.pronounsSelect'));
+
+  const persistPronouns = () => {
+    if (pronounCustomMode) {
+      void saveUserPronouns(pronounDraft.trim());
+      return;
+    }
+    if (!pronounDraft || pronounDraft === 'prefer-not') {
+      void saveUserPronouns('');
+      return;
+    }
+    if (pronounDraft === 'use-name') {
+      void saveUserPronouns('use-name');
+      return;
+    }
+    void saveUserPronouns(pronounDraft);
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.menuOverlay} onPress={onClose}>
-        <View style={styles.profileAnchor}>
-          <Pressable
-            style={[styles.profileSheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <Text style={[styles.profileTitle, { color: DARK_MENU_SURFACE.text }]}>Your Name & Profile</Text>
+      <KeyboardAvoidingView
+        style={styles.menuOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={styles.flexFill} onPress={onClose}>
+          <View style={styles.profileAnchor}>
+            <Pressable
+              style={[styles.profileSheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+              >
+            <Text style={[styles.profileTitle, { color: DARK_MENU_SURFACE.text }]}>
+              {t('profile.title')}
+            </Text>
             <Text style={[styles.profileHint, { color: DARK_MENU_SURFACE.mutedText }]}>
-              Same profile from Tell Me About You. Saved on this device — Emo and Mira may use your
-              name naturally.
+              {t('profile.hint')}
             </Text>
             <TextInput
               style={[
@@ -789,48 +853,117 @@ export function ProfileNameSheet({
                   backgroundColor: DARK_MENU_SURFACE.card,
                 },
               ]}
-              placeholder="Preferred name (optional)"
+              placeholder={t('profile.namePlaceholder')}
               placeholderTextColor={DARK_MENU_SURFACE.mutedText}
               value={draft}
               onChangeText={setDraft}
               maxLength={48}
               autoCapitalize="words"
             />
-            <TextInput
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setPronounPickerOpen(true);
+              }}
               style={[
                 styles.profileInput,
+                styles.profilePronounDropdown,
                 {
-                  color: DARK_MENU_SURFACE.text,
                   borderColor: DARK_MENU_SURFACE.border,
                   backgroundColor: DARK_MENU_SURFACE.card,
                   marginTop: 10,
                 },
               ]}
-              placeholder="Pronouns (optional)"
-              placeholderTextColor={DARK_MENU_SURFACE.mutedText}
-              value={pronounDraft}
-              onChangeText={setPronounDraft}
-              maxLength={40}
-              autoCapitalize="none"
-            />
+              accessibilityRole="button"
+              accessibilityLabel={t('onboarding.pronouns')}
+            >
+              <Text
+                style={{
+                  color: pronounDraft || pronounCustomMode ? DARK_MENU_SURFACE.text : DARK_MENU_SURFACE.mutedText,
+                  fontWeight: '500',
+                  flex: 1,
+                  letterSpacing: 0,
+                }}
+                numberOfLines={1}
+              >
+                {pronounFieldLabel}
+              </Text>
+              <ChevronRight size={16} color={DARK_MENU_SURFACE.mutedText} />
+            </Pressable>
+            {pronounCustomMode ? (
+              <TextInput
+                style={[
+                  styles.profileInput,
+                  {
+                    color: DARK_MENU_SURFACE.text,
+                    borderColor: DARK_MENU_SURFACE.border,
+                    backgroundColor: DARK_MENU_SURFACE.card,
+                    marginTop: 10,
+                  },
+                ]}
+                placeholder={t('onboarding.pronounsPlaceholder')}
+                placeholderTextColor={DARK_MENU_SURFACE.mutedText}
+                value={pronounDraft === 'custom' ? '' : pronounDraft}
+                onChangeText={setPronounDraft}
+                maxLength={40}
+                autoCapitalize="none"
+              />
+            ) : null}
             <View style={styles.profileActions}>
               <Pressable onPress={onClose} style={styles.profileBtnGhost}>
-                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>Cancel</Text>
+                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>
+                  {t('common.cancel')}
+                </Text>
               </Pressable>
               <Pressable
                 onPress={() => {
                   onSave(draft.trim());
-                  void saveUserPronouns(pronounDraft);
+                  persistPronouns();
                   onClose();
                 }}
                 style={[styles.profileBtnSave, { backgroundColor: tokens.brand.ctaStart }]}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Save</Text>
+                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>{t('common.save')}</Text>
               </Pressable>
             </View>
-          </Pressable>
-        </View>
-      </Pressable>
+              </ScrollView>
+            </Pressable>
+          </View>
+        </Pressable>
+      </KeyboardAvoidingView>
+
+      <Modal
+        visible={pronounPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPronounPickerOpen(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setPronounPickerOpen(false)}>
+          <View style={[styles.profileSheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border, marginTop: 120 }]}>
+            {pronounOptions.map((opt) => (
+              <Pressable
+                key={opt.id}
+                onPress={() => {
+                  void hapticLight();
+                  if (opt.id === 'custom') {
+                    setPronounCustomMode(true);
+                    setPronounDraft('');
+                  } else {
+                    setPronounCustomMode(false);
+                    setPronounDraft(opt.value);
+                  }
+                  setPronounPickerOpen(false);
+                }}
+                style={styles.profilePronounOption}
+              >
+                <Text style={{ color: DARK_MENU_SURFACE.text, fontWeight: '600', letterSpacing: 0 }}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
@@ -992,9 +1125,14 @@ export function ScreenNavChrome({
         </View>
       ) : title ? (
         <Text
-          style={[styles.chromeTitle, { color: titleColor ?? theme.text, fontSize: titleFontSize }]}
+          style={[
+            styles.chromeTitle,
+            textNeedsMyanmarMetrics(title) && styles.chromeTitleMyanmar,
+            { color: titleColor ?? theme.text, fontSize: titleFontSize },
+          ]}
           numberOfLines={2}
-          adjustsFontSizeToFit={Platform.OS === 'ios'}
+          allowFontScaling
+          adjustsFontSizeToFit={Platform.OS === 'ios' && !textNeedsMyanmarMetrics(title)}
           minimumFontScale={Platform.OS === 'ios' ? 0.85 : undefined}
         >
           {title}
@@ -1095,6 +1233,7 @@ export function ScreenSwipeEdgeOverlay({ enabled = true }: { enabled?: boolean }
 
 const styles = StyleSheet.create({
   menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  flexFill: { flex: 1, justifyContent: 'center' },
   menuAnchor: { width: '100%', alignItems: 'flex-end' },
   menuSheet: {
     borderRadius: 16,
@@ -1129,6 +1268,7 @@ const styles = StyleSheet.create({
   menuItemMyanmar: {
     alignItems: 'flex-start',
     paddingVertical: 14,
+    gap: 14,
   },
   menuItemBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1142,6 +1282,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontFamily: undefined,
     paddingTop: 2,
+    paddingRight: 4,
   },
   menuItemSubtitle: { fontSize: 11, fontWeight: '400', lineHeight: 15 },
   menuItemSubtitleMyanmar: {
@@ -1177,6 +1318,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     marginTop: 4,
+  },
+  profilePronounDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  profilePronounOption: {
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: DARK_MENU_SURFACE.border,
   },
   profileActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
   profileBtnGhost: { paddingVertical: 10, paddingHorizontal: 14 },
@@ -1225,6 +1376,12 @@ const styles = StyleSheet.create({
     lineHeight: tokens.typography.navTitle.lineHeight,
     fontWeight: tokens.typography.navTitle.fontWeight,
     paddingHorizontal: 4,
+  },
+  chromeTitleMyanmar: {
+    lineHeight: 34,
+    paddingTop: 5,
+    paddingBottom: 3,
+    fontFamily: undefined,
   },
   chromeTitleSpacer: { flex: 1 },
   chromeCenter: { flex: 1, minWidth: 0, justifyContent: 'center' },

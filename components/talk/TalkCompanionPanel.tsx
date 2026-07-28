@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
@@ -10,6 +10,7 @@ import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
 import { CircadianGlassCard, SERIF } from '../shared/CircadianHeroGlow';
 import { TalkHeroEmo } from './TalkHeroEmo';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 type LastCheckIn = {
   label: string | null;
@@ -24,8 +25,36 @@ type Props = {
   onStarterPress: (text: string) => void;
 };
 
+const STARTER_KEYS = [
+  'talk.starter1',
+  'talk.starter2',
+  'talk.starter3',
+  'talk.starter4',
+  'talk.starter5',
+  'talk.starter6',
+] as const;
+
 export function TalkCompanionPanel({ theme, userName, lastCheckIn, onStarterPress }: Props) {
-  const hero = buildTalkHeroLines(userName);
+  const { t, locale } = useUiCopy();
+  const myanmar = locale === 'my';
+  const hero = useMemo(() => {
+    if (!myanmar) return buildTalkHeroLines(userName);
+    const name = userName.trim() || 'သူငယ်ချင်း';
+    return {
+      greeting: t('talk.helloNamed', { name }),
+      welcomeBack: t('talk.welcomeBack'),
+      presence: t('talk.emoWithYou'),
+      prompt: t('talk.whatsOnHeartToday'),
+    };
+  }, [myanmar, t, userName]);
+
+  const starters = useMemo(() => {
+    if (!myanmar) return TALK_CONVERSATION_STARTERS.map((s) => ({ icon: s.icon, text: s.text }));
+    return STARTER_KEYS.map((key, i) => ({
+      icon: TALK_CONVERSATION_STARTERS[i]?.icon || '💭',
+      text: t(key),
+    }));
+  }, [myanmar, t]);
 
   return (
     <View style={styles.panel}>
@@ -34,16 +63,50 @@ export function TalkCompanionPanel({ theme, userName, lastCheckIn, onStarterPres
       </View>
 
       <View style={styles.welcomeBlock} accessibilityRole="header">
-        <Text style={[styles.welcomeLine1, { color: theme.text }]}>{hero.greeting}</Text>
-        <Text style={[styles.welcomeLineWelcome, { color: theme.secondaryText }]}>{hero.welcomeBack}</Text>
-        <Text style={[styles.welcomeLine2, { color: theme.text }]}>{hero.presence}</Text>
-        <Text style={[styles.welcomeLine3, { color: theme.secondaryText }]}>{hero.prompt}</Text>
+        <Text
+          style={[
+            styles.welcomeLine1,
+            myanmar && styles.welcomeMy,
+            { color: theme.text },
+          ]}
+        >
+          {hero.greeting}
+        </Text>
+        <Text
+          style={[
+            styles.welcomeLineWelcome,
+            myanmar && styles.welcomeMy,
+            { color: theme.secondaryText },
+          ]}
+        >
+          {hero.welcomeBack}
+        </Text>
+        <Text
+          style={[
+            styles.welcomeLine2,
+            myanmar && styles.welcomeMy,
+            { color: theme.text },
+          ]}
+        >
+          {hero.presence}
+        </Text>
+        <Text
+          style={[
+            styles.welcomeLine3,
+            myanmar && styles.welcomeMy,
+            { color: theme.secondaryText },
+          ]}
+        >
+          {hero.prompt}
+        </Text>
       </View>
 
       {lastCheckIn?.label ? (
         <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.checkInCard}>
-          <Text style={[styles.checkInEyebrow, { color: theme.secondaryText }]}>💜 Last Check-In</Text>
-          <Text style={[styles.checkInLine, { color: theme.text }]}>
+          <Text style={[styles.checkInEyebrow, myanmar && styles.welcomeMy, { color: theme.secondaryText }]}>
+            💜 {t('talk.lastCheckIn')}
+          </Text>
+          <Text style={[styles.checkInLine, myanmar && styles.welcomeMy, { color: theme.text }]}>
             {lastCheckIn.emoji ? `${lastCheckIn.emoji} ` : ''}
             {lastCheckIn.label}
             {lastCheckIn.relativeTime ? ` • ${lastCheckIn.relativeTime}` : ''}
@@ -51,9 +114,11 @@ export function TalkCompanionPanel({ theme, userName, lastCheckIn, onStarterPres
         </CircadianGlassCard>
       ) : null}
 
-      <Text style={[styles.starterEyebrow, { color: theme.secondaryText }]}>Start with one of these</Text>
+      <Text style={[styles.starterEyebrow, myanmar && styles.welcomeMy, { color: theme.secondaryText }]}>
+        {t('talk.starterTitle')}
+      </Text>
       <View style={styles.starterCloud}>
-        {TALK_CONVERSATION_STARTERS.map((starter) => (
+        {starters.map((starter) => (
           <Pressable
             key={starter.text}
             onPress={() => {
@@ -72,7 +137,9 @@ export function TalkCompanionPanel({ theme, userName, lastCheckIn, onStarterPres
             accessibilityLabel={starter.text}
           >
             <Text style={styles.starterIcon}>{starter.icon}</Text>
-            <Text style={[styles.starterText, { color: theme.text }]}>{starter.text}</Text>
+            <Text style={[styles.starterText, myanmar && styles.welcomeMy, { color: theme.text }]}>
+              {starter.text}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -120,53 +187,61 @@ const styles = StyleSheet.create({
   welcomeLine3: {
     fontFamily: SERIF,
     fontSize: 17,
-    lineHeight: 26,
+    lineHeight: 24,
     textAlign: 'center',
   },
+  welcomeMy: {
+    letterSpacing: 0,
+    fontFamily: undefined,
+    fontStyle: 'normal',
+    lineHeight: 30,
+  },
   checkInCard: {
-    marginBottom: 22,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    marginHorizontal: 16,
+    marginBottom: 18,
+    padding: 14,
   },
   checkInEyebrow: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 8,
+    marginBottom: 6,
+    letterSpacing: 0.2,
   },
   checkInLine: {
     fontSize: 15,
-    lineHeight: 22,
     fontWeight: '600',
+    lineHeight: 22,
   },
   starterEyebrow: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    textAlign: 'center',
     marginBottom: 12,
-    paddingHorizontal: 4,
+    letterSpacing: 0.3,
   },
   starterCloud: {
-    gap: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
   },
   starterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 18,
     borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    maxWidth: '100%',
   },
   starterIcon: {
-    fontSize: 16,
+    fontSize: 14,
   },
   starterText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
   },
 });

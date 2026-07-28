@@ -7,8 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Keyboard,
-  KeyboardAvoidingView,
   Platform,
   Animated,
   Easing,
@@ -62,7 +60,6 @@ import {
   buildTalkWelcomeMessage,
   TALK_BG,
   TALK_CONVERSATION_SURFACE,
-  TALK_HEADER_TAGLINE,
   TALK_HEADER_TITLE,
   TALK_INPUT_SURFACE,
 } from './constants/brandCopy';
@@ -74,6 +71,7 @@ import { CircadianHeroGlow } from './components/shared/CircadianHeroGlow';
 import { FeelingIntensityPicker } from './components/checkin/FeelingIntensityPicker';
 import { CheckInCompleteOverlay } from './components/checkin/CheckInCompleteOverlay';
 import { MoodPicker } from './components/shared/MoodPicker';
+import { MessageActions, plainMessageText } from './components/shared/MessageActions';
 import { getTodayCheckIns, appendTodayCheckIn, deleteTodayCheckIn } from './utils/sanctuaryHome';
 import {
   PENDING_CHECKIN_TALK_KEY,
@@ -86,6 +84,11 @@ import { setAppResetHandler } from './utils/appReset';
 import { CrisisFooter } from './components/shared/CrisisFooter';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { PasscodeLockScreen } from './components/security/PasscodeLockScreen';
+import { UiCopyProvider, useUiCopy } from './components/i18n/UiCopyProvider';
+import {
+  stickyComposerBottomPad,
+  useKeyboardBottomInset,
+} from './hooks/useKeyboardBottomInset';
 import { SanctuaryDashboard } from './components/home/SanctuaryDashboard';
 import { PrimaryActionButton } from './components/shared/PrimaryActionButton';
 import { SanctuaryGlassSurface } from './components/shared/SanctuaryGlassSurface';
@@ -150,17 +153,19 @@ import {
 } from './utils/chatLanguage';
 import { classifyBurmeseTalkIntent } from './utils/emoBurmeseIntent';
 import {
-  EMO_STORY_ANSWER_MY,
   getEmoAkoGyiAnswer,
   getEmoAkoGyiPrivacyAnswer,
   getEmoAkoGyiWhoAnswer,
   getEmoBirthdayAnswer,
   getEmoCreatorAnswer,
+  getEmoNameAnswer,
+  getEmoStoryAnswer,
   isEmoAkoGyiPrivacyProbe,
   isEmoAkoGyiQuestion,
   isEmoAkoGyiWhoQuestion,
   isEmoBirthdayQuestion,
   isEmoCreatorQuestion,
+  isEmoNameQuestion,
   isEmoStoryQuestion,
   shouldUseConciseAkoGyiAnswer,
 } from './utils/emoIdentity';
@@ -178,7 +183,10 @@ import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracl
 import { loadEmoPersonalContext } from './utils/emoPersonalContext';
 import { refreshEmocareConfig, logEmocareApiDebug } from './utils/emocareApi';
 import { loadOnboardingState, markOnboardingComplete } from './utils/onboardingState';
-import { syncDailyReminderOnLaunch } from './utils/dailyReminders';
+import {
+  subscribeDailyReminderResponses,
+  syncDailyReminderOnLaunch,
+} from './utils/dailyReminders';
 import { logOracleInquiry } from './utils/oracleTopicLog';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
@@ -254,7 +262,7 @@ const C = {
 } as const;
 
 /** Height of the floating tab bar content (excludes the bottom safe-area inset). */
-const NAV_CONTENT_HEIGHT = 72;
+const NAV_CONTENT_HEIGHT = 80;
 
 /** Pushes screen content below the notch — explicit inset padding (reliable in Expo Go). */
 function TopChrome({
@@ -305,6 +313,12 @@ interface ChatMessage {
   attachmentUri?: string;
   attachmentKind?: 'photo' | 'file';
   attachmentName?: string;
+  /** Correlates assistant bubble with the in-flight network request. */
+  requestId?: string;
+  /** True after a successful Memory Ledger save for this message. */
+  savedToMemory?: boolean;
+  /** Inline error on the assistant placeholder (not a second bubble). */
+  error?: boolean;
 }
 
 interface ApiMessage {
@@ -651,10 +665,13 @@ function MoodWave() {
 
 function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { t } = useUiCopy();
   const insets = useSafeAreaInsets();
   const { top: topInset } = useLayoutInsets();
   const topPad = topInset + 4;
-  const { goBack, canGoBack, navigate, screen } = useAppNav();
+  const { goBack, canGoBack, navigate, screen, setImmersiveChromeHidden } = useAppNav();
+  const scrollRef = useRef<ScrollView>(null);
+  const noteYRef = useRef(0);
   const [selected, setSelected] = useState<Mood | null>(null);
   const [intensity, setIntensity] = useState(3);
   const [note, setNote] = useState('');
@@ -667,6 +684,27 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
     intensity: number;
     note: string;
   } | null>(null);
+
+  const onKeyboardOpenChange = useCallback(
+    (open: boolean) => {
+      setImmersiveChromeHidden(open);
+      if (open) {
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, noteYRef.current - 40),
+            animated: true,
+          });
+        });
+      }
+    },
+    [setImmersiveChromeHidden],
+  );
+  const { keyboardOpen, keyboardHeight } = useKeyboardBottomInset({
+    onOpenChange: onKeyboardOpenChange,
+  });
+  const checkInScrollPad = keyboardOpen
+    ? keyboardHeight + 32
+    : NAV_CONTENT_HEIGHT + insets.bottom + 24;
 
   const resetForm = useCallback(() => {
     setSelected(null);
@@ -720,12 +758,12 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
 
   const deleteToday = () => {
     Alert.alert(
-      "Delete today's check-ins?",
-      'All mood updates logged today will be removed.',
+      t('checkin.deleteToday'),
+      t('checkin.deleteTodayBody'),
       [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: () => {
           void (async () => {
@@ -764,31 +802,33 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <TopChrome>
         <NavChromeShell style={styles.ciChromeWrap}>
-          <ScreenNavChrome theme={theme} title="Check In" showForward={false} />
+          <ScreenNavChrome theme={theme} title={t('checkin.navTitle')} showForward={false} />
         </NavChromeShell>
 
         <ScrollView
+          ref={scrollRef}
           style={styles.flex}
           contentContainerStyle={{
             paddingHorizontal: 28,
             paddingTop: topPad + 8,
-            paddingBottom: NAV_CONTENT_HEIGHT + insets.bottom + 24,
+            paddingBottom: checkInScrollPad,
           }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           scrollEnabled={!completeVisible}
         >
           <Text style={[styles.ciCheckinTitle, { color: theme.text }]}>
-            Take a moment with yourself.
+            {t('checkin.title')}
           </Text>
           <Text style={[styles.ciCheckinSub, { color: theme.secondaryText }]}>
-            What feels most true right now?
+            {t('checkin.subtitle')}
           </Text>
 
           {addingUpdate ? (
             <View style={[styles.ciEditBanner, { backgroundColor: `${theme.accent}14`, borderColor: `${theme.accent}44` }]}>
               <Text style={[styles.ciEditBannerText, { color: theme.secondaryText }]}>
-                Adding another moment to today's journey — your earlier check-ins stay as they were.
+                {t('checkin.addingUpdate')}
               </Text>
             </View>
           ) : null}
@@ -805,37 +845,51 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
             <FeelingIntensityPicker theme={theme} value={intensity} onChange={setIntensity} />
           ) : null}
 
-          <GlassCard theme={theme} style={styles.ciNoteCard}>
-            <Text style={[styles.cardTitle, { marginBottom: 6, color: theme.text }]}>
-              What's on your heart?
-            </Text>
-            <Text style={[styles.cardSub, { marginBottom: 12, color: theme.secondaryText }]}>
-              You don't have to explain everything. A few words are enough.
-            </Text>
-            <TextInput
-              style={[
-                styles.ciNoteInput,
-                {
-                  color: theme.text,
-                  borderColor: theme.border,
-                  backgroundColor: theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.65)',
-                },
-              ]}
-              placeholder="Today I feel..."
-              placeholderTextColor={theme.mutedText}
-              value={note}
-              onChangeText={setNote}
-              multiline
-              textAlignVertical="top"
-            />
-          </GlassCard>
+          <View
+            onLayout={(e) => {
+              noteYRef.current = e.nativeEvent.layout.y;
+            }}
+          >
+            <GlassCard theme={theme} style={styles.ciNoteCard}>
+              <Text style={[styles.cardTitle, { marginBottom: 6, color: theme.text }]}>
+                {t('checkin.whatsOnHeart')}
+              </Text>
+              <Text style={[styles.cardSub, { marginBottom: 12, color: theme.secondaryText }]}>
+                {t('checkin.fewWordsEnough')}
+              </Text>
+              <TextInput
+                style={[
+                  styles.ciNoteInput,
+                  {
+                    color: theme.text,
+                    borderColor: theme.border,
+                    backgroundColor: theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.65)',
+                  },
+                ]}
+                placeholder={t('checkin.notePlaceholder')}
+                placeholderTextColor={theme.mutedText}
+                value={note}
+                onChangeText={setNote}
+                onFocus={() => {
+                  requestAnimationFrame(() => {
+                    scrollRef.current?.scrollTo({
+                      y: Math.max(0, noteYRef.current - 40),
+                      animated: true,
+                    });
+                  });
+                }}
+                multiline
+                textAlignVertical="top"
+              />
+            </GlassCard>
+          </View>
 
           <PrimaryActionButton
-            label="Save Check-In →"
+            label={t('checkin.save')}
             theme={theme}
             onPress={save}
             disabled={!selected}
-            disabledHint="Choose a feeling to save your check-in."
+            disabledHint={t('checkin.chooseFeeling')}
             style={styles.ciSaveWrap}
           />
 
@@ -844,17 +898,17 @@ function CheckInScreen({ onNav: _onNav }: { onNav: (key: MainScreenKey) => void 
               onPress={deleteToday}
               style={({ pressed }) => [styles.ciDeleteBtn, pressed && { opacity: 0.75 }]}
               accessibilityRole="button"
-              accessibilityLabel="Delete today's check-ins"
+              accessibilityLabel={t('checkin.deleteToday')}
             >
               <Trash2 size={15} color="#E97D6A" strokeWidth={2.2} />
-              <Text style={styles.ciDeleteText}>Delete today's check-ins</Text>
+              <Text style={styles.ciDeleteText}>{t('checkin.deleteToday')}</Text>
             </Pressable>
           ) : null}
 
           <View style={styles.ciPrivacyRow}>
             <Shield size={14} color={theme.accent} strokeWidth={2.2} />
             <Text style={[styles.ciPrivacyNote, { color: theme.mutedText }]}>
-              Your check-in is private and secure
+              {t('checkin.privacyNote')}
             </Text>
           </View>
 
@@ -902,11 +956,11 @@ const CHAT_SEND_GRADIENT = [...BRAND_CTA_GRADIENT] as [string, string];
 const CHAT_MENU_SOLID = MENU_SOLID;
 const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
 
-function makeWelcomeMessage(userName: string): ChatMessage {
+function makeWelcomeMessage(userName: string, localizedText?: string): ChatMessage {
   return {
     id: 'welcome',
     role: 'bot',
-    text: buildTalkWelcomeMessage(userName),
+    text: localizedText || buildTalkWelcomeMessage(userName),
     time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
   };
 }
@@ -970,16 +1024,17 @@ function ChatMenuSheet({
   onSaveJournal: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useUiCopy();
   const items: {
     label: string;
     Icon: LucideIcon;
     action: () => void;
     destructive?: boolean;
   }[] = [
-    { label: 'Start conversation', Icon: MessageSquarePlus, action: onStart },
-    { label: 'Save conversation', Icon: Bookmark, action: onSave },
-    { label: 'Save to journal', Icon: BookOpen, action: onSaveJournal },
-    { label: 'Delete', Icon: Trash2, action: onDelete, destructive: true },
+    { label: t('talk.startConversation'), Icon: MessageSquarePlus, action: onStart },
+    { label: t('common.save'), Icon: Bookmark, action: onSave },
+    { label: t('talk.saveToJournal'), Icon: BookOpen, action: onSaveJournal },
+    { label: t('common.delete'), Icon: Trash2, action: onDelete, destructive: true },
   ];
 
   return (
@@ -1040,10 +1095,11 @@ function AttachmentMenuSheet({
   onPhoto: () => void;
   onFile: () => void;
 }) {
+  const { t } = useUiCopy();
   const items = [
-    { label: 'Photo from library', Icon: ImageIcon, action: onPhoto },
+    { label: t('talk.photoFromLibrary'), Icon: ImageIcon, action: onPhoto },
     { label: 'Choose a file', Icon: FileText, action: onFile },
-    { label: 'Cancel', Icon: X, action: onClose, cancel: true },
+    { label: t('common.cancel'), Icon: X, action: onClose, cancel: true },
   ];
 
   return (
@@ -1116,25 +1172,27 @@ function ChatBubbleMenuSheet({
   onDelete: () => void;
   onRemember?: () => void;
 }) {
+  const { t } = useUiCopy();
   const items =
     variant === 'user'
       ? [
-          { label: 'Copy', action: onCopy },
+          { label: t('msg.copy'), action: onCopy },
           { label: 'Paste', action: onPaste },
           { label: 'Edit', action: onEdit },
-          { label: 'Delete', action: onDelete, destructive: true },
-          { label: 'Cancel', cancel: true },
+          { label: t('msg.delete'), action: onDelete, destructive: true },
+          { label: t('common.cancel'), cancel: true },
         ]
       : [
-          { label: 'Copy', action: onCopy },
-          ...(onRemember ? [{ label: 'Remember this', action: onRemember }] : []),
-          { label: 'Cancel', cancel: true },
+          { label: t('msg.copy'), action: onCopy },
+          ...(onRemember ? [{ label: t('msg.saveToMemory'), action: onRemember }] : []),
+          { label: t('msg.delete'), action: onDelete, destructive: true },
+          { label: t('common.cancel'), cancel: true },
         ];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.chatBubbleMenuOverlay}>
-        <Pressable style={styles.chatBubbleMenuBackdrop} onPress={onClose} accessibilityLabel="Close menu" />
+        <Pressable style={styles.chatBubbleMenuBackdrop} onPress={onClose} accessibilityLabel={t('common.close')} />
         <View
           style={[
             styles.chatBubbleMenuSheet,
@@ -1180,11 +1238,24 @@ function ChatBubbleMenuSheet({
 
 function ChatScreen({ userName }: { userName: string }) {
   const theme = useCircadianTheme();
+  const { t, locale } = useUiCopy();
   const { setMenuOpen: setAppMenuOpen, navigate, setImmersiveChromeHidden } = useAppNav();
+
+  const localizedWelcomeText = useCallback(() => {
+    const name = userName.trim() || (locale === 'my' ? 'သူငယ်ချင်း' : 'friend');
+    if (locale === 'my') {
+      return [
+        t('talk.helloNamed', { name }),
+        t('talk.welcomeBack'),
+        t('talk.emoWithYou'),
+        t('talk.whatsOnHeartToday'),
+      ].join('\n');
+    }
+    return buildTalkWelcomeMessage(userName);
+  }, [locale, t, userName]);
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [isWaiting, setIsWaiting] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [history, setHistory] = useState<ApiMessage[]>([]);
@@ -1219,6 +1290,9 @@ function ChatScreen({ userName }: { userName: string }) {
     useAnthropicAiConsent();
   const streamDecayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  /** Guards against double-tap / Enter+button / consent async gap. */
+  const sendLockRef = useRef(false);
+  const activeRequestIdRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
   const autoPromptUsedRef = useRef(false);
@@ -1239,23 +1313,24 @@ function ChatScreen({ userName }: { userName: string }) {
     };
   }, []);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => {
-      setKeyboardOpen(true);
-      setImmersiveChromeHidden(true);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardOpen(false);
-      setImmersiveChromeHidden(false);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      setImmersiveChromeHidden(false);
-    };
-  }, [setImmersiveChromeHidden]);
+  const onKeyboardOpenChange = useCallback(
+    (open: boolean) => {
+      setImmersiveChromeHidden(open);
+      if (open) {
+        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      }
+    },
+    [setImmersiveChromeHidden],
+  );
+  const { keyboardOpen, keyboardHeight } = useKeyboardBottomInset({
+    onOpenChange: onKeyboardOpenChange,
+  });
+  const composerBottomPad = stickyComposerBottomPad({
+    keyboardOpen,
+    keyboardHeight,
+    tabBarHeight: NAV_CONTENT_HEIGHT,
+    safeBottom: insets.bottom ?? 0,
+  });
 
   const bumpStreamLevel = () => {
     setStreamLevel(1);
@@ -1298,7 +1373,7 @@ function ChatScreen({ userName }: { userName: string }) {
         }
       }
     } catch {}
-    const welcome = makeWelcomeMessage(userName);
+    const welcome = makeWelcomeMessage(userName, localizedWelcomeText());
     setMessages([welcome]);
     setHistory([]);
   };
@@ -1523,8 +1598,40 @@ function ChatScreen({ userName }: { userName: string }) {
   }, [messages]);
 
   const copyMessage = async (msg: ChatMessage) => {
-    await Clipboard.setStringAsync(msg.text);
+    await Clipboard.setStringAsync(plainMessageText(msg.text));
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  };
+
+  const saveBotMessageToMemory = async (messageId: string, text: string) => {
+    const target = messages.find((m) => m.id === messageId);
+    if (!target || target.savedToMemory) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const classified = await classifyMemoryEligibility(lastUser?.text || '');
+    const suggestion =
+      classified.memory_text ||
+      finishFirstPersonMemory(lastUser?.text || '') ||
+      finishFirstPersonMemory(text);
+    if (!suggestion) return;
+    setFeelingCheckVisible(false);
+    setSavePrompt({
+      text: suggestion,
+      category: classified.category || 'What helps me',
+      explicitRemember: Boolean(classified.explicitRemember),
+      anchorUserId: lastUser?.id || messageId,
+      userMsgCountAtOffer: messages.filter((m) => m.role === 'user').length,
+      manual: true,
+    });
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, savedToMemory: true } : m)),
+    );
+  };
+
+  const deleteBotMessage = (messageId: string) => {
+    setMessages((prev) => {
+      const next = prev.filter((m) => m.id !== messageId);
+      setHistory(rebuildApiHistory(next));
+      return next;
+    });
   };
 
   const pasteIntoComposer = async () => {
@@ -1564,7 +1671,7 @@ function ChatScreen({ userName }: { userName: string }) {
   };
 
   const startFreshChat = () => {
-    const welcome = makeWelcomeMessage(userName);
+    const welcome = makeWelcomeMessage(userName, localizedWelcomeText());
     setMessages([welcome]);
     setHistory([]);
     setEditingId(null);
@@ -1577,7 +1684,7 @@ function ChatScreen({ userName }: { userName: string }) {
       .map((m) => `${m.role === 'bot' ? 'Emo' : 'You'}: ${m.text.trim()}`)
       .join('\n\n');
     if (!transcript.trim()) {
-      Alert.alert('Nothing to save', 'Start a conversation first.');
+      Alert.alert(t('talk.nothingToSave'), t('talk.nothingToSaveBody'));
       return;
     }
     try {
@@ -1590,23 +1697,23 @@ function ChatScreen({ userName }: { userName: string }) {
       });
       if (!entry) throw new Error('Invalid journal entry');
       await saveJournalEntries([entry, ...entries]);
-      Alert.alert('Saved to journal', 'This conversation was added to your journal.');
+      Alert.alert(t('talk.saveToJournal'), t('journal.savedHint'));
     } catch {
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.tryAgain'));
     }
   };
 
   const handleDeleteConversation = () => {
-    Alert.alert('Delete conversation', 'Remove all messages in this conversation?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: startFreshChat },
+    Alert.alert(t('talk.deleteConversation'), t('talk.deleteConversationBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: startFreshChat },
     ]);
   };
 
   const handleStartConversation = () => {
-    Alert.alert('Start conversation', 'Begin a fresh conversation?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Start', onPress: startFreshChat },
+    Alert.alert(t('talk.startConversation'), t('talk.newChat'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('talk.startConversation'), onPress: startFreshChat },
     ]);
   };
 
@@ -1623,7 +1730,7 @@ function ChatScreen({ userName }: { userName: string }) {
       );
       Alert.alert('Saved', 'Chat saved on this device.');
     } catch {
-      Alert.alert('Could not save', 'Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.tryAgain'));
     }
   };
 
@@ -1633,24 +1740,46 @@ function ChatScreen({ userName }: { userName: string }) {
     label: string,
     fileName?: string,
   ) => {
+    if (isWaiting || sendLockRef.current) return;
+    sendLockRef.current = true;
+    setIsWaiting(true);
+    if (!(await ensureConsentBeforeSend())) {
+      sendLockRef.current = false;
+      setIsWaiting(false);
+      return;
+    }
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const msg: ChatMessage = {
-      id: `att-${Date.now()}`,
+      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       text: label,
       time,
       attachmentUri: uri,
       attachmentKind: kind,
       attachmentName: fileName,
+      requestId,
     };
     const newMessages = [...messages, msg];
     setMessages(newMessages);
-    await requestEmoReply(newMessages);
+    await requestEmoReply(newMessages, requestId);
   };
 
-  const requestEmoReply = async (chatMessages: ChatMessage[]) => {
-    if (!(await ensureConsentBeforeSend())) return;
-    if (isWaiting) return;
+  const releaseSendLock = (requestId: string | null) => {
+    if (requestId && activeRequestIdRef.current && activeRequestIdRef.current !== requestId) {
+      return;
+    }
+    if (!requestId || activeRequestIdRef.current === requestId) {
+      activeRequestIdRef.current = null;
+    }
+    sendLockRef.current = false;
+    setIsWaiting(false);
+    setIsSearching(false);
+  };
+
+  const requestEmoReply = async (chatMessages: ChatMessage[], requestId: string) => {
+    if (activeRequestIdRef.current && activeRequestIdRef.current !== requestId) return;
+    activeRequestIdRef.current = requestId;
     // Late auto-prompt discard: user sent 2+ additional messages after the trigger
     setSavePrompt((prev) => {
       if (!prev || prev.manual) return prev;
@@ -1671,12 +1800,14 @@ function ChatScreen({ userName }: { userName: string }) {
     setIsWaiting(true);
     setIsSearching(false);
 
+    let streamId = '';
     try {
       const apiMessages = await buildAnthropicMessagesFromChat(chatMessages);
       if (apiMessages.length === 0) {
-        setIsWaiting(false);
+        releaseSendLock(requestId);
         return;
       }
+      if (activeRequestIdRef.current !== requestId) return;
 
       const lastUserMsg = [...chatMessages].reverse().find((m) => m.role === 'user');
       const crisis = lastUserMsg ? detectCrisisSignals(lastUserMsg.text) : { inCrisis: false };
@@ -1727,12 +1858,14 @@ function ChatScreen({ userName }: { userName: string }) {
         });
       }
 
-      // Canonical identity answers — no streaming/rewrite (avoids “typed then changed”).
+      // Canonical identity answers — locked text, no streaming/rewrite (never “typed then changed”).
       if (lastUserMsg && !crisis.inCrisis) {
         const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const locale = burmese ? 'my' : 'en';
         let identityText = '';
-        if (isEmoAkoGyiWhoQuestion(lastUserMsg.text)) {
+        if (isEmoNameQuestion(lastUserMsg.text)) {
+          identityText = getEmoNameAnswer({ locale });
+        } else if (isEmoAkoGyiWhoQuestion(lastUserMsg.text)) {
           identityText = getEmoAkoGyiWhoAnswer({ locale });
         } else if (isEmoAkoGyiPrivacyProbe(lastUserMsg.text)) {
           identityText = getEmoAkoGyiPrivacyAnswer({ locale });
@@ -1745,15 +1878,22 @@ function ChatScreen({ userName }: { userName: string }) {
           identityText = getEmoBirthdayAnswer({ locale });
         } else if (isEmoCreatorQuestion(lastUserMsg.text)) {
           identityText = getEmoCreatorAnswer({ locale });
-        } else if (burmese && isEmoStoryQuestion(lastUserMsg.text)) {
-          identityText = EMO_STORY_ANSWER_MY;
+        } else if (isEmoStoryQuestion(lastUserMsg.text)) {
+          identityText = getEmoStoryAnswer({ locale });
         }
         if (identityText) {
+          if (activeRequestIdRef.current !== requestId) return;
           setMessages((prev) => [
             ...prev,
-            { id: `b-${Date.now()}`, role: 'bot', text: identityText, time: replyTime },
+            {
+              id: `b-${Date.now()}`,
+              role: 'bot',
+              text: identityText,
+              time: replyTime,
+              requestId,
+            },
           ]);
-          setIsWaiting(false);
+          releaseSendLock(requestId);
           setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
           return;
         }
@@ -1791,9 +1931,9 @@ function ChatScreen({ userName }: { userName: string }) {
       const abort = new AbortController();
       streamAbortRef.current = abort;
 
+      if (activeRequestIdRef.current !== requestId) return;
       const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const streamId = `b-${Date.now()}`;
-      setMessages((prev) => [...prev, { id: streamId, role: 'bot', text: '', time: replyTime }]);
+      streamId = `b-${Date.now()}-${requestId.slice(-6)}`;
 
       const maxTokens = intent.mode === 'oracle' ? 1600 : 1200;
       const route = intent.mode === 'oracle' ? 'oracle' : 'talk';
@@ -1801,6 +1941,9 @@ function ChatScreen({ userName }: { userName: string }) {
       const talkModel = burmese ? ANTHROPIC_MODEL_BURMESE : undefined;
       const talkTemperature = burmese ? 0.55 : undefined;
 
+      // Do not paint stream deltas into the transcript. Post-stream locale /
+      // Burmese quality rewrites were replacing a finished-looking reply with a
+      // different one (and sometimes an error). Commit one final bubble only.
       const result = await streamAnthropicMessages({
         system,
         maxTokens,
@@ -1811,39 +1954,52 @@ function ChatScreen({ userName }: { userName: string }) {
         languageMeta,
         signal: abort.signal,
         onStart: () => bumpStreamLevel(),
-        onTextDelta: (_chunk: string, full: string) => {
+        onTextDelta: () => {
           bumpStreamLevel();
-          setMessages((prev) =>
-            prev.map((m) => (m.id === streamId ? { ...m, text: full } : m)),
-          );
-          scrollRef.current?.scrollToEnd({ animated: true });
         },
-        onDone: (fullText: string) => {
-          const polished = polishEmoReplyText(fullText);
-          setMessages((prev) =>
-            prev.map((m) => (m.id === streamId ? { ...m, text: polished } : m)),
-          );
+        onDone: () => {
           setStreamLevel(0);
         },
-        onError: (message: string) => {
+        onError: () => {
           setStreamLevel(0);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamId
-                ? {
-                    ...m,
-                    text:
-                      message ||
-                      "I'm still here with you. Something interrupted my reply just now — try sending that again? 💜",
-                  }
-                : m,
-            ),
-          );
         },
       });
 
-      if (result.ok && 'text' in result && typeof result.text === 'string' && !abort.signal.aborted) {
+      if (activeRequestIdRef.current !== requestId) return;
+      if (abort.signal.aborted || ('aborted' in result && result.aborted)) return;
+
+      const commitBotReply = (text: string, isError = false) => {
+        if (activeRequestIdRef.current !== requestId) return;
+        const finalText = String(text || '').trim() || t('talk.errorGentle');
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === streamId)) {
+            return prev.map((m) =>
+              m.id === streamId
+                ? { ...m, text: finalText, time: replyTime, error: isError || !String(text || '').trim(), requestId }
+                : m,
+            );
+          }
+          return [
+            ...prev,
+            {
+              id: streamId,
+              role: 'bot' as const,
+              text: finalText,
+              time: replyTime,
+              error: isError || !String(text || '').trim(),
+              requestId,
+            },
+          ];
+        });
+        if (!isError && String(text || '').trim()) {
+          setHistory((prev) => [...prev, { role: 'assistant', content: finalText }]);
+        }
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+      };
+
+      if (result.ok && 'text' in result && typeof result.text === 'string') {
         let replyText = polishEmoReplyText(result.text);
+        let replyIsError = false;
 
         if (responseViolatesLocale(replyText, composeLocale)) {
           if (__DEV__) {
@@ -1877,23 +2033,24 @@ function ChatScreen({ userName }: { userName: string }) {
           }
           if (!corrected) {
             replyText = getLanguageFallbackMessage(composeLocale);
+            replyIsError = true;
           }
         }
 
-        // Burmese: script check is not enough — fluency/coherence review before display
-        if (burmese && !abort.signal.aborted) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamId ? { ...m, text: normalizeBurmeseText(replyText) } : m,
-            ),
-          );
+        // Burmese: fluency/coherence review before any UI commit
+        if (burmese && activeRequestIdRef.current === requestId) {
           const quality = await ensureQualityBurmeseReply({
             userMessage: lastUserMsg?.text || '',
             draftResponse: replyText,
             userName,
             intent: burmeseTalkIntent || 'unknown',
           });
-          replyText = polishEmoReplyText(quality.text);
+          if (activeRequestIdRef.current !== requestId) return;
+          const qualityFailed = Boolean(quality.review?.issues?.includes('fallback'));
+          replyText = qualityFailed
+            ? t('talk.errorGentle')
+            : polishEmoReplyText(quality.text);
+          replyIsError = replyIsError || qualityFailed;
           logBurmeseQualityDev({
             model: ANTHROPIC_MODEL_BURMESE,
             intent: burmeseTalkIntent,
@@ -1907,63 +2064,81 @@ function ChatScreen({ userName }: { userName: string }) {
           });
         }
 
-        const validated = validateMemoryRecallResponse({
-          response: replyText,
-          memory_ids_injected: [...memoryIdsInjectedRef.current],
-          injectedMemories: [...injectedMemoriesRef.current],
-        }) as {
-          ok: boolean;
-          response: string;
-          memory_ids_used: string[];
-          recall_phrase_detected: boolean;
-        };
-        void logMemoryDiagnostic({
-          type: 'memory_recall_validate',
-          sessionId: talkSessionIdRef.current,
-          memory_ids_injected: memoryIdsInjectedRef.current,
-          memory_ids_used: validated.memory_ids_used,
-          recall_phrase_detected: validated.recall_phrase_detected,
-          validation_passed: validated.ok,
-        });
-        replyText = validated.response;
-        setHistory((prev) => [...prev, { role: 'assistant', content: replyText }]);
-        setMessages((prev) =>
-          prev.map((m) => (m.id === streamId ? { ...m, text: replyText } : m)),
-        );
-        afterTalkExchange(chatMessages);
-      } else if (result.ok === false && !abort.signal.aborted) {
-        const aborted = 'aborted' in result && result.aborted;
-        if (!aborted) {
-          setMessages((prev) =>
-            prev.map((m) => {
-              if (m.id !== streamId || m.text.trim()) return m;
-              const errObj = 'error' in result ? result.error : null;
-              const errMsg = describeAnthropicError({ error: errObj ?? {} });
-              return { ...m, text: errMsg };
-            }),
-          );
+        if (activeRequestIdRef.current !== requestId) return;
+
+        if (!replyIsError) {
+          const validated = validateMemoryRecallResponse({
+            response: replyText,
+            memory_ids_injected: [...memoryIdsInjectedRef.current],
+            injectedMemories: [...injectedMemoriesRef.current],
+          }) as {
+            ok: boolean;
+            response: string;
+            memory_ids_used: string[];
+            recall_phrase_detected: boolean;
+          };
+          void logMemoryDiagnostic({
+            type: 'memory_recall_validate',
+            sessionId: talkSessionIdRef.current,
+            memory_ids_injected: memoryIdsInjectedRef.current,
+            memory_ids_used: validated.memory_ids_used,
+            recall_phrase_detected: validated.recall_phrase_detected,
+            validation_passed: validated.ok,
+          });
+          replyText = validated.response;
         }
+
+        commitBotReply(replyText, replyIsError);
+        if (!replyIsError) afterTalkExchange(chatMessages);
+      } else if (result.ok === false) {
+        if (__DEV__) {
+          const errObj = 'error' in result ? result.error : null;
+          console.warn('[Emo Talk] request failed', {
+            requestId,
+            error: errObj,
+          });
+        }
+        commitBotReply(t('talk.errorGentle'), true);
       }
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `b-${Date.now()}`,
-          role: 'bot',
-          text: 'Something went gently wrong. Please try again. 🌿',
-          time: '',
-        },
-      ]);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[Emo Talk] unexpected error', { requestId, err });
+      }
+      if (activeRequestIdRef.current === requestId) {
+        const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const errorId = streamId || `b-${Date.now()}-${requestId.slice(-6)}`;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === errorId)) {
+            return prev.map((m) =>
+              m.id === errorId
+                ? { ...m, error: true, text: t('talk.errorGentle'), time: replyTime }
+                : m,
+            );
+          }
+          return [
+            ...prev,
+            {
+              id: errorId,
+              role: 'bot' as const,
+              text: t('talk.errorGentle'),
+              time: replyTime,
+              error: true,
+              requestId,
+            },
+          ];
+        });
+      }
+    } finally {
+      setStreamLevel(0);
+      releaseSendLock(requestId);
     }
-    setIsSearching(false);
-    setIsWaiting(false);
   };
 
   const pickPhoto = async () => {
     if (isWaiting) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission needed', 'Allow photo access to share images with Emo.');
+      Alert.alert(t('talk.permissionNeeded'), t('talk.permissionPhotos'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -1996,8 +2171,15 @@ function ChatScreen({ userName }: { userName: string }) {
 
   const send = async () => {
     const trimmed = input.trim();
-    if (!trimmed || isWaiting || showAiConsentSheet) return;
-    if (!(await ensureConsentBeforeSend())) return;
+    if (!trimmed || isWaiting || sendLockRef.current || showAiConsentSheet) return;
+    sendLockRef.current = true;
+    setIsWaiting(true);
+
+    if (!(await ensureConsentBeforeSend())) {
+      sendLockRef.current = false;
+      setIsWaiting(false);
+      return;
+    }
 
     streamAbortRef.current?.abort();
 
@@ -2009,43 +2191,61 @@ function ChatScreen({ userName }: { userName: string }) {
       });
       setEditingId(null);
       setInput('');
+      sendLockRef.current = false;
+      setIsWaiting(false);
       return;
     }
 
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const clientMessageId = `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setInput('');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
+      id: clientMessageId,
       role: 'user',
       text: trimmed,
       time,
+      requestId,
     };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setHistory((prev) => [...prev, { role: 'user', content: trimmed }]);
-    await requestEmoReply(newMessages);
+    await requestEmoReply(newMessages, requestId);
   };
 
   const sendStarter = (text: string) => {
-    if (isWaiting || showAiConsentSheet) return;
+    if (isWaiting || sendLockRef.current || showAiConsentSheet) return;
+    sendLockRef.current = true;
+    setIsWaiting(true);
     setInput(text);
     void (async () => {
-      if (!(await ensureConsentBeforeSend())) return;
+      if (!(await ensureConsentBeforeSend())) {
+        sendLockRef.current = false;
+        setIsWaiting(false);
+        return;
+      }
       streamAbortRef.current?.abort();
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed) {
+        sendLockRef.current = false;
+        setIsWaiting(false);
+        return;
+      }
+      const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const clientMessageId = `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       setInput('');
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const userMsg: ChatMessage = {
-        id: `u-${Date.now()}`,
+        id: clientMessageId,
         role: 'user',
         text: trimmed,
         time,
+        requestId,
       };
       const newMessages = [...messages, userMsg];
       setMessages(newMessages);
       setHistory((prev) => [...prev, { role: 'user', content: trimmed }]);
-      await requestEmoReply(newMessages);
+      await requestEmoReply(newMessages, requestId);
     })();
   };
 
@@ -2054,22 +2254,18 @@ function ChatScreen({ userName }: { userName: string }) {
     borderColor: theme.border,
   };
   const chatStatusLine = isSearching
-    ? 'Mira · gathering research…'
+    ? t('mira.thinking')
     : isWaiting
       ? streamLevel > 0.05
-        ? 'Emo is writing…'
-        : 'Thinking with you…'
+        ? t('talk.emoWriting')
+        : t('talk.thinkingWithYou')
       : null;
 
   return (
     <View style={[styles.flex, { backgroundColor: TALK_BG }]}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <TopChrome style={{ backgroundColor: TALK_BG }}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 8 : 0}
-        >
+        <View style={styles.flex}>
           <View style={styles.chatHeaderWrap}>
             <ScreenNavChrome
               theme={theme}
@@ -2110,7 +2306,7 @@ function ChatScreen({ userName }: { userName: string }) {
                       adjustsFontSizeToFit
                       minimumFontScale={0.85}
                     >
-                      {TALK_HEADER_TAGLINE}
+                      {t('talk.headerTagline')}
                     </Text>
                   </View>
                 </View>
@@ -2187,6 +2383,16 @@ function ChatScreen({ userName }: { userName: string }) {
                         >
                           <EmoChatText text={m.text} style={[styles.chatBotText, { color: theme.text }]} />
                         </Pressable>
+                        {m.id !== 'welcome' && m.text.trim() ? (
+                          <MessageActions
+                            theme={theme}
+                            messageId={m.id}
+                            text={m.text}
+                            saved={Boolean(m.savedToMemory)}
+                            onSave={saveBotMessageToMemory}
+                            onDelete={deleteBotMessage}
+                          />
+                        ) : null}
                       </View>
                       {m.time ? (
                         <Text style={[styles.chatMsgTime, { color: theme.secondaryText }]}>{m.time}</Text>
@@ -2363,9 +2569,7 @@ function ChatScreen({ userName }: { userName: string }) {
             style={[
               styles.chatComposerWrap,
               {
-                paddingBottom: keyboardOpen
-                  ? Math.max(insets.bottom, 10)
-                  : NAV_CONTENT_HEIGHT + (insets.bottom ?? 0) + 6,
+                paddingBottom: composerBottomPad,
                 borderTopColor: tokens.border.standard,
                 backgroundColor: TALK_INPUT_SURFACE,
               },
@@ -2408,10 +2612,10 @@ function ChatScreen({ userName }: { userName: string }) {
                 returnKeyType="send"
                 submitBehavior="submit"
                 blurOnSubmit={false}
-                multiline={false}
+                multiline
                 style={[
                   styles.chatComposerInput,
-                  { color: theme.text },
+                  { color: theme.text, maxHeight: 100 },
                   (() => {
                     const sample = input || talkUi.placeholder;
                     const m = localeTextMetrics(sample, {
@@ -2448,7 +2652,7 @@ function ChatScreen({ userName }: { userName: string }) {
               </View>
             ) : null}
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </TopChrome>
 
       <TalkLanguageSheet
@@ -2499,7 +2703,16 @@ function ChatScreen({ userName }: { userName: string }) {
           if (bubbleMenuMsg?.role === 'user') editUserMessage(bubbleMenuMsg);
         }}
         onDelete={() => {
-          if (bubbleMenuMsg?.role === 'user') deleteUserMessage(bubbleMenuMsg);
+          if (!bubbleMenuMsg) return;
+          if (bubbleMenuMsg.role === 'user') {
+            deleteUserMessage(bubbleMenuMsg);
+            return;
+          }
+          setMessages((prev) => {
+            const next = prev.filter((m) => m.id !== bubbleMenuMsg.id);
+            setHistory(rebuildApiHistory(next));
+            return next;
+          });
         }}
         onRemember={
           bubbleMenuMsg?.role === 'bot'
@@ -2579,17 +2792,19 @@ function NavBar() {
   const insets = useSafeAreaInsets();
   const theme = useCircadianTheme();
   const { screen, navigate } = useAppNav();
+  const { t: ui, locale } = useUiCopy();
+  const myanmarNav = locale === 'my';
   const activeKey = screen;
   const tabMeta: Record<MainScreenKey, { label: string; Icon: LucideIcon }> = {
-    home: { label: 'Home', Icon: Home },
-    checkin: { label: 'Check-in', Icon: Heart },
-    today: { label: 'My Day', Icon: CalendarDays },
-    talk: { label: 'Talk', Icon: MessageCircle },
-    journal: { label: 'Journal', Icon: BookOpen },
-    insights: { label: 'Insights', Icon: TrendingUp },
-    memoryledger: { label: 'Memory', Icon: Brain },
-    settings: { label: 'Settings', Icon: Settings },
-    oracle: { label: 'Mira', Icon: Sparkles }, // legacy screen key: oracle
+    home: { label: ui('nav.tab.home'), Icon: Home },
+    checkin: { label: ui('nav.tab.checkin'), Icon: Heart },
+    today: { label: ui('nav.tab.today'), Icon: CalendarDays },
+    talk: { label: ui('nav.tab.talk'), Icon: MessageCircle },
+    journal: { label: ui('nav.tab.journal'), Icon: BookOpen },
+    insights: { label: ui('insights.title'), Icon: TrendingUp },
+    memoryledger: { label: ui('memory.title'), Icon: Brain },
+    settings: { label: ui('settings.title'), Icon: Settings },
+    oracle: { label: ui('nav.mira'), Icon: Sparkles }, // legacy screen key: oracle
   };
   return (
     <View
@@ -2608,7 +2823,7 @@ function NavBar() {
       ]}
     >
       {TAB_BAR_TAB_ORDER.map((key) => {
-        const t = tabMeta[key];
+        const tab = tabMeta[key];
         const isActive = activeKey === key;
         return (
           <Pressable
@@ -2617,11 +2832,15 @@ function NavBar() {
               void hapticLight();
               navigate(key);
             }}
-            style={({ pressed }) => [styles.navItem, pressTabStyle(theme, pressed)]}
+            style={({ pressed }) => [
+              styles.navItem,
+              myanmarNav && styles.navItemMyanmar,
+              pressTabStyle(theme, pressed),
+            ]}
           >
             {({ pressed }) => (
               <>
-                <t.Icon
+                <tab.Icon
                   size={20}
                   color={
                     isActive || pressed ? theme.accent : getCircadianIconColor(theme, 'secondary')
@@ -2631,14 +2850,16 @@ function NavBar() {
                 <Text
                   style={[
                     styles.navLabel,
+                    myanmarNav && styles.navLabelMyanmar,
                     { color: theme.secondaryText },
                     (isActive || pressed) && [styles.navLabelActive, { color: theme.accent }],
                   ]}
-                  numberOfLines={2}
-                  adjustsFontSizeToFit={Platform.OS === 'ios'}
+                  numberOfLines={myanmarNav ? 2 : 2}
+                  allowFontScaling
+                  adjustsFontSizeToFit={Platform.OS === 'ios' && !myanmarNav}
                   minimumFontScale={Platform.OS === 'ios' ? 0.82 : undefined}
                 >
-                  {t.label}
+                  {tab.label}
                 </Text>
               </>
             )}
@@ -2691,6 +2912,12 @@ function Root() {
       }
     }
     bootstrap();
+  }, []);
+
+  useEffect(() => {
+    return subscribeDailyReminderResponses(() => {
+      setScreen('checkin');
+    });
   }, []);
 
   useEffect(() => {
@@ -2789,9 +3016,11 @@ export default function App() {
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <CircadianThemeProvider>
-        <DesktopSanctuaryFrame>
-          <Root />
-        </DesktopSanctuaryFrame>
+        <UiCopyProvider>
+          <DesktopSanctuaryFrame>
+            <Root />
+          </DesktopSanctuaryFrame>
+        </UiCopyProvider>
       </CircadianThemeProvider>
     </SafeAreaProvider>
   );
@@ -3839,13 +4068,15 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   chatHeroTaglineInline: {
-    fontSize: 12,
+    fontSize: 16,
+    lineHeight: 21,
     fontWeight: '500',
     marginTop: 1,
     letterSpacing: 0.1,
   },
   chatHeroTagline: {
-    fontSize: 13,
+    fontSize: 17,
+    lineHeight: 22,
     fontWeight: '500',
     marginTop: 2,
     letterSpacing: 0.2,
@@ -3926,9 +4157,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   chatHeroSubCompact: {
-    fontSize: 12,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: '600',
-    marginTop: 2,
+    marginTop: 3,
     letterSpacing: 0.35,
     flexShrink: 1,
   },
@@ -4234,6 +4466,22 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 1,
   },
+  navItemMyanmar: {
+    gap: 4,
+    minHeight: 52,
+    paddingTop: 6,
+    paddingBottom: 4,
+    justifyContent: 'flex-start',
+  },
   navLabel: { fontSize: 11, lineHeight: 13, textAlign: 'center', fontWeight: '500' },
+  navLabelMyanmar: {
+    fontSize: 11,
+    lineHeight: 20,
+    paddingTop: 3,
+    paddingBottom: 1,
+    fontFamily: undefined,
+    fontWeight: '500',
+    letterSpacing: 0,
+  },
   navLabelActive: { fontWeight: '700' },
 });

@@ -11,12 +11,14 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { Check } from 'lucide-react-native';
 import { OB_MOODS, type Mood } from '../../constants/obMoods';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { moodCheckInCardShadow, moodCheckInGlass, selectableLabelColor } from '../../theme/glassSurfaces';
 import { rgba } from '../../theme/tokens';
 import { MoodIconBadge } from './MoodIcon';
 import { hapticLight } from '../../utils/haptics';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const SELECT_DURATION = 250;
 
@@ -38,15 +40,16 @@ function moodSelectionGlowStyle(accent: string, selected: boolean): ViewStyle {
     ios: {
       shadowColor: accent,
       shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.72,
-      shadowRadius: 16,
+      shadowOpacity: 0.45,
+      shadowRadius: 10,
     },
-    android: { elevation: 8 },
+    android: { elevation: 5 },
     default: {},
   }) as ViewStyle;
 }
 
 const MOOD_CARD_HEIGHT = 92;
+const MOOD_CARD_HEIGHT_MYANMAR = 112;
 
 function MoodCheckInGlassCard({
   mood,
@@ -67,22 +70,31 @@ function MoodCheckInGlassCard({
   showSelectionGlow: boolean;
   vividSelection?: boolean;
 }) {
+  const { t, locale } = useUiCopy();
+  const myanmar = locale === 'my';
+  const cardHeight = myanmar ? MOOD_CARD_HEIGHT_MYANMAR : MOOD_CARD_HEIGHT;
   const useBlur = Platform.OS === 'ios';
   const accent = mood.accentColor ?? mood.iconColor ?? '#A78BFA';
+  const moodKey = `mood.${mood.label.toLowerCase()}`;
+  const localizedLabel = t(moodKey);
+  const displayLabel = localizedLabel === moodKey ? mood.label : localizedLabel;
+  const descKey = `mood.desc.${mood.label.toLowerCase()}`;
+  const localizedDesc = t(descKey);
+  const displayDesc = localizedDesc === descKey ? mood.desc : localizedDesc;
   const selectionFillAlpha = vividSelection
     ? theme.isDark
-      ? 0.32
-      : 0.26
-    : theme.isDark
       ? 0.28
-      : 0.2;
+      : 0.2
+    : theme.isDark
+      ? 0.22
+      : 0.14;
   const selectionBgAlpha = vividSelection
     ? theme.isDark
-      ? 0.18
-      : 0.14
+      ? 0.16
+      : 0.12
     : theme.isDark
-      ? 0.14
-      : 0.1;
+      ? 0.12
+      : 0.08;
   const scale = useRef(new Animated.Value(selected && animateSelection ? 1.02 : 1)).current;
 
   useEffect(() => {
@@ -99,15 +111,12 @@ function MoodCheckInGlassCard({
     <View
       style={[
         styles.shell,
+        { height: cardHeight, minHeight: cardHeight, overflow: myanmar ? 'visible' : 'hidden' },
         moodCheckInCardShadow(selected),
         moodSelectionGlowStyle(accent, selected && showSelectionGlow),
         {
-          borderColor: selected
-            ? showSelectionGlow
-              ? accent
-              : moodCheckInGlass.borderSelected
-            : moodCheckInGlass.border,
-          borderWidth: selected && showSelectionGlow ? 2 : 1,
+          borderColor: selected ? accent : moodCheckInGlass.border,
+          borderWidth: selected ? 2 : 1,
         },
       ]}
     >
@@ -118,7 +127,7 @@ function MoodCheckInGlassCard({
           style={StyleSheet.absoluteFillObject}
         />
       ) : null}
-      {selected && showSelectionGlow ? (
+      {selected ? (
         <View
           pointerEvents="none"
           style={[
@@ -134,48 +143,44 @@ function MoodCheckInGlassCard({
           StyleSheet.absoluteFillObject,
           {
             backgroundColor: selected
-              ? showSelectionGlow
-                ? rgba(accent, selectionBgAlpha)
-                : moodCheckInGlass.backgroundSelected
+              ? rgba(accent, selectionBgAlpha)
               : moodCheckInGlass.background,
           },
         ]}
       />
-      <View style={styles.content}>
+      <View style={[styles.content, { height: cardHeight }, myanmar && styles.contentMyanmar]}>
         <MoodIconBadge mood={mood} variant="full" active={selected} />
-        <View style={styles.cardText}>
-          <Text style={[styles.cardTitle, { color: selectableLabelColor(selected, theme.text) }]} numberOfLines={1}>
-            {mood.label}
+        <View style={[styles.cardText, myanmar && styles.cardTextMyanmar]}>
+          <Text
+            style={[
+              styles.cardTitle,
+              myanmar && styles.cardTitleMyanmar,
+              { color: selectableLabelColor(selected, theme.text) },
+            ]}
+            numberOfLines={myanmar ? 2 : 1}
+          >
+            {displayLabel}
           </Text>
-          <Text style={[styles.cardDesc, { color: theme.mutedText }]} numberOfLines={2}>
-            {mood.desc}
+          <Text
+            style={[styles.cardDesc, myanmar && styles.cardDescMyanmar, { color: theme.mutedText }]}
+            numberOfLines={2}
+          >
+            {displayDesc}
           </Text>
         </View>
+        {selected ? (
+          <View style={[styles.checkBadge, { backgroundColor: accent }]} accessibilityElementsHidden>
+            <Check size={11} color="#FFFFFF" strokeWidth={3} />
+          </View>
+        ) : null}
       </View>
     </View>
   );
 
-  const cardBody = (
-    <View style={styles.cardWrap}>
-      {selected && showSelectionGlow ? (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.selectionGlowRing,
-            {
-              borderColor: rgba(accent, 0.55),
-              shadowColor: accent,
-            },
-            moodSelectionGlowStyle(accent, true),
-          ]}
-        />
-      ) : null}
-      {animateSelection ? (
-        <Animated.View style={{ transform: [{ scale }] }}>{shell}</Animated.View>
-      ) : (
-        shell
-      )}
-    </View>
+  const cardBody = animateSelection ? (
+    <Animated.View style={{ transform: [{ scale }] }}>{shell}</Animated.View>
+  ) : (
+    shell
   );
 
   return (
@@ -187,7 +192,7 @@ function MoodCheckInGlassCard({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      accessibilityLabel={`${mood.label}. ${mood.desc}`}
+      accessibilityLabel={`${displayLabel}. ${displayDesc}`}
     >
       {cardBody}
     </Pressable>
@@ -205,7 +210,8 @@ export function MoodPicker({
   const { width: windowWidth } = useWindowDimensions();
   const cardWidth = (windowWidth - horizontalPadding * 2 - 14) / 2;
   const shouldAnimate = animateSelection || variant === 'checkin';
-  const showSelectionGlow = variant === 'checkin' || variant === 'onboarding';
+  // Onboarding: single accent border + soft tint + checkmark (no glow ring).
+  const showSelectionGlow = variant === 'checkin';
   const vividSelection = variant === 'onboarding';
 
   return (
@@ -250,19 +256,6 @@ const styles = StyleSheet.create({
     opacity: 0.94,
     transform: [{ scale: 0.985 }],
   },
-  cardWrap: {
-    position: 'relative',
-  },
-  selectionGlowRing: {
-    ...StyleSheet.absoluteFillObject,
-    margin: -5,
-    borderRadius: moodCheckInGlass.radius + 5,
-    borderWidth: 1.5,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 14,
-    elevation: 10,
-  },
   selectionGlowFill: {
     borderRadius: moodCheckInGlass.radius,
   },
@@ -282,7 +275,32 @@ const styles = StyleSheet.create({
     zIndex: 1,
     height: MOOD_CARD_HEIGHT,
   },
+  contentMyanmar: {
+    paddingTop: 14,
+    paddingBottom: 10,
+    paddingRight: 22,
+  },
   cardText: { flex: 1, minWidth: 0, paddingTop: 3 },
+  cardTextMyanmar: { paddingTop: 5 },
   cardTitle: { fontSize: 12, fontWeight: '700', marginBottom: 5, lineHeight: 16, flexShrink: 1 },
+  cardTitleMyanmar: {
+    fontSize: 12,
+    lineHeight: 22,
+    paddingTop: 3,
+    marginBottom: 4,
+    fontFamily: undefined,
+  },
   cardDesc: { fontSize: 11, lineHeight: 16, flexShrink: 1 },
+  cardDescMyanmar: { lineHeight: 20, fontFamily: undefined },
+  checkBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
 });

@@ -18,9 +18,11 @@ import { loadSettings } from '../../utils/settingsStorage';
 import { hapticLight } from '../../utils/haptics';
 import { useLayoutInsets } from '../../utils/safeAreaInsets';
 import { PasscodeEntry } from './PasscodeEntry';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 export function PasscodeLockScreen({ onUnlock }: { onUnlock: () => void }) {
   const theme = useCircadianTheme();
+  const { t } = useUiCopy();
   const { bottom: bottomInset } = useLayoutInsets();
   const [error, setError] = useState<string | null>(null);
   const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
@@ -75,7 +77,7 @@ export function PasscodeLockScreen({ onUnlock }: { onUnlock: () => void }) {
       onUnlock();
       return;
     }
-    setError('Incorrect passcode. Try again.');
+    setError(t('passcode.incorrectRetry'));
   };
 
   return (
@@ -99,8 +101,8 @@ export function PasscodeLockScreen({ onUnlock }: { onUnlock: () => void }) {
             <Text style={[styles.brand, { color: theme.accent }]}>SANCTUARY</Text>
             <PasscodeEntry
               theme={theme}
-              title="Enter passcode"
-              subtitle="Your conversations and journal stay private on this device."
+              title={t('passcode.enter')}
+              subtitle={t('passcode.subtitle')}
               error={error}
               onComplete={(pin) => void handleComplete(pin)}
               onPinChange={() => setError(null)}
@@ -121,7 +123,7 @@ export function PasscodeLockScreen({ onUnlock }: { onUnlock: () => void }) {
                 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel={`Unlock with ${biometricLabel}`}
+              accessibilityLabel={t('passcode.unlockBiometric', { label: biometricLabel })}
               accessibilityState={{ disabled: biometricBusy, busy: biometricBusy }}
             >
               {biometricBusy ? (
@@ -130,7 +132,9 @@ export function PasscodeLockScreen({ onUnlock }: { onUnlock: () => void }) {
                 <ScanFace size={20} color={theme.accent} strokeWidth={2.4} />
               )}
               <Text style={[styles.biometricText, { color: theme.text }]}>
-                {biometricBusy ? `Opening ${biometricLabel}…` : `Unlock with ${biometricLabel}`}
+                {biometricBusy
+                  ? t('passcode.unlocking', { label: biometricLabel })
+                  : t('passcode.unlockBiometric', { label: biometricLabel })}
               </Text>
             </Pressable>
           ) : null}

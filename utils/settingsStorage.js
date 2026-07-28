@@ -5,7 +5,8 @@ import { DEFAULT_MIRA_LANGUAGE, normalizeMiraLanguage } from './miraLanguage.js'
 export const SETTINGS_STORAGE_KEY = 'emoAppSettings';
 
 export const DEFAULT_SETTINGS = {
-  notificationsEnabled: true,
+  /** Off until the user enables and permission + schedule succeed. */
+  notificationsEnabled: false,
   notificationTime: '8:00 PM',
   timezone: 'US Eastern',
   circadianAuto: true,

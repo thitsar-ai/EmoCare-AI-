@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { moodCheckInCardShadow, moodCheckInGlass, selectableLabelColor } from '../../theme/glassSurfaces';
 import { hapticLight } from '../../utils/haptics';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const SERIF = 'Georgia';
 
@@ -12,22 +13,26 @@ type Props = {
   onChange: (value: number) => void;
 };
 
-const INTENSITY_LABELS: Record<number, string> = {
-  1: 'Whisper',
-  2: 'Soft',
-  3: 'Present',
-  4: 'Strong',
-  5: 'Deep',
+const INTENSITY_KEYS: Record<number, string> = {
+  1: 'checkin.intensityWhisper',
+  2: 'checkin.intensitySoft',
+  3: 'checkin.intensityPresent',
+  4: 'checkin.intensityStrong',
+  5: 'checkin.intensityDeep',
 };
 
 /** 1–5 feeling strength — shown after mood selection. */
 export function FeelingIntensityPicker({ theme, value, onChange }: Props) {
+  const { t } = useUiCopy();
+  const intensityLabel = t(INTENSITY_KEYS[value]);
+
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.title, { color: theme.text }]}>How strong is this feeling today?</Text>
+      <Text style={[styles.title, { color: theme.text }]}>{t('checkin.intensityTitle')}</Text>
       <View style={styles.row}>
         {[1, 2, 3, 4, 5].map((level) => {
           const active = value === level;
+          const label = t(INTENSITY_KEYS[level]);
           return (
             <Pressable
               key={level}
@@ -37,7 +42,7 @@ export function FeelingIntensityPicker({ theme, value, onChange }: Props) {
               }}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`Intensity ${level}, ${INTENSITY_LABELS[level]}`}
+              accessibilityLabel={`Intensity ${level}, ${label}`}
               style={[
                 styles.pill,
                 moodCheckInCardShadow(active),
@@ -56,7 +61,7 @@ export function FeelingIntensityPicker({ theme, value, onChange }: Props) {
           );
         })}
       </View>
-      <Text style={[styles.hint, { color: theme.mutedText }]}>{INTENSITY_LABELS[value]}</Text>
+      <Text style={[styles.hint, { color: theme.mutedText }]}>{intensityLabel}</Text>
     </View>
   );
 }

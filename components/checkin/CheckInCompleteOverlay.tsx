@@ -5,6 +5,7 @@ import type { CircadianTheme } from '../../theme/circadianTheme';
 import { BRAND_CTA_GRADIENT, tokens, rgba } from '../../theme/tokens';
 import { primaryButtonInner, primaryButtonLabel, primaryButtonShell } from '../../theme/primaryButton';
 import { hapticMedium } from '../../utils/haptics';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const SERIF = 'Georgia';
 
@@ -24,6 +25,7 @@ export function CheckInCompleteOverlay({
   onTalkWithEmo,
   onContinue,
 }: Props) {
+  const { t } = useUiCopy();
   const fade = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(16)).current;
 
@@ -52,18 +54,20 @@ export function CheckInCompleteOverlay({
 
   if (!visible) return null;
 
+  const moodKey = moodLabel?.trim() ? `mood.${moodLabel.trim().toLowerCase()}` : null;
+  const moodDisplay = moodKey ? t(moodKey) : '';
   const talkHint = moodLabel?.trim()
-    ? `You checked in as ${moodLabel.trim()}. Would you like to talk about this with Emo?`
-    : 'Would you like to talk about this with Emo?';
+    ? t('checkin.talkHintNamed', { mood: moodDisplay === moodKey ? moodLabel.trim() : moodDisplay })
+    : t('checkin.talkHint');
 
   return (
     <Animated.View style={[styles.backdrop, { opacity: fade }]}>
       <Animated.View style={[styles.cardWrap, { opacity: fade, transform: [{ translateY: rise }] }]}>
         <View style={[styles.card, { borderColor: tokens.border.standard }]}>
           <Text style={styles.sparkle}>✨</Text>
-          <Text style={[styles.completeTitle, { color: theme.text }]}>Check-In Complete</Text>
+          <Text style={[styles.completeTitle, { color: theme.text }]}>{t('checkin.completeTitle')}</Text>
           <Text style={[styles.completeSub, { color: theme.secondaryText }]}>
-            You took a moment for yourself today.
+            {t('checkin.completeSub')}
           </Text>
           <View
             style={[
@@ -77,7 +81,7 @@ export function CheckInCompleteOverlay({
           <Pressable
             onPress={onTalkWithEmo}
             accessibilityRole="button"
-            accessibilityLabel="Talk about this with Emo"
+            accessibilityLabel={t('checkin.talkWithEmo')}
           >
             <LinearGradient
               colors={[...BRAND_CTA_GRADIENT]}
@@ -85,7 +89,7 @@ export function CheckInCompleteOverlay({
               end={{ x: 1, y: 0.5 }}
               style={[primaryButtonShell, primaryButtonInner, styles.continueBtn]}
             >
-              <Text style={[primaryButtonLabel, styles.continueText]}>Talk with Emo</Text>
+              <Text style={[primaryButtonLabel, styles.continueText]}>{t('checkin.talkWithEmo')}</Text>
             </LinearGradient>
           </Pressable>
 
@@ -93,10 +97,10 @@ export function CheckInCompleteOverlay({
             onPress={onContinue}
             style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.75 }]}
             accessibilityRole="button"
-            accessibilityLabel="Return to Sanctuary"
+            accessibilityLabel={t('checkin.returnSanctuary')}
           >
             <Text style={[styles.secondaryText, { color: theme.secondaryText }]}>
-              Return to Sanctuary
+              {t('checkin.returnSanctuary')}
             </Text>
           </Pressable>
         </View>

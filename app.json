@@ -31,7 +31,8 @@
         "backgroundColor": "#F4ECFB"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.tristarinter.emocare"
+      "package": "com.tristarinter.emocare",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png",

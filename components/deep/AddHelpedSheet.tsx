@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -46,7 +48,8 @@ export function AddHelpedSheet({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Pressable style={styles.flex} onPress={onClose}>
         <View style={styles.anchor}>
           <Pressable
             style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
@@ -139,12 +142,14 @@ export function AddHelpedSheet({
           </Pressable>
         </View>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  flex: { flex: 1, justifyContent: 'flex-end' },
   anchor: { maxHeight: '88%' },
   sheet: {
     borderTopLeftRadius: 22,
@@ -153,7 +158,6 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: '100%',
   },
-  flex: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   title: { fontSize: 18, fontWeight: '700' },
   hint: { fontSize: 13, lineHeight: 19, marginBottom: 14 },

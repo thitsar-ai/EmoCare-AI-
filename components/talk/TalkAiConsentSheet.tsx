@@ -5,11 +5,7 @@ import { openPrivacyPolicy } from '../../constants/legalLinks';
 import { tokens } from '../../theme/tokens';
 import { PrimaryActionButton } from '../shared/PrimaryActionButton';
 import { SERIF } from '../shared/CircadianHeroGlow';
-
-const TITLE = 'Before You Talk with Emo';
-
-const BODY =
-  "Your messages are processed by Anthropic's AI to generate Emo's replies. Only your chat messages are transmitted — nothing else. Messages are not stored long-term on our servers. Your journal, check-ins, and Memory Ledger stay on your device only.";
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 type Props = {
   visible: boolean;
@@ -21,6 +17,8 @@ const CONSENT_CARD_BG = '#FFFCFA';
 
 /** One-time disclosure before the first AI session — Talk, Oracle, etc. (Apple 5.1.1i / 5.1.2i). */
 export function TalkAiConsentSheet({ visible, theme, onConsent }: Props) {
+  const { t } = useUiCopy();
+
   return (
     <Modal
       visible={visible}
@@ -39,11 +37,11 @@ export function TalkAiConsentSheet({ visible, theme, onConsent }: Props) {
             },
           ]}
         >
-          <Text style={[styles.title, { color: tokens.text.primary }]}>{TITLE}</Text>
-          <Text style={[styles.body, { color: tokens.text.secondary }]}>{BODY}</Text>
+          <Text style={[styles.title, { color: tokens.text.primary }]}>{t('consent.title')}</Text>
+          <Text style={[styles.body, { color: tokens.text.secondary }]}>{t('consent.body')}</Text>
 
           <PrimaryActionButton
-            label="I Understand — Start Talking"
+            label={t('consent.continue')}
             onPress={onConsent}
             theme={theme}
             style={styles.button}
@@ -53,11 +51,11 @@ export function TalkAiConsentSheet({ visible, theme, onConsent }: Props) {
             onPress={() => openPrivacyPolicy()}
             hitSlop={10}
             accessibilityRole="link"
-            accessibilityLabel="View Privacy Policy"
+            accessibilityLabel={t('consent.privacyLink')}
             style={({ pressed }) => [styles.privacyLink, pressed && { opacity: 0.75 }]}
           >
             <Text style={[styles.privacyText, { color: tokens.brand.accent }]}>
-              View Privacy Policy
+              {t('consent.privacyLink')}
             </Text>
           </Pressable>
         </View>

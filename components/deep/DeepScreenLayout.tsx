@@ -31,7 +31,7 @@ export const TODAY_LIGHT = {
 } as const;
 
 export const SERIF = 'Georgia';
-const NAV_CONTENT_HEIGHT = 72;
+const NAV_CONTENT_HEIGHT = 80;
 
 export function DeepGlassCard({
   children,

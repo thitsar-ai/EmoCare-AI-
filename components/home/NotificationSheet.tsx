@@ -3,8 +3,9 @@ import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
-import { loadSettings } from '../../utils/settingsStorage';
+import { getDailyReminderUiCopy } from '../../utils/dailyReminderCopy';
 import { syncDailyReminder } from '../../utils/dailyReminders';
+import { loadSettings } from '../../utils/settingsStorage';
 
 export const NOTIFICATION_TIME_OPTIONS = ['8:00 AM', '12:00 PM', '6:00 PM', '8:00 PM'];
 
@@ -19,15 +20,18 @@ export function NotificationSheet({
   onClose: () => void;
   onSaved?: (enabled: boolean, time: string) => void;
 }) {
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(false);
   const [time, setTime] = useState('8:00 PM');
   const [saving, setSaving] = useState(false);
+  const [locale, setLocale] = useState('auto');
+  const ui = getDailyReminderUiCopy(locale);
 
   useEffect(() => {
     if (!visible) return;
     void loadSettings().then((s) => {
-      setEnabled(s.notificationsEnabled !== false);
+      setEnabled(s.notificationsEnabled === true);
       setTime(s.notificationTime || '8:00 PM');
+      setLocale(s.chatLanguage || 'auto');
     });
   }, [visible]);
 
@@ -37,6 +41,7 @@ export function NotificationSheet({
       const result = await syncDailyReminder({
         enabled,
         time,
+        locale,
         requestPermission: true,
         alertOnDenied: true,
       });
@@ -63,15 +68,13 @@ export function NotificationSheet({
                 <Bell size={18} color={theme.accent} strokeWidth={2.2} />
               </View>
               <View style={styles.flex}>
-                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>Daily reminders</Text>
-                <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>
-                  A gentle local notification once a day — stored and scheduled on this device only.
-                </Text>
+                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>{ui.sheetTitle}</Text>
+                <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>{ui.sheetHint}</Text>
               </View>
             </View>
 
             <View style={[styles.toggleRow, { borderColor: DARK_MENU_SURFACE.border }]}>
-              <Text style={[styles.toggleLabel, { color: DARK_MENU_SURFACE.text }]}>Reminders on</Text>
+              <Text style={[styles.toggleLabel, { color: DARK_MENU_SURFACE.text }]}>{ui.toggleLabel}</Text>
               <Switch
                 value={enabled}
                 onValueChange={setEnabled}
@@ -82,7 +85,7 @@ export function NotificationSheet({
 
             {enabled ? (
               <>
-                <Text style={[styles.timeLabel, { color: DARK_MENU_SURFACE.mutedText }]}>Reminder time</Text>
+                <Text style={[styles.timeLabel, { color: DARK_MENU_SURFACE.mutedText }]}>{ui.timeLabel}</Text>
                 <View style={styles.timeRow}>
                   {NOTIFICATION_TIME_OPTIONS.map((option) => {
                     const selected = time === option;
@@ -97,6 +100,9 @@ export function NotificationSheet({
                             backgroundColor: selected ? `${theme.accent}22` : DARK_MENU_SURFACE.card,
                           },
                         ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={option}
                       >
                         <Text
                           style={{
@@ -115,8 +121,8 @@ export function NotificationSheet({
             ) : null}
 
             <View style={styles.actions}>
-              <Pressable onPress={onClose} style={styles.ghostBtn}>
-                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>Cancel</Text>
+              <Pressable onPress={onClose} style={styles.ghostBtn} accessibilityRole="button">
+                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>{ui.cancel}</Text>
               </Pressable>
               <Pressable
                 onPress={() => void handleSave()}
@@ -125,8 +131,10 @@ export function NotificationSheet({
                   styles.saveBtn,
                   { backgroundColor: tokens.brand.ctaStart, opacity: saving ? 0.7 : 1 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={ui.save}
               >
-                <Text style={styles.saveBtnText}>Save</Text>
+                <Text style={styles.saveBtnText}>{ui.save}</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -140,7 +148,7 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 24 },
   anchor: { width: '100%' },
   sheet: { borderRadius: 18, borderWidth: 1, padding: 20, gap: 4 },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   headerRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
   iconWrap: {
     width: 40,
@@ -158,8 +166,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 12,
+    gap: 12,
   },
-  toggleLabel: { fontSize: 15, fontWeight: '600' },
+  toggleLabel: { fontSize: 15, fontWeight: '600', flex: 1, flexWrap: 'wrap' },
   timeLabel: {
     fontSize: 11,
     fontWeight: '700',

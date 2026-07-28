@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Pencil, Sparkles, Trash2, X } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
@@ -93,7 +93,8 @@ export function HelpedActivitySheet({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Pressable style={styles.flex} onPress={onClose}>
         <View style={styles.anchor}>
           <Pressable
             style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
@@ -191,12 +192,14 @@ export function HelpedActivitySheet({
           </Pressable>
         </View>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  flex: { flex: 1, justifyContent: 'flex-end' },
   anchor: { paddingHorizontal: 16, paddingBottom: 28 },
   sheet: { borderRadius: 22, borderWidth: 1, padding: 22, gap: 8 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },

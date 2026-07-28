@@ -12,12 +12,15 @@ import {
 } from '../../utils/dailyReflections';
 import { SanctuaryGlassSurface } from '../shared/SanctuaryGlassSurface';
 import { isNarrowPhone } from '../../utils/layoutBreakpoints';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const SERIF = 'Georgia';
 
 export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
   const { width } = useWindowDimensions();
   const narrow = isNarrowPhone(width);
+  const { t, locale } = useUiCopy();
+  const myanmar = locale === 'my';
   const [reflection, setReflection] = useState<DailyReflection | null>(null);
   const [rotationOffset, setRotationOffset] = useState(0);
   const labelAccent = getSanctuaryLabelAccent(theme);
@@ -31,22 +34,33 @@ export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
 
   const handleRotate = useCallback(async () => {
     void hapticLight();
+    if (myanmar) return;
     const next = await rotateDailyReflection(rotationOffset);
     setReflection(next.reflection);
     setRotationOffset(next.rotationOffset);
-  }, [rotationOffset]);
+  }, [myanmar, rotationOffset]);
 
-  if (!reflection) return null;
+  const mainText = myanmar ? t('home.reflectionMain') : reflection?.text;
+  const subText = myanmar ? t('home.reflectionSupporting') : reflection?.sub;
+  if (!mainText) return null;
 
   return (
     <View
       accessibilityRole="text"
-      accessibilityLabel={`Today's reflection. ${reflection.text}${reflection.sub ? ` ${reflection.sub}` : ''}`}
+      accessibilityLabel={`${t('home.todaysReflection')}. ${mainText}${subText ? ` ${subText}` : ''}`}
     >
       <SanctuaryGlassSurface variant="lavender" style={styles.card}>
         <View style={styles.header}>
           <Sparkles size={12} color={theme.accent} strokeWidth={2.2} />
-          <Text style={[styles.title, { color: labelAccent }]}>Today's Reflection</Text>
+          <Text
+            style={[
+              styles.title,
+              myanmar && styles.titleMy,
+              { color: labelAccent },
+            ]}
+          >
+            {t('home.todaysReflection')}
+          </Text>
         </View>
 
         <View style={styles.body}>
@@ -54,13 +68,22 @@ export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
             style={[
               styles.mainLine,
               narrow && styles.mainLineNarrow,
+              myanmar && styles.mainLineMy,
               { color: theme.text },
             ]}
           >
-            {reflection.text}
+            {mainText}
           </Text>
-          {reflection.sub ? (
-            <Text style={[styles.subLine, { color: theme.secondaryText }]}>{reflection.sub}</Text>
+          {subText ? (
+            <Text
+              style={[
+                styles.subLine,
+                myanmar && styles.subLineMy,
+                { color: theme.secondaryText },
+              ]}
+            >
+              {subText}
+            </Text>
           ) : null}
         </View>
 
@@ -68,11 +91,19 @@ export function DailyReflectionHero({ theme }: { theme: CircadianTheme }) {
           onPress={() => void handleRotate()}
           hitSlop={12}
           style={({ pressed }) => [styles.rotateBtn, pressLinkStyle(theme, pressed)]}
-          accessibilityLabel="Refresh reflection"
+          accessibilityLabel={t('home.refreshReflection')}
           accessibilityRole="button"
         >
           <RefreshCw size={11} color={theme.secondaryText} strokeWidth={2.4} />
-          <Text style={[styles.rotateLabel, { color: theme.secondaryText }]}>Refresh Reflection</Text>
+          <Text
+            style={[
+              styles.rotateLabel,
+              myanmar && styles.rotateLabelMy,
+              { color: theme.secondaryText },
+            ]}
+          >
+            {t('home.refreshReflection')}
+          </Text>
         </Pressable>
       </SanctuaryGlassSurface>
     </View>
@@ -102,6 +133,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     textTransform: 'uppercase',
   },
+  titleMy: {
+    letterSpacing: 0,
+    textTransform: 'none',
+    fontSize: 13,
+    lineHeight: 20,
+  },
   body: {
     alignSelf: 'stretch',
     alignItems: 'center',
@@ -120,6 +157,12 @@ const styles = StyleSheet.create({
     fontSize: 21,
     lineHeight: 30,
   },
+  mainLineMy: {
+    fontFamily: undefined,
+    letterSpacing: 0,
+    fontSize: 18,
+    lineHeight: 30,
+  },
   subLine: {
     fontFamily: SERIF,
     fontStyle: 'italic',
@@ -128,6 +171,13 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     textAlign: 'center',
     paddingHorizontal: 8,
+  },
+  subLineMy: {
+    fontFamily: undefined,
+    fontStyle: 'normal',
+    letterSpacing: 0,
+    fontSize: 14,
+    lineHeight: 24,
   },
   rotateBtn: {
     flexDirection: 'row',
@@ -142,5 +192,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.4,
     textAlign: 'center',
+  },
+  rotateLabelMy: {
+    letterSpacing: 0,
+    lineHeight: 20,
   },
 });

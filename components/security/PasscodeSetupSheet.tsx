@@ -5,7 +5,7 @@ import type { CircadianTheme } from '../../theme/circadianTheme';
 import { DARK_MENU_SURFACE, MENU_SOLID } from '../../theme/tokens';
 import { clearPasscode, setPasscode, verifyPasscode } from '../../utils/passcodeLock';
 import { PasscodeEntry } from './PasscodeEntry';
-
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 export type PasscodeSetupMode = 'create' | 'change' | 'disable';
 
@@ -26,6 +26,7 @@ export function PasscodeSetupSheet({
   onEnabled?: () => void;
   onDisabled?: () => void;
 }) {
+  const { t } = useUiCopy();
   const [step, setStep] = useState<Step>('entry');
   const [draftPin, setDraftPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function PasscodeSetupSheet({
   const handleVerify = async (pin: string) => {
     const ok = await verifyPasscode(pin);
     if (!ok) {
-      setError('Incorrect passcode.');
+      setError(t('passcode.incorrect'));
       return;
     }
     if (mode === 'disable') {
@@ -68,7 +69,7 @@ export function PasscodeSetupSheet({
 
   const handleConfirm = async (pin: string) => {
     if (pin !== draftPin) {
-      setError('Passcodes do not match.');
+      setError(t('passcode.mismatch'));
       setStep('entry');
       setDraftPin('');
       return;
@@ -80,26 +81,26 @@ export function PasscodeSetupSheet({
 
   const title =
     step === 'verify'
-      ? 'Enter current passcode'
+      ? t('passcode.verifyCurrent')
       : step === 'confirm'
-        ? 'Confirm passcode'
+        ? t('passcode.confirm')
         : mode === 'change'
-          ? 'Choose new passcode'
-          : 'Create a passcode';
+          ? t('passcode.change')
+          : t('passcode.create');
 
   const subtitle =
     step === 'verify'
       ? mode === 'disable'
-        ? 'Enter your passcode to turn it off.'
-        : 'Verify your current passcode first.'
+        ? t('passcode.disableHint')
+        : t('passcode.changeVerifyHint')
       : step === 'confirm'
-        ? 'Enter the same 4 digits again.'
-        : 'Use 4 digits to lock EmoCare when you leave the app.';
+        ? t('passcode.confirmHint')
+        : t('passcode.createHint');
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <Pressable style={styles.overlayDismiss} onPress={handleClose} accessibilityLabel="Close" />
+        <Pressable style={styles.overlayDismiss} onPress={handleClose} accessibilityLabel={t('common.close')} />
         <View style={styles.anchor}>
           <View style={[styles.sheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}>
             <ScrollView
@@ -113,9 +114,11 @@ export function PasscodeSetupSheet({
                   <Lock size={18} color={theme.accent} strokeWidth={2.2} />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={[styles.sheetTitle, { color: DARK_MENU_SURFACE.text }]}>App passcode</Text>
+                  <Text style={[styles.sheetTitle, { color: DARK_MENU_SURFACE.text }]}>
+                    {t('settings.appPasscode')}
+                  </Text>
                   <Text style={[styles.sheetHint, { color: DARK_MENU_SURFACE.mutedText }]}>
-                    Stored securely on this device. EmoCare locks when you leave the app.
+                    {t('passcode.sheetHint')}
                   </Text>
                 </View>
               </View>
@@ -140,7 +143,9 @@ export function PasscodeSetupSheet({
               />
 
               <Pressable onPress={handleClose} style={styles.cancelBtn}>
-                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>Cancel</Text>
+                <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontWeight: '600' }}>
+                  {t('common.cancel')}
+                </Text>
               </Pressable>
             </ScrollView>
           </View>

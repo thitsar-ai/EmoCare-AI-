@@ -42,14 +42,16 @@ import {
 import { loadLatestMoodLabel } from '../../utils/insightsData';
 import { ScreenNavChrome, useAppNav, type MainScreenKey } from '../navigation/AppNavigation';
 import { hapticLight } from '../../utils/haptics';
+import { useKeyboardBottomInset } from '../../hooks/useKeyboardBottomInset';
 import {
   pressCardStyle,
   pressChipStyle,
   pressDotStyle,
   pressLinkStyle,
 } from '../../utils/pressFeedback';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
-const NAV_CONTENT_HEIGHT = 72;
+const NAV_CONTENT_HEIGHT = 80;
 const H_PAD = 22;
 const TEAL = '#2A9D8F';
 
@@ -120,6 +122,8 @@ function TaskCheckToggle({
 
 export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { t, locale } = useUiCopy();
+  const myanmarUi = locale === 'my';
   const insets = useSafeAreaInsets();
   const { setImmersiveChromeHidden } = useAppNav();
   const { height: windowHeight } = useWindowDimensions();
@@ -132,8 +136,6 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   const [categoryTouched, setCategoryTouched] = useState(false);
   const [adding, setAdding] = useState(false);
   const [inputHighlight, setInputHighlight] = useState(false);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const refresh = useCallback(async () => {
     const [todayTasks, mood] = await Promise.all([loadTodayTasks(), loadLatestMoodLabel()]);
@@ -145,25 +147,15 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
     void refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardOpen(true);
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-      setImmersiveChromeHidden(true);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardOpen(false);
-      setKeyboardHeight(0);
-      setImmersiveChromeHidden(false);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      setImmersiveChromeHidden(false);
-    };
-  }, [setImmersiveChromeHidden]);
+  const onKeyboardOpenChange = useCallback(
+    (open: boolean) => {
+      setImmersiveChromeHidden(open);
+    },
+    [setImmersiveChromeHidden],
+  );
+  const { keyboardOpen, keyboardHeight } = useKeyboardBottomInset({
+    onOpenChange: onKeyboardOpenChange,
+  });
 
   useEffect(() => {
     if (!newTitle.trim()) {
@@ -180,15 +172,41 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   const heroInsight = buildTodayHeroInsight(tasks, moodLabel);
   const gentleGrowth = buildTodayGentleGrowth(tasks);
   const emoReflection = buildEmoDailyNote(tasks, moodLabel);
-  const suggestions = useMemo(
-    () => pickIntentionSuggestions(tasks, moodLabel, hasTasks ? 3 : 4),
-    [tasks, moodLabel, hasTasks],
-  );
-  const todayLabel = new Date().toLocaleDateString('en-US', {
+  const suggestions = useMemo(() => {
+    const raw = pickIntentionSuggestions(tasks, moodLabel, hasTasks ? 3 : 4);
+    if (locale !== 'my') return raw;
+    const titleKey: Record<string, string> = {
+      'suggest-water': 'today.suggestWater',
+      'suggest-breathe': 'today.suggestBreathe',
+      'suggest-walk': 'today.suggestWalk',
+      'suggest-stretch': 'today.suggestStretch',
+    };
+    return raw.map((s) => ({
+      ...s,
+      title: titleKey[s.id] ? t(titleKey[s.id]) : s.title,
+    }));
+  }, [tasks, moodLabel, hasTasks, locale, t]);
+  const todayLabel = new Date().toLocaleDateString(locale === 'my' ? 'my-MM' : 'en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
+
+  const categoryLabel = useCallback(
+    (id: EnergyCategoryId) => {
+      if (locale !== 'my') return ENERGY_CATEGORIES[id]?.shortLabel || id;
+      const map: Record<EnergyCategoryId, string> = {
+        work: t('today.catWork'),
+        home: t('today.catHome'),
+        movement: t('today.catMovement'),
+        connect: t('today.catRelationships'),
+        care: t('today.catSelfCare'),
+        admin: t('today.catProject'),
+      };
+      return map[id] || ENERGY_CATEGORIES[id]?.shortLabel || id;
+    },
+    [locale, t],
+  );
 
   const inferredCategory = newTitle.trim() ? inferTaskCategory(newTitle) : null;
   const labelAccent = getSanctuaryLabelAccent(theme);
@@ -198,6 +216,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
     return Math.max(windowHeight - reserved, 420);
   }, [windowHeight, insets.top, insets.bottom]);
 
+  // Extra keyboardHeight padding so the intention field clears the keyboard (no KAV).
   const scrollPadBottom = keyboardOpen
     ? keyboardHeight + 28
     : NAV_CONTENT_HEIGHT + insets.bottom + 28;
@@ -217,8 +236,8 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
 
   useEffect(() => {
     if (keyboardOpen && keyboardHeight > 0) {
-      const t = setTimeout(scrollInputIntoView, 80);
-      return () => clearTimeout(t);
+      const timer = setTimeout(scrollInputIntoView, 80);
+      return () => clearTimeout(timer);
     }
   }, [keyboardOpen, keyboardHeight, scrollInputIntoView]);
 
@@ -229,10 +248,10 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
   };
 
   const handleDeleteTask = (task: TaskRow) => {
-    Alert.alert('Remove intention?', `Remove “${task.title}” from today?`, [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('today.removeIntention'), t('today.removeConfirm', { title: task.title }), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Remove',
+        text: t('alert.remove'),
         style: 'destructive',
         onPress: () => {
           void hapticLight();
@@ -265,7 +284,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
       setNewCategory('home');
       await refresh();
     } catch {
-      Alert.alert('Could not save', 'Your intention was not saved. Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.tryAgain'));
     } finally {
       setAdding(false);
     }
@@ -287,7 +306,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
       });
       await refresh();
     } catch {
-      Alert.alert('Could not save', 'That suggestion was not added. Please try again.');
+      Alert.alert(t('common.couldNotSave'), t('common.tryAgain'));
     } finally {
       setAdding(false);
     }
@@ -298,15 +317,21 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4} edges={['top', 'left', 'right']}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} title="My Day" />
+          <ScreenNavChrome theme={theme} title={t('today.title')} />
         </View>
 
         {!keyboardOpen ? (
           <View style={styles.headerBlock}>
-            <Text style={[styles.headerTitle, { color: theme.text }]}>Your day ahead</Text>
+            <Text
+              style={[styles.headerTitle, myanmarUi && styles.headerTitleMyanmar, { color: theme.text }]}
+            >
+              {t('today.dayAhead')}
+            </Text>
             <View style={styles.subtitleRow}>
-              <Text style={[styles.subtitle, { color: theme.mutedText }]}>
-                Intentions, not pressure — planning at your pace.
+              <Text
+                style={[styles.subtitle, myanmarUi && styles.subtitleMyanmar, { color: theme.mutedText }]}
+              >
+                {t('today.subtitle')}
               </Text>
               <View
                 style={[
@@ -340,7 +365,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
           {/* Hero — Gentle note for today */}
           {!keyboardOpen ? (
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
-              <SectionEyebrow icon="💜" label="Gentle Note" color={tokens.text.primary} />
+              <SectionEyebrow icon="💜" label={t('today.gentleNote')} color={tokens.text.primary} />
               <Text style={[styles.heroQuote, { color: theme.text }]}>{heroInsight}</Text>
               {moodLabel ? (
                 <View
@@ -353,7 +378,13 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
                   ]}
                 >
                   <Text style={styles.moodEmoji}>{moodEmoji(moodLabel)}</Text>
-                  <Text style={[styles.moodLabel, { color: theme.text }]}>{moodLabel}</Text>
+                  <Text style={[styles.moodLabel, { color: theme.text }]}>
+                    {(() => {
+                      const key = `mood.${moodLabel.toLowerCase()}`;
+                      const localized = t(key);
+                      return localized === key ? moodLabel : localized;
+                    })()}
+                  </Text>
                 </View>
               ) : null}
             </CircadianGlassCard>
@@ -362,7 +393,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
           {/* Today's intentions */}
           {!keyboardOpen && hasTasks ? (
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.intentionsCard}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Intentions</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('today.intentions')}</Text>
               {groups.map(({ category, tasks: groupTasks }) => (
                 <View key={category.id} style={styles.group}>
                   <Text style={[styles.groupLabel, { color: category.accent }]}>{category.label}</Text>
@@ -401,7 +432,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
                                 hitSlop={8}
                                 style={({ pressed }) => pressLinkStyle(theme, pressed)}
                               >
-                                <Text style={[styles.beginLink, { color: theme.accent }]}>Begin →</Text>
+                                <Text style={[styles.beginLink, { color: theme.accent }]}>{t('today.begin')}</Text>
                               </Pressable>
                             ) : null}
                             <TaskCheckToggle
@@ -421,9 +452,9 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
           ) : null}
           {!keyboardOpen && !hasTasks ? (
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.intentionsCard}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Today's Intentions</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('today.intentions')}</Text>
               <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
-                Nothing on your list yet — tap a gentle suggestion below, or write your own.
+                {t('today.emptyIntentions')}
               </Text>
             </CircadianGlassCard>
           ) : null}
@@ -431,7 +462,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
           {/* Add intention — kept above keyboard via scroll + keyboard-height padding */}
           <View onLayout={onAddCardLayout}>
             <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-              <SectionEyebrow icon="✨" label="Add an Intention" color={labelAccent} />
+              <SectionEyebrow icon="✨" label={t('today.addIntention')} color={labelAccent} />
               <TextInput
                 style={[
                   styles.addInput,
@@ -444,7 +475,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
                   },
                   inputHighlight && styles.addInputHighlight,
                 ]}
-                placeholder="What matters today?"
+                placeholder={t('today.whatMatters')}
                 placeholderTextColor={theme.mutedText}
                 value={newTitle}
                 onChangeText={setNewTitle}
@@ -456,7 +487,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
               {suggestions.length > 0 && !keyboardOpen ? (
                 <View style={styles.suggestBlock}>
                   <Text style={[styles.suggestLabel, { color: labelAccent }]}>
-                    {hasTasks ? 'More ideas' : 'Try one'}
+                    {hasTasks ? t('today.moreIdeas') : t('today.tryOne')}
                   </Text>
                   <View style={styles.suggestRow}>
                     {suggestions.map((item) => {
@@ -492,10 +523,17 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
               ) : null}
 
               <Text style={[styles.categoryPickLabel, { color: theme.mutedText }]}>
-                Activity type{inferredCategory && !categoryTouched ? ' · auto-matched' : ''}
+                {t('today.activityType')}
+                {inferredCategory && !categoryTouched && locale !== 'my' ? ' · auto-matched' : ''}
               </Text>
-              <Text style={[styles.categoryHint, { color: theme.mutedText }]}>
-                Choose where this intention belongs — Work, Home, Move, and more.
+              <Text
+                style={[
+                  styles.categoryHint,
+                  myanmarUi && { letterSpacing: 0, lineHeight: 20 },
+                  { color: theme.mutedText },
+                ]}
+              >
+                {t('today.activityHelper')}
               </Text>
               <View style={styles.categoryRow}>
                 {ENERGY_CATEGORY_ORDER.map((id) => {
@@ -518,8 +556,14 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
                         pressChipStyle(cat.accent, pressed),
                       ]}
                     >
-                      <Text style={[styles.categoryChipText, { color: cat.accent }]}>
-                        {cat.shortLabel}
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          myanmarUi && { letterSpacing: 0 },
+                          { color: cat.accent },
+                        ]}
+                      >
+                        {categoryLabel(id)}
                       </Text>
                     </Pressable>
                   );
@@ -532,7 +576,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
             <>
               {/* Gentle growth */}
               <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-                <SectionEyebrow icon="✨" label="Gentle Growth" color={labelAccent} />
+                <SectionEyebrow icon="✨" label={t('today.gentleGrowth')} color={labelAccent} />
                 <Text style={[styles.growthLine1, { color: theme.text }]}>{gentleGrowth.line1}</Text>
                 <Text style={[styles.growthLine2, { color: theme.secondaryText }]}>
                   {gentleGrowth.line2}
@@ -541,7 +585,7 @@ export function TodayDashboardScreen({ onNav }: { onNav: (key: MainScreenKey) =>
 
               {/* Emo's reflection */}
               <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.cardLast}>
-                <SectionEyebrow icon="💜" label="Emo's Reflection" color={tokens.text.primary} />
+                <SectionEyebrow icon="💜" label={t('today.emoReflection')} color={tokens.text.primary} />
                 <Text style={[styles.reflectionQuote, { color: theme.text }]}>{emoReflection}</Text>
               </CircadianGlassCard>
             </>
@@ -569,6 +613,12 @@ const styles = StyleSheet.create({
     fontWeight: tokens.typography.pageTitle.fontWeight,
     marginBottom: 8,
   },
+  headerTitleMyanmar: {
+    fontFamily: undefined,
+    lineHeight: 44,
+    paddingTop: 4,
+    marginBottom: 10,
+  },
   subtitleRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -582,6 +632,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     flexShrink: 0,
     maxWidth: '46%',
+    alignSelf: 'flex-start',
   },
   datePillText: {
     fontSize: 10,
@@ -592,6 +643,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  subtitleMyanmar: {
+    lineHeight: 24,
+    paddingTop: 2,
+    paddingBottom: 2,
   },
   scrollContent: {
     flexGrow: 1,

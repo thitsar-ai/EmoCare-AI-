@@ -1,3 +1,5 @@
+// Myanmar text metrics must load before any screen Text mounts.
+import './utils/installMyanmarTextPatch';
 import 'react-native-reanimated';
 import { registerRootComponent } from 'expo';
 

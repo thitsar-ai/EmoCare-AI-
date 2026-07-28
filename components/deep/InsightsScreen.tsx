@@ -27,6 +27,7 @@ import { pressLinkStyle } from '../../utils/pressFeedback';
 import { ScreenNavChrome, type MainScreenKey } from '../navigation/AppNavigation';
 import { HelpedActivitySheet, type HelpedRow } from './HelpedActivitySheet';
 import { AddHelpedSheet } from './AddHelpedSheet';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const H_PAD = 22;
 const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
@@ -55,12 +56,16 @@ function SectionEyebrow({
 }
 
 function EmotionalWeatherBubbles({ moods }: { moods: WeatherMood[] }) {
+  const { t } = useUiCopy();
   if (!moods.length) return null;
 
   return (
     <View style={styles.bubbleCloud}>
       {moods.map((mood, index) => {
         const drift = index % 3 === 1 ? styles.bubbleDriftMid : index % 3 === 2 ? styles.bubbleDriftLow : null;
+        const moodKey = `mood.${mood.label.toLowerCase()}`;
+        const localized = t(moodKey);
+        const display = localized === moodKey ? mood.label : localized;
         return (
           <View
             key={mood.label}
@@ -74,7 +79,7 @@ function EmotionalWeatherBubbles({ moods }: { moods: WeatherMood[] }) {
             ]}
           >
             <Text style={styles.bubbleEmoji}>{moodEmoji(mood.label, mood.emoji)}</Text>
-            <Text style={[styles.bubbleLabel, { color: mood.color }]}>{mood.label}</Text>
+            <Text style={[styles.bubbleLabel, { color: mood.color }]}>{display}</Text>
           </View>
         );
       })}
@@ -84,6 +89,8 @@ function EmotionalWeatherBubbles({ moods }: { moods: WeatherMood[] }) {
 
 export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { t, locale } = useUiCopy();
+  const myanmarUi = locale === 'my';
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const labelAccent = getSanctuaryLabelAccent(theme);
@@ -176,14 +183,20 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} title="Insights" />
+          <ScreenNavChrome theme={theme} title={t('insights.title')} />
         </View>
 
         <View style={styles.headerBlock}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Your emotional landscape</Text>
+          <Text
+            style={[styles.headerTitle, myanmarUi && styles.headerTitleMyanmar, { color: theme.text }]}
+          >
+            {t('insights.landscape')}
+          </Text>
           <View style={styles.subtitleRow}>
-            <Text style={[styles.subtitle, { color: theme.mutedText }]}>
-              Reflection, not reporting — understanding at your pace.
+            <Text
+              style={[styles.subtitle, myanmarUi && styles.subtitleMyanmar, { color: theme.mutedText }]}
+            >
+              {t('insights.landscapeSub')}
             </Text>
             <View
               style={[
@@ -208,18 +221,18 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
         >
           {/* 1. Hero — Gentle Insight */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroCard}>
-            <SectionEyebrow icon="💜" label="Gentle Insight" color={tokens.text.primary} />
+            <SectionEyebrow icon="💜" label={t('insights.gentleInsight')} color={tokens.text.primary} />
             <Text style={[styles.heroQuote, { color: theme.text }]}>{heroInsight}</Text>
           </CircadianGlassCard>
 
           {/* 2. Emotional Weather */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Emotional Weather</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('insights.weather')}</Text>
             {emotionalWeather.length === 0 ? (
               <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
                 {hasLiveData
-                  ? 'Your emotional skies will take shape as you check in this week.'
-                  : 'Check in when you’re ready — your moods will gather here like soft weather.'}
+                  ? t('insights.weatherEmptyLive')
+                  : t('insights.weatherEmpty')}
               </Text>
             ) : (
               <EmotionalWeatherBubbles moods={emotionalWeather} />
@@ -230,7 +243,7 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
             <View style={styles.helpedHeader}>
               <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
-                What Helped This Week
+                {t('insights.whatHelped')}
               </Text>
               <Pressable
                 onPress={() => {
@@ -247,10 +260,10 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                   pressed && { opacity: 0.85 },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Log what helped"
+                accessibilityLabel={t('insights.log')}
               >
                 <Plus size={13} color={theme.accent} strokeWidth={2.4} />
-                <Text style={[styles.logChipText, { color: theme.accent }]}>Log</Text>
+                <Text style={[styles.logChipText, { color: theme.accent }]}>{t('insights.log')}</Text>
               </Pressable>
             </View>
             {whatHelpedTitles.length === 0 ? (
@@ -259,7 +272,7 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                 style={({ pressed }) => [styles.emptyHelped, pressLinkStyle(theme, pressed)]}
               >
                 <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
-                  Walks, journaling, breathing, time with Emo — log what lifted you this week.
+                  {t('insights.whatHelpedEmpty')}
                 </Text>
               </Pressable>
             ) : (
@@ -295,7 +308,7 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
 
           {/* 4. Gentle Growth */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.card}>
-            <SectionEyebrow icon="✨" label="Gentle Growth" color={labelAccent} />
+            <SectionEyebrow icon="✨" label={t('insights.gentleGrowth')} color={labelAccent} />
             <Text style={[styles.growthLine1, { color: theme.text }]}>{gentleGrowth.line1}</Text>
             <Text style={[styles.growthLine2, { color: theme.secondaryText }]}>
               {gentleGrowth.line2}
@@ -304,7 +317,7 @@ export function InsightsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
 
           {/* 5. Emo's Reflection */}
           <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.cardLast}>
-            <SectionEyebrow icon="💜" label="Emo's Reflection" color={tokens.text.primary} />
+            <SectionEyebrow icon="💜" label={t('insights.emoReflection')} color={tokens.text.primary} />
             <Text style={[styles.reflectionQuote, { color: theme.text }]}>{emoReflection}</Text>
           </CircadianGlassCard>
 
@@ -349,6 +362,12 @@ const styles = StyleSheet.create({
     fontWeight: tokens.typography.pageTitle.fontWeight,
     marginBottom: 8,
   },
+  headerTitleMyanmar: {
+    fontFamily: undefined,
+    lineHeight: 44,
+    paddingTop: 4,
+    marginBottom: 10,
+  },
   subtitleRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -361,12 +380,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     flexShrink: 0,
+    alignSelf: 'flex-start',
   },
   weekPillText: { fontSize: 11, fontWeight: '600' },
   subtitle: {
     fontSize: 13,
     lineHeight: 20,
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  subtitleMyanmar: {
+    lineHeight: 24,
+    paddingTop: 2,
+    paddingBottom: 2,
   },
   scrollContent: {
     flexGrow: 1,

@@ -13,6 +13,7 @@ import type { CircadianTheme } from '../../theme/circadianTheme';
 import { ORACLE_MODES, type OracleModeId } from '../../constants/brandCopy';
 import { tokens } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 export type MiraControlsAvailability = {
   canResearchDeeper: boolean;
@@ -52,6 +53,13 @@ export function MiraControlsSheet({
 }: Props) {
   const insets = useSafeAreaInsets();
   const accent = tokens.oracle.accent;
+  const { t, locale } = useUiCopy();
+  const myanmar = locale === 'my';
+  const modeCopy = (id: OracleModeId) => {
+    if (id === 'quick') return { label: t('mira.modeQuick'), hint: t('mira.modeQuickHint') };
+    if (id === 'deep') return { label: t('mira.modeDeep'), hint: t('mira.modeDeepHint') };
+    return { label: t('mira.modeWise'), hint: t('mira.modeWiseHint') };
+  };
 
   return (
     <Modal
@@ -68,7 +76,7 @@ export function MiraControlsSheet({
           style={styles.backdrop}
           onPress={onClose}
           accessibilityRole="button"
-          accessibilityLabel="Dismiss Mira controls"
+          accessibilityLabel={t('mira.controls')}
         />
         <View
           style={[
@@ -82,7 +90,9 @@ export function MiraControlsSheet({
           accessibilityViewIsModal
         >
           <View style={[styles.handle, { backgroundColor: theme.secondaryText }]} />
-          <Text style={[styles.sheetTitle, { color: theme.text }]}>Mira controls</Text>
+          <Text style={[styles.sheetTitle, myanmar && { letterSpacing: 0 }, { color: theme.text }]}>
+            {t('mira.controls')}
+          </Text>
 
           <ScrollView
             bounces={false}
@@ -90,10 +100,13 @@ export function MiraControlsSheet({
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled
           >
-            <Text style={[styles.sectionLabel, { color: theme.secondaryText }]}>RESPONSE STYLE</Text>
+            <Text style={[styles.sectionLabel, myanmar && { letterSpacing: 0 }, { color: theme.secondaryText }]}>
+              {t('mira.responseStyle')}
+            </Text>
             <View style={styles.sectionBlock}>
               {ORACLE_MODES.map((item) => {
                 const selected = mode === item.id;
+                const copy = modeCopy(item.id);
                 return (
                   <Pressable
                     key={item.id}
@@ -110,20 +123,27 @@ export function MiraControlsSheet({
                     ]}
                     accessibilityRole="radio"
                     accessibilityState={{ selected, checked: selected }}
-                    accessibilityLabel={item.label}
-                    accessibilityHint={item.hint}
+                    accessibilityLabel={copy.label}
+                    accessibilityHint={copy.hint}
                   >
                     <View style={styles.modeCopy}>
                       <Text
                         style={[
                           styles.modeLabel,
+                          myanmar && { letterSpacing: 0, lineHeight: 24 },
                           { color: selected ? accent : theme.text },
                         ]}
                       >
-                        {item.label}
+                        {copy.label}
                       </Text>
-                      <Text style={[styles.modeHint, { color: theme.secondaryText }]}>
-                        {item.hint}
+                      <Text
+                        style={[
+                          styles.modeHint,
+                          myanmar && { letterSpacing: 0, lineHeight: 20 },
+                          { color: theme.secondaryText },
+                        ]}
+                      >
+                        {copy.hint}
                       </Text>
                     </View>
                     <View
@@ -142,46 +162,52 @@ export function MiraControlsSheet({
               })}
             </View>
 
-            <Text style={[styles.sectionLabel, { color: theme.secondaryText, marginTop: 18 }]}>
-              RESPONSE ACTIONS
+            <Text
+              style={[
+                styles.sectionLabel,
+                myanmar && { letterSpacing: 0 },
+                { color: theme.secondaryText, marginTop: 18 },
+              ]}
+            >
+              {t('mira.responseActions')}
             </Text>
             <View style={styles.sectionBlock}>
               <ActionRow
                 theme={theme}
                 icon={Compass}
-                label="Research deeper"
-                accessibilityLabel="Research this answer more deeply"
+                label={t('mira.researchDeeper')}
+                accessibilityLabel={t('mira.researchDeeper')}
                 enabled={availability.canResearchDeeper}
-                disabledHint="Available after Mira replies"
+                disabledHint={t('mira.availableAfterReply')}
                 onPress={onResearchDeeper}
               />
               <ActionRow
                 theme={theme}
                 icon={Library}
-                label="See sources"
-                accessibilityLabel="View published sources"
+                label={t('mira.seeSources')}
+                accessibilityLabel={t('mira.seeSources')}
                 enabled={availability.canSeeSources}
                 disabledHint={
-                  availability.sourcesDisabledHint || 'Available after sourced research'
+                  availability.sourcesDisabledHint || t('mira.availableAfterSources')
                 }
                 onPress={onSeeSources}
               />
               <ActionRow
                 theme={theme}
                 icon={Bookmark}
-                label="Save response"
-                accessibilityLabel="Save Mira response"
+                label={t('mira.saveResponse')}
+                accessibilityLabel={t('mira.saveResponse')}
                 enabled={availability.canSave}
-                disabledHint="Available after Mira replies"
+                disabledHint={t('mira.availableAfterReply')}
                 onPress={onSave}
               />
               <ActionRow
                 theme={theme}
                 icon={Trash2}
-                label="Clear conversation"
-                accessibilityLabel="Clear Mira conversation"
+                label={t('mira.clearChat')}
+                accessibilityLabel={t('mira.clearChat')}
                 enabled={availability.canClear}
-                disabledHint="No messages to clear"
+                disabledHint={t('mira.nothingToSave')}
                 destructive
                 onPress={onClear}
               />
@@ -192,9 +218,11 @@ export function MiraControlsSheet({
             onPress={onClose}
             style={styles.doneBtn}
             accessibilityRole="button"
-            accessibilityLabel="Close Mira controls"
+            accessibilityLabel={t('common.done')}
           >
-            <Text style={[styles.doneText, { color: accent }]}>Done</Text>
+            <Text style={[styles.doneText, myanmar && { letterSpacing: 0 }, { color: accent }]}>
+              {t('common.done')}
+            </Text>
           </Pressable>
         </View>
       </View>

@@ -15,8 +15,8 @@ import {
 import {
   getChatLanguageAccessibilityLabel,
   getChatLanguageOptionsForUi,
-  getEmoLanguageSettingsHint,
 } from '../../utils/chatLanguage';
+import { MIRA_LANGUAGE_OPTIONS } from '../../utils/miraLanguage';
 import { textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { exportUserData, deleteAllUserData } from '../../utils/dataExport';
 import { triggerAppReset } from '../../utils/appReset';
@@ -47,13 +47,17 @@ import {
 } from '../../utils/crisisLine';
 import { tokens } from '../../theme/tokens';
 import { NotificationSheet } from '../home/NotificationSheet';
+import { getDailyReminderUiCopy } from '../../utils/dailyReminderCopy';
+import { reconcileDailyReminderPreference, syncDailyReminder } from '../../utils/dailyReminders';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
-const NAV_CONTENT_HEIGHT = 72;
+const NAV_CONTENT_HEIGHT = 80;
 
 type Settings = typeof DEFAULT_SETTINGS;
 
 export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { t, setUiLocaleFromChatLanguage } = useUiCopy();
   const { openOnboardingSlide, userName } = useAppNav();
   const [pronouns, setPronouns] = useState('');
   const insets = useSafeAreaInsets();
@@ -68,17 +72,19 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const destructive = theme.isDark ? '#E87898' : '#D46BA8';
   const destructiveBg = theme.isDark ? 'rgba(120,30,60,0.45)' : 'rgba(212,107,168,0.15)';
 
+  const reminderUi = getDailyReminderUiCopy(settings.chatLanguage);
   const remindersValue =
     settings.notificationsEnabled === false
-      ? 'Off'
-      : `On · ${settings.notificationTime || '8:00 PM'}`;
+      ? reminderUi.settingsOff
+      : `${reminderUi.settingsOnPrefix} · ${settings.notificationTime || '8:00 PM'}`;
 
   const refresh = useCallback(async () => {
     await refreshEmocareConfig();
-    const [s, passcodeOn, support] = await Promise.all([
+    const [s, passcodeOn, support, reminder] = await Promise.all([
       loadSettings(),
       isPasscodeEnabled(),
       getBiometricSupport(),
+      reconcileDailyReminderPreference(),
     ]);
     setPasscodeEnabled(passcodeOn);
     setBiometricAvailable(support.available);
@@ -86,6 +92,8 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
     setSettings({
       ...s,
       timezone: formatTimezoneLabel(),
+      notificationsEnabled: reminder.enabled,
+      notificationTime: reminder.time || s.notificationTime,
     });
   }, []);
 
@@ -97,6 +105,18 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const patch = async (partial: Partial<Settings>) => {
     const next = await saveSettings(partial);
     setSettings(next);
+    if (Object.prototype.hasOwnProperty.call(partial, 'chatLanguage')) {
+      setUiLocaleFromChatLanguage(partial.chatLanguage as string | undefined);
+      if (next.notificationsEnabled !== false) {
+        void syncDailyReminder({
+          enabled: true,
+          time: next.notificationTime || '8:00 PM',
+          locale: next.chatLanguage,
+          requestPermission: false,
+          alertOnDenied: false,
+        });
+      }
+    }
   };
 
   const handleViewIntroduction = () => {
@@ -107,10 +127,10 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
   const handleResetOnboarding = () => {
     if (!__DEV__) return;
     Alert.alert(
-      'Reset onboarding?',
-      'Welcome will show again on next launch. Chat and journal stay unless you delete all data.',
+      t('settings.resetOnboardingTitle'),
+      t('settings.resetOnboardingBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
           text: 'Reset',
           style: 'destructive',
@@ -132,12 +152,12 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
     if (webInstall.canPrompt) {
       const outcome = await webInstall.promptInstall();
       if (outcome === 'unavailable') {
-        Alert.alert('Install EmoCare', webInstall.showManualInstallHelp());
+        Alert.alert(t('settings.installHowTo'), webInstall.showManualInstallHelp());
       }
       return;
     }
 
-    Alert.alert('Install EmoCare', webInstall.showManualInstallHelp());
+    Alert.alert(t('settings.installHowTo'), webInstall.showManualInstallHelp());
   }, [webInstall]);
 
   const handlePasscodeToggle = (next: boolean) => {
@@ -171,17 +191,17 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
 
   const handleDeleteAll = () => {
     Alert.alert(
-      'Delete all data?',
-      'This permanently removes your check-ins, journal entries, memories, chat history, Mira insights, and app data from this device. Your name and app settings stay.',
+      t('settings.deleteAllTitle'),
+      t('settings.deleteAllBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete All Data',
+          text: t('settings.deleteAllConfirm'),
           style: 'destructive',
           onPress: () => {
             void deleteAllUserData().then(() => {
               triggerAppReset();
-              Alert.alert('Data deleted', 'Your sanctuary has been reset. Welcome begins again.');
+              Alert.alert(t('settings.dataDeletedTitle'), t('settings.dataDeletedBody'));
             });
           },
         },
@@ -197,15 +217,15 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
       <CircadianHeroGlow theme={theme} />
       <ScreenSafeArea extraTop={4}>
         <View style={styles.chromeWrap}>
-          <ScreenNavChrome theme={theme} title="Settings" />
+          <ScreenNavChrome theme={theme} title={t('settings.title')} />
         </View>
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: insets.bottom + 24 }}
         showsVerticalScrollIndicator={false}
       >
-        <SettingsSection theme={theme} label="ACCOUNT">
-          <SettingRow theme={theme} label="Name" value={userName.trim() || 'Not set'} />
-          <SettingRow theme={theme} label="Pronouns" value={pronouns.trim() || 'Not set'} />
+        <SettingsSection theme={theme} label={t('settings.account')}>
+          <SettingRow theme={theme} label={t('settings.name')} value={userName.trim() || t('common.notSet')} />
+          <SettingRow theme={theme} label={t('settings.pronouns')} value={pronouns.trim() || t('common.notSet')} />
           <Pressable
             onPress={() => {
               void hapticLight();
@@ -213,29 +233,21 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             }}
             style={[styles.linkRow, { borderBottomColor: theme.border }]}
             accessibilityRole="button"
-            accessibilityLabel={`Daily reminders, ${remindersValue}`}
+            accessibilityLabel={t('settings.dailyRemindersA11y', { status: remindersValue })}
           >
             <View style={styles.switchLabelCol}>
-              <Text style={[styles.rowLabel, { color: theme.text }]}>Daily reminders</Text>
-              <Text style={[styles.rowHint, { color: theme.mutedText }]}>
-                Choose a preferred check-in time. Push delivery is still rolling out.
-              </Text>
+              <Text style={[styles.rowLabel, { color: theme.text }]}>{reminderUi.settingsLabel}</Text>
+              <Text style={[styles.rowHint, { color: theme.mutedText }]}>{reminderUi.settingsHint}</Text>
             </View>
             <View style={styles.linkAction}>
               <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{remindersValue}</Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
-          <SettingRow theme={theme} label="Timezone" value={settings.timezone} />
+          <SettingRow theme={theme} label={t('settings.timezone')} value={settings.timezone} />
           <View style={styles.languageBlock}>
             <Text style={[styles.rowLabel, { color: theme.text, flex: 0, paddingRight: 0 }]}>
-              {(settings.chatLanguage || 'auto') === 'pt-BR'
-                ? 'Idioma da Emo'
-                : (settings.chatLanguage || 'auto') === 'fr'
-                  ? 'Langue d’Emo'
-                  : (settings.chatLanguage || 'auto') === 'id'
-                    ? 'Bahasa Emo'
-                    : 'Emo language'}
+              {t('settings.emoLanguage')}
             </Text>
             <Text
               style={[
@@ -244,7 +256,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                 { color: theme.mutedText },
               ]}
             >
-              {getEmoLanguageSettingsHint(settings.chatLanguage)}
+              {t('settings.emoLanguageHint')}
             </Text>
             <View style={styles.languageChipRow}>
               {getChatLanguageOptionsForUi(settings.chatLanguage).map((option) => {
@@ -283,7 +295,6 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                           },
                         ]}
                         allowFontScaling
-                        includeFontPadding={myanmarChip ? true : undefined}
                       >
                         {option.shortLabel}
                       </Text>
@@ -293,10 +304,59 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               })}
             </View>
           </View>
+          <View style={styles.languageBlock}>
+            <Text style={[styles.rowLabel, { color: theme.text, flex: 0, paddingRight: 0 }]}>
+              {t('settings.miraLanguage')}
+            </Text>
+            <View style={styles.languageChipRow}>
+              {getChatLanguageOptionsForUi(settings.chatLanguage)
+                .filter((option) => MIRA_LANGUAGE_OPTIONS.some((m) => m.id === option.id))
+                .map((option) => {
+                  const selected = (settings.miraLanguage || 'auto') === option.id;
+                  const myanmarChip = textNeedsMyanmarMetrics(option.shortLabel);
+                  return (
+                    <Pressable
+                      key={`mira-${option.id}`}
+                      onPress={() => {
+                        void hapticLight();
+                        void patch({ miraLanguage: option.id });
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`${t('settings.miraLanguage')}, ${option.label}`}
+                      style={[
+                        styles.languageChip,
+                        myanmarChip && styles.languageChipMyanmar,
+                        {
+                          borderColor: selected ? tokens.oracle.accent : theme.border,
+                          backgroundColor: selected ? `${tokens.oracle.accent}22` : 'transparent',
+                        },
+                      ]}
+                    >
+                      <View style={myanmarChip ? styles.languageChipLabelWrapMyanmar : undefined}>
+                        <Text
+                          style={[
+                            styles.languageChipText,
+                            myanmarChip && styles.languageChipTextMyanmar,
+                            {
+                              color: selected ? tokens.oracle.accent : theme.mutedText,
+                              fontWeight: selected ? '700' : '500',
+                            },
+                          ]}
+                          allowFontScaling
+                        >
+                          {option.shortLabel}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+            </View>
+          </View>
         </SettingsSection>
 
         {isWebInstallSupported() ? (
-          <SettingsSection theme={theme} label="APP">
+          <SettingsSection theme={theme} label={t('settings.app')}>
             <Pressable
               onPress={() => void handleInstallApp()}
               disabled={webInstall.isInstalled}
@@ -304,21 +364,21 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               accessibilityRole="button"
               accessibilityLabel={
                 webInstall.isInstalled
-                  ? 'EmoCare is installed'
+                  ? t('settings.installed')
                   : webInstall.canPrompt
-                    ? 'Install EmoCare app'
-                    : 'How to install EmoCare'
+                    ? t('settings.installApp')
+                    : t('settings.installHowTo')
               }
             >
               <View style={styles.installLabelRow}>
                 {!webInstall.isInstalled ? (
                   <Download size={16} color={getCircadianIconColor(theme, 'accent')} strokeWidth={2.2} />
                 ) : null}
-                <Text style={[styles.rowLabel, { color: theme.text }]}>Install app</Text>
+                <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.installApp')}</Text>
               </View>
               <View style={styles.linkAction}>
                 <Text style={[styles.linkActionText, { color: theme.mutedText }]}>
-                  {webInstall.isInstalled ? 'Installed' : webInstall.canPrompt ? 'Install' : 'How to'}
+                  {webInstall.isInstalled ? t('settings.installed') : webInstall.canPrompt ? t('settings.installShort') : t('settings.howToShort')}
                 </Text>
                 {!webInstall.isInstalled ? (
                   <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
@@ -327,23 +387,23 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             </Pressable>
             <Text style={[styles.installHint, { color: theme.mutedText }]}>
               {webInstall.isInstalled
-                ? 'EmoCare is on your dock or home screen.'
-                : 'Add EmoCare to your dock or home screen for a native-feeling sanctuary.'}
+                ? t('settings.installedHint')
+                : t('settings.installHint')}
             </Text>
           </SettingsSection>
         ) : null}
 
-        <SettingsSection theme={theme} label="PRIVACY">
+        <SettingsSection theme={theme} label={t('settings.privacy')}>
           <View style={[styles.switchRow, { borderBottomColor: theme.border }]}>
             <View style={styles.switchLabelCol}>
-              <Text style={[styles.rowLabel, { color: theme.text }]}>App passcode</Text>
+              <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.appPasscode')}</Text>
               <Text style={[styles.rowHint, { color: theme.mutedText }]}>
-                Lock EmoCare when you leave the app.
+                {t('settings.appPasscodeHint')}
               </Text>
             </View>
             <View style={styles.switchValueCol}>
               <Text style={[styles.switchState, { color: theme.mutedText }]}>
-                {passcodeEnabled ? 'On' : 'Off'}
+                {passcodeEnabled ? t('common.on') : t('common.off')}
               </Text>
               <Switch
                 value={passcodeEnabled}
@@ -363,9 +423,9 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               }}
               style={[styles.linkRow, { borderBottomColor: theme.border }]}
               accessibilityRole="button"
-              accessibilityLabel="Change passcode"
+              accessibilityLabel={t('settings.changePasscode')}
             >
-              <Text style={[styles.rowLabel, { color: theme.text }]}>Change passcode</Text>
+              <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.changePasscode')}</Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </Pressable>
           ) : null}
@@ -375,12 +435,12 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
               <View style={styles.switchLabelCol}>
                 <Text style={[styles.rowLabel, { color: theme.text }]}>{biometricLabel}</Text>
                 <Text style={[styles.rowHint, { color: theme.mutedText }]}>
-                  Unlock with {biometricLabel} after your passcode is set.
+                  {t('settings.useBiometricsHint', { label: biometricLabel })}
                 </Text>
               </View>
               <View style={styles.switchValueCol}>
                 <Text style={[styles.switchState, { color: theme.mutedText }]}>
-                  {settings.biometricUnlockEnabled ? 'On' : 'Off'}
+                  {settings.biometricUnlockEnabled ? t('common.on') : t('common.off')}
                 </Text>
                 <Switch
                   value={settings.biometricUnlockEnabled === true}
@@ -393,9 +453,9 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           ) : null}
 
           <Pressable onPress={() => onNav('memoryledger')} style={[styles.linkRow, { borderBottomColor: theme.border }]}>
-            <Text style={[styles.rowLabel, { color: theme.text }]}>Memory Ledger</Text>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.memoryLedger')}</Text>
             <View style={styles.linkAction}>
-              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>View </Text>
+              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{t('common.view')} </Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
@@ -403,9 +463,9 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             onPress={openPrivacyPolicy}
             style={[styles.linkRow, { borderBottomColor: theme.border }]}
           >
-            <Text style={[styles.rowLabel, { color: theme.text }]}>Privacy Policy</Text>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{t('common.privacyPolicy')}</Text>
             <View style={styles.linkAction}>
-              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>View </Text>
+              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{t('common.view')} </Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
@@ -413,9 +473,9 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             onPress={openTermsOfService}
             style={[styles.linkRow, { borderBottomColor: theme.border }]}
           >
-            <Text style={[styles.rowLabel, { color: theme.text }]}>Terms of Service</Text>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{t('common.terms')}</Text>
             <View style={styles.linkAction}>
-              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>View </Text>
+              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{t('common.view')} </Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
@@ -423,26 +483,25 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             onPress={() => void exportUserData()}
             style={[styles.linkRow, { borderBottomColor: theme.border }]}
           >
-            <Text style={[styles.rowLabel, { color: theme.text }]}>Export my data</Text>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.exportData')}</Text>
             <View style={styles.linkAction}>
-              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>Export </Text>
+              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{t('common.export')} </Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
           <Pressable onPress={openSupport} style={styles.linkRow}>
-            <Text style={[styles.rowLabel, { color: theme.text }]}>Help & Support</Text>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.helpSupport')}</Text>
             <View style={styles.linkAction}>
-              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>Open </Text>
+              <Text style={[styles.linkActionText, { color: theme.mutedText }]}>{t('common.open')} </Text>
               <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
             </View>
           </Pressable>
         </SettingsSection>
 
-        <SettingsSection theme={theme} label="SAFETY & SUPPORT">
+        <SettingsSection theme={theme} label={t('settings.safety')}>
           <View style={styles.safetyBlock}>
             <Text style={[styles.safetyIntro, { color: theme.secondaryText }]}>
-              If you are in crisis or may hurt yourself, please contact local emergency services or a
-              crisis helpline immediately.
+              {t('settings.crisisBody')}
             </Text>
             {crisisLine.phone ? (
               <>
@@ -481,7 +540,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
                   <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
                 </Pressable>
                 <Text style={[styles.safetyCompanion, { color: theme.mutedText }]}>
-                  EmoCare is a companion app — Emo is not emergency care.
+                  {t('settings.crisisCompanion')}
                 </Text>
               </>
             ) : (
@@ -490,27 +549,26 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           </View>
         </SettingsSection>
 
-        <SettingsSection theme={theme} label="ABOUT">
+        <SettingsSection theme={theme} label={t('settings.about')}>
           <Pressable
             onPress={handleViewIntroduction}
             style={[styles.linkRow, { borderBottomColor: theme.border }]}
             accessibilityRole="button"
-            accessibilityLabel="View introduction again"
+            accessibilityLabel={t('settings.viewIntro')}
           >
-            <Text style={[styles.rowLabel, { color: theme.text }]}>View Introduction Again</Text>
+            <Text style={[styles.rowLabel, { color: theme.text }]}>{t('settings.viewIntro')}</Text>
             <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
           </Pressable>
           <SettingRow
             theme={theme}
-            label="App version"
+            label={t('settings.appVersion')}
             value={`${Constants.expoConfig?.version ?? '1.0.0'}`}
             last
           />
         </SettingsSection>
 
         <Text style={[styles.safetyNote, { color: theme.mutedText }]}>
-          EmoCare is for emotional reflection and personal growth. It is not medical care, therapy,
-          diagnosis, treatment, or crisis support. Intended for users 18 and older.
+          {t('settings.disclaimer')}
         </Text>
 
         {__DEV__ ? (
@@ -518,7 +576,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
             onPress={handleResetOnboarding}
             style={[styles.deleteBtn, { backgroundColor: `${theme.accent}14`, borderColor: `${theme.accent}44` }]}
           >
-            <Text style={[styles.deleteText, { color: theme.accent }]}>Reset Onboarding (Dev)</Text>
+            <Text style={[styles.deleteText, { color: theme.accent }]}>{t('settings.resetOnboarding')}</Text>
           </Pressable>
         ) : null}
 
@@ -526,7 +584,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           onPress={handleDeleteAll}
           style={[styles.deleteBtn, { backgroundColor: destructiveBg, borderColor: `${destructive}55` }]}
         >
-          <Text style={[styles.deleteText, { color: destructive }]}>Delete all data</Text>
+          <Text style={[styles.deleteText, { color: destructive }]}>{t('settings.deleteAll')}</Text>
         </Pressable>
       </ScrollView>
 

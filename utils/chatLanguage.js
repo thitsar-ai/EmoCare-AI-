@@ -19,13 +19,22 @@ export const CHAT_LANGUAGE_OPTIONS = [
   { id: 'en', label: 'English', shortLabel: 'English', locale: 'en-US' },
   { id: 'my', label: 'မြန်မာ', shortLabel: 'မြန်မာ', locale: 'my-MM' },
   { id: 'es', label: 'Español', shortLabel: 'Español', locale: 'es' },
-  { id: 'id', label: 'Bahasa Indonesia', shortLabel: 'Indonesia', locale: 'id-ID' },
+  { id: 'id', label: 'Bahasa Indonesia', shortLabel: 'Bahasa Indonesia', locale: 'id-ID' },
   { id: 'pt-BR', label: 'Português (Brasil)', shortLabel: 'Português', locale: 'pt-BR' },
   { id: 'fr', label: 'Français', shortLabel: 'Français', locale: 'fr' },
 ];
 
 /** @type {Record<string, Record<ChatLanguageId, { label: string; shortLabel: string }>>} */
 const UI_LABELS = {
+  my: {
+    auto: { label: 'အလိုအလျောက်', shortLabel: 'အလိုအလျောက်' },
+    en: { label: 'English', shortLabel: 'English' },
+    my: { label: 'မြန်မာ', shortLabel: 'မြန်မာ' },
+    es: { label: 'Español', shortLabel: 'Español' },
+    id: { label: 'Bahasa Indonesia', shortLabel: 'Bahasa Indonesia' },
+    'pt-BR': { label: 'Português', shortLabel: 'Português' },
+    fr: { label: 'Français', shortLabel: 'Français' },
+  },
   id: {
     auto: { label: 'Otomatis', shortLabel: 'Otomatis' },
     en: { label: 'Inggris', shortLabel: 'Inggris' },
@@ -40,7 +49,7 @@ const UI_LABELS = {
     en: { label: 'English', shortLabel: 'English' },
     my: { label: 'မြန်မာ', shortLabel: 'မြန်မာ' },
     es: { label: 'Español', shortLabel: 'Español' },
-    id: { label: 'Bahasa Indonesia', shortLabel: 'Indonesia' },
+    id: { label: 'Bahasa Indonesia', shortLabel: 'Bahasa Indonesia' },
     'pt-BR': { label: 'Português (Brasil)', shortLabel: 'Português' },
     fr: { label: 'Français', shortLabel: 'Français' },
   },
@@ -49,7 +58,7 @@ const UI_LABELS = {
     en: { label: 'English', shortLabel: 'English' },
     my: { label: 'မြန်မာ', shortLabel: 'မြန်မာ' },
     es: { label: 'Español', shortLabel: 'Español' },
-    id: { label: 'Bahasa Indonesia', shortLabel: 'Indonesia' },
+    id: { label: 'Bahasa Indonesia', shortLabel: 'Bahasa Indonesia' },
     'pt-BR': { label: 'Português (Brasil)', shortLabel: 'Português' },
     fr: { label: 'Français', shortLabel: 'Français' },
   },
@@ -57,6 +66,9 @@ const UI_LABELS = {
 
 export const EMO_LANGUAGE_SETTINGS_HINT_EN =
   'Choose the language Emo uses when speaking with you. Auto follows the language of your message. Mira has a separate language setting.';
+
+export const EMO_LANGUAGE_SETTINGS_HINT_MY =
+  'အီမို စကားပြောတဲ့ ဘာသာစကားကို ရွေးပါရှင်။ Auto က သင့်မက်ဆေ့ချ်ရဲ့ ဘာသာစကားကို လိုက်နာပါမယ်။ Mira မှာ သီးခြား ဘာသာစကား ဆက်တင် ရှိပါတယ်။';
 
 export const EMO_LANGUAGE_SETTINGS_HINT_ID =
   'Pilih bahasa yang digunakan Emo saat berbicara denganmu. Otomatis akan mengikuti bahasa pesanmu. Mira memiliki pengaturan bahasa tersendiri.';
@@ -66,6 +78,9 @@ export const EMO_LANGUAGE_SETTINGS_HINT_PT =
 
 export const EMO_LANGUAGE_SETTINGS_HINT_FR =
   'Choisissez la langue qu’Emo utilise pour vous parler. Le mode Automatique suit la langue de votre message. Mira possède son propre réglage de langue.';
+
+export const EMO_LANGUAGE_SETTINGS_HINT_ES =
+  'Elige el idioma que Emo usa al hablar contigo. Automático sigue el idioma de tu mensaje. Mira tiene un ajuste de idioma aparte.';
 
 const SHARED_MEMORY_LANGUAGE_RULE =
   'Use relevant stored memories for context, but express their meaning entirely in the active response language. Do not quote memory text written in another language unless the user explicitly asks to see the original wording.';
@@ -117,9 +132,11 @@ export function getChatLanguageOptionsForUi(uiLocale) {
  */
 export function getEmoLanguageSettingsHint(preference) {
   const id = normalizeChatLanguage(preference);
+  if (id === 'my') return EMO_LANGUAGE_SETTINGS_HINT_MY;
   if (id === 'id') return EMO_LANGUAGE_SETTINGS_HINT_ID;
   if (id === 'pt-BR') return EMO_LANGUAGE_SETTINGS_HINT_PT;
   if (id === 'fr') return EMO_LANGUAGE_SETTINGS_HINT_FR;
+  if (id === 'es') return EMO_LANGUAGE_SETTINGS_HINT_ES;
   return EMO_LANGUAGE_SETTINGS_HINT_EN;
 }
 
@@ -514,10 +531,11 @@ export const TALK_UI_BY_LOCALE = {
       'Désolée, je n’ai pas pu répondre correctement pour le moment. Veuillez réessayer dans quelques instants.',
   },
   my: {
-    placeholder: 'စိတ်ထဲမှာ ဘာတွေရှိနေလဲရှင်',
-    privacy: 'သင့်စကားဝိုင်းများကို သီးသန့်နှင့် လုံခြုံစွာ ထိန်းသိမ်းထားပါသည်။',
+    placeholder: 'ရင်ထဲမှာ ဘာတွေရှိနေလဲ။',
+    privacy: 'သင့်စကားပြောဆိုမှုများကို ကိုယ်ရေးသီးသန့် လုံခြုံစွာ ထားရှိပါတယ်။',
     remembersPrefix: 'မှတ်မိထားသည်',
-    languageError: 'အခု အဖြေကို မှန်မှန်ကန်ကန် မပေးနိုင်သေးပါဘူး။ ခဏနေပြီး ထပ်ကြိုးစားကြည့်ပါနော်။',
+    languageError:
+      'Emo အခုချိန်မှာ ပြန်မဖြေနိုင်သေးပါဘူး။ ခဏနားပြီး ပြန်ကြိုးစားပေးပါနော်။',
   },
 };
 

@@ -1,12 +1,13 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Globe } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
-import { DARK_MENU_SURFACE, MENU_SOLID, tokens } from '../../theme/tokens';
+import { DARK_MENU_SURFACE, MENU_SOLID } from '../../theme/tokens';
 import { hapticLight } from '../../utils/haptics';
 import { MIRA_LANGUAGE_OPTIONS } from '../../utils/miraLanguage';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
-type MiraLanguageId = 'auto' | 'en' | 'my' | 'id';
+type MiraLanguageId = (typeof MIRA_LANGUAGE_OPTIONS)[number]['id'];
 
 type Props = {
   visible: boolean;
@@ -21,9 +22,27 @@ const HINTS: Record<MiraLanguageId, string> = {
   en: 'Mira replies in English',
   my: 'Mira replies in natural Burmese',
   id: 'Mira replies in Bahasa Indonesia',
+  es: 'Mira replies in Spanish',
+  'pt-BR': 'Mira replies in Brazilian Portuguese',
+  fr: 'Mira replies in French',
 };
 
 export function MiraLanguageSheet({ visible, theme, value, onClose, onSelect }: Props) {
+  const { t, locale } = useUiCopy();
+  const myanmar = locale === 'my';
+  const hintFor = (id: MiraLanguageId) => {
+    if (!myanmar) return HINTS[id];
+    if (id === 'auto') return t('mira.langAuto');
+    if (id === 'en') return t('mira.langEnglish');
+    if (id === 'my') return t('mira.langBurmese');
+    return HINTS[id];
+  };
+  const labelFor = (id: MiraLanguageId, fallback: string) => {
+    if (!myanmar) return fallback;
+    if (id === 'auto') return 'အလိုအလျောက်';
+    return fallback;
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
@@ -37,14 +56,28 @@ export function MiraLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                 <Globe size={18} color={theme.accent} strokeWidth={2.2} />
               </View>
               <View style={styles.flex}>
-                <Text style={[styles.title, { color: DARK_MENU_SURFACE.text }]}>Response language</Text>
-                <Text style={[styles.hint, { color: DARK_MENU_SURFACE.mutedText }]}>
-                  Choose how Mira replies. Saved separately from Emo / အီမို Talk.
+                <Text
+                  style={[
+                    styles.title,
+                    myanmar && { letterSpacing: 0, lineHeight: 26 },
+                    { color: DARK_MENU_SURFACE.text },
+                  ]}
+                >
+                  {myanmar ? t('mira.langSheetTitle') : t('miraLang.title')}
+                </Text>
+                <Text
+                  style={[
+                    styles.hint,
+                    myanmar && { letterSpacing: 0, lineHeight: 20 },
+                    { color: DARK_MENU_SURFACE.mutedText },
+                  ]}
+                >
+                  {t('miraLang.hint')}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.list}>
+            <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
               {MIRA_LANGUAGE_OPTIONS.map((option, index) => {
                 const selected = value === option.id;
                 return (
@@ -52,7 +85,7 @@ export function MiraLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                     key={option.id}
                     onPress={() => {
                       void hapticLight();
-                      onSelect(option.id as MiraLanguageId);
+                      onSelect(option.id);
                       onClose();
                     }}
                     style={[
@@ -72,31 +105,30 @@ export function MiraLanguageSheet({ visible, theme, value, onClose, onSelect }: 
                           color: selected ? theme.accent : DARK_MENU_SURFACE.text,
                           fontWeight: selected ? '700' : '600',
                           fontSize: 16,
+                          letterSpacing: myanmar ? 0 : undefined,
                         }}
                       >
-                        {option.label}
+                        {labelFor(option.id, option.label)}
                       </Text>
-                      <Text style={{ color: DARK_MENU_SURFACE.mutedText, fontSize: 12, marginTop: 3 }}>
-                        {HINTS[option.id as MiraLanguageId]}
+                      <Text
+                        style={{
+                          color: DARK_MENU_SURFACE.mutedText,
+                          fontSize: 12,
+                          marginTop: 3,
+                          letterSpacing: myanmar ? 0 : undefined,
+                          lineHeight: myanmar ? 18 : undefined,
+                        }}
+                      >
+                        {hintFor(option.id)}
                       </Text>
                     </View>
-                    <View
-                      style={[
-                        styles.radio,
-                        {
-                          borderColor: selected ? theme.accent : DARK_MENU_SURFACE.border,
-                          backgroundColor: selected ? theme.accent : 'transparent',
-                        },
-                      ]}
-                    />
+                    {selected ? (
+                      <View style={[styles.dot, { backgroundColor: theme.accent }]} />
+                    ) : null}
                   </Pressable>
                 );
               })}
-            </View>
-
-            <Pressable onPress={onClose} style={styles.doneBtn}>
-              <Text style={{ color: tokens.brand.ctaStart, fontWeight: '700', fontSize: 15 }}>Done</Text>
-            </Pressable>
+            </ScrollView>
           </Pressable>
         </View>
       </Pressable>
@@ -105,16 +137,11 @@ export function MiraLanguageSheet({ visible, theme, value, onClose, onSelect }: 
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  anchor: { width: '100%' },
-  sheet: { borderRadius: 18, borderWidth: 1, padding: 18 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 24 },
+  anchor: { width: '100%', maxHeight: '80%' },
+  sheet: { borderRadius: 18, borderWidth: 1, padding: 20, maxHeight: '100%' },
   flex: { flex: 1 },
-  headerRow: { flexDirection: 'row', gap: 12, marginBottom: 8 },
+  headerRow: { flexDirection: 'row', gap: 12, marginBottom: 10 },
   iconWrap: {
     width: 40,
     height: 40,
@@ -124,24 +151,14 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '700', marginBottom: 4 },
   hint: { fontSize: 12, lineHeight: 18 },
-  list: { marginTop: 6 },
+  list: { maxHeight: 360 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 14,
     gap: 12,
   },
   rowText: { flex: 1, minWidth: 0 },
-  radio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-  },
-  doneBtn: {
-    alignSelf: 'flex-end',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginTop: 4,
-  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
 });

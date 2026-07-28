@@ -19,8 +19,8 @@ import {
   Heart,
   Sun,
 } from 'lucide-react-native';
-import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 import { SanctuaryMiraPresence } from '../shared/SanctuaryMiraPresence';
 import {
   SANCTUARY_EMO_HOME_SCALE,
@@ -70,7 +70,7 @@ import type { GlassSurfaceVariant } from '../../theme/glassSurfaces';
 import { isNarrowPhone } from '../../utils/layoutBreakpoints';
 
 const SERIF = 'Georgia';
-const NAV_CONTENT_HEIGHT = 72;
+const NAV_CONTENT_HEIGHT = 80;
 
 type CheckInRow = {
   id?: number;
@@ -159,15 +159,20 @@ function SanctuaryHero({
   theme,
   greeting,
   displayName,
+  greetingLine,
   memoryMood,
   onMemoryPress,
 }: {
   theme: CircadianTheme;
   greeting: string;
   displayName: string;
+  /** When set (Burmese), full greeting including name — do not split. */
+  greetingLine?: string | null;
   memoryMood: string | null;
   onMemoryPress?: () => void;
 }) {
+  const { t, locale } = useUiCopy();
+  const myanmarHome = locale === 'my';
   const dayArt = isSanctuaryDayArt(theme.phase);
   const scrimStrong = dayArt ? 'rgba(237,229,245,0.82)' : 'rgba(10,5,32,0.88)';
   const scrimMid = dayArt ? 'rgba(237,229,245,0.38)' : 'rgba(10,5,32,0.42)';
@@ -203,9 +208,21 @@ function SanctuaryHero({
 
       <View style={styles.heroInner}>
         <View style={styles.heroGreetingCol}>
-          <Text style={[styles.greetingTitle, { color: theme.text }]}>
-            {greeting},{'\n'}
-            {displayName} 💜
+          <Text
+            style={[
+              styles.greetingTitle,
+              myanmarHome && styles.greetingTitleMyanmar,
+              { color: theme.text },
+            ]}
+          >
+            {greetingLine
+              ? greetingLine
+              : (
+                <>
+                  {greeting},{'\n'}
+                  {displayName} 💜
+                </>
+              )}
           </Text>
           {memoryMood ? (
             <SanctuaryMemoryBadge
@@ -214,8 +231,14 @@ function SanctuaryHero({
               onPress={onMemoryPress}
             />
           ) : null}
-          <Text style={[styles.greetingSub, { color: theme.secondaryText }]}>
-            This is your sanctuary. ♡
+          <Text
+            style={[
+              styles.greetingSub,
+              myanmarHome && styles.greetingSubMyanmar,
+              { color: theme.secondaryText },
+            ]}
+          >
+            {t('home.sanctuarySub')}
           </Text>
         </View>
 
@@ -223,7 +246,7 @@ function SanctuaryHero({
           <SanctuaryEmoPresence theme={theme} scale={SANCTUARY_EMO_HOME_SCALE} />
         </View>
 
-        <Text style={[styles.heroBrandTagline, { color: theme.secondaryText }]}>{BRAND_TAGLINE}</Text>
+        <Text style={[styles.heroBrandTagline, { color: theme.secondaryText }]}>{t('brand.tagline')}</Text>
       </View>
 
       <LinearGradient
@@ -250,6 +273,7 @@ function SanctuaryTalkCard({
   onPress: () => void;
   narrow: boolean;
 }) {
+  const { t } = useUiCopy();
   const orbScale = narrow ? SANCTUARY_EMO_STANDARD_SCALE * 0.72 : SANCTUARY_EMO_STANDARD_SCALE;
   const orbTopGuard = getSanctuaryEmoTopClipGuard(orbScale);
   return (
@@ -266,9 +290,9 @@ function SanctuaryTalkCard({
       >
         <View style={[styles.talkHeroRow, narrow && styles.talkHeroRowNarrow]}>
           <View style={styles.talkHeroCopy}>
-            <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Talk to Emo 💜</Text>
+            <Text style={[styles.talkHeroTitle, { color: theme.text }]}>{t('home.talkToEmo')}</Text>
             <Text style={[styles.talkHeroBody, { color: theme.secondaryText }]}>
-              Whatever is on your heart, we can begin there.
+              {t('home.talkBlurb')}
             </Text>
           </View>
           {!narrow ? (
@@ -294,7 +318,7 @@ function SanctuaryTalkCard({
             adjustsFontSizeToFit
             minimumFontScale={0.88}
           >
-            Start Conversation
+            {t('home.startConversation')}
           </Text>
           <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} style={styles.talkHeroBtnIcon} />
         </LinearGradient>
@@ -312,6 +336,7 @@ function SanctuaryMiraCard({
   onPress: () => void;
   narrow: boolean;
 }) {
+  const { t } = useUiCopy();
   // Match Talk to Emo orb footprint (same scale → same stage image size).
   const orbScale = narrow ? SANCTUARY_EMO_STANDARD_SCALE * 0.72 : SANCTUARY_EMO_STANDARD_SCALE;
   const miraSize = getSanctuaryEmoStageDimensions(orbScale).imageSize;
@@ -324,7 +349,7 @@ function SanctuaryMiraCard({
       }}
       style={({ pressed }) => [styles.talkHeroWrap, pressHeroCardStyle(pressed)]}
       accessibilityRole="button"
-      accessibilityLabel="Mira. Clarity, perspective, and thoughtful guidance."
+      accessibilityLabel={`${t('home.mira')}. ${t('home.miraBlurb')}`}
     >
       <SanctuaryGlassSurface
         variant="lavender"
@@ -332,9 +357,9 @@ function SanctuaryMiraCard({
       >
         <View style={[styles.talkHeroRow, narrow && styles.talkHeroRowNarrow]}>
           <View style={styles.talkHeroCopy}>
-            <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Mira</Text>
+            <Text style={[styles.talkHeroTitle, { color: theme.text }]}>{t('home.mira')}</Text>
             <Text style={[styles.talkHeroBody, { color: theme.secondaryText }]}>
-              Clarity, perspective, and thoughtful guidance for the questions on your mind.
+              {t('home.miraBlurb')}
             </Text>
           </View>
           {!narrow ? (
@@ -360,7 +385,7 @@ function SanctuaryMiraCard({
             adjustsFontSizeToFit
             minimumFontScale={0.88}
           >
-            Start Exploring
+            {t('home.startExploring')}
           </Text>
           <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} style={styles.talkHeroBtnIcon} />
         </LinearGradient>
@@ -378,16 +403,17 @@ function SanctuaryHeaderBar({
   notificationsOn: boolean;
   onOpenNotifications: () => void;
 }) {
+  const { t } = useUiCopy();
   return (
     <ScreenNavChrome
       theme={theme}
-      title="Sanctuary"
+      title={t('home.sanctuary')}
       showForward={false}
       actionsBeforeNav={
         <NavChromeBtn
           theme={theme}
           onPress={onOpenNotifications}
-          accessibilityLabel="Notification settings"
+          accessibilityLabel={t('home.notificationsA11y')}
         >
           <Bell size={16} color={theme.text} strokeWidth={2.2} />
           {notificationsOn ? (
@@ -464,15 +490,22 @@ export function SanctuaryDashboard({
   onNav: (key: MainScreenKey) => void;
 }) {
   const theme = useCircadianTheme();
+  const { t, locale } = useUiCopy();
   const { width: windowWidth } = useWindowDimensions();
   const narrow = isNarrowPhone(windowWidth);
   const { bottom: bottomInset, top: topInset } = useLayoutInsets();
   const topPad = topInset + 4;
   const { navigateToCheckIn } = useAppNav();
-  const displayName = userName.trim() || 'friend';
+  const displayName = userName.trim() || (locale === 'my' ? 'သူငယ်ချင်း' : 'friend');
+  const moodDisplay = (label?: string | null) => {
+    if (!label) return t('nav.checkin');
+    const key = `mood.${label.toLowerCase()}`;
+    const localized = t(key);
+    return localized === key ? label : localized;
+  };
   const [checkIns, setCheckIns] = useState<CheckInRow[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notificationsOn, setNotificationsOn] = useState(true);
+  const [notificationsOn, setNotificationsOn] = useState(false);
   const [timezoneId, setTimezoneId] = useState('America/New_York');
   const [localHour, setLocalHour] = useState(new Date().getHours());
   const [memoryMood, setMemoryMood] = useState<string | null>(null);
@@ -481,6 +514,20 @@ export function SanctuaryDashboard({
     () => greetingForCircadianTimezone(timezoneId),
     [timezoneId, localHour],
   );
+
+  const greetingLine = useMemo(() => {
+    if (locale !== 'my') return null;
+    const hour = localHour;
+    const key =
+      hour >= 6 && hour <= 11
+        ? 'home.greetingMorning'
+        : hour >= 12 && hour <= 17
+          ? 'home.greetingAfternoon'
+          : hour >= 18 && hour <= 21
+            ? 'home.greetingEvening'
+            : 'home.greetingNight';
+    return t(key, { name: displayName });
+  }, [locale, localHour, displayName, t]);
 
   const weekStrip = useMemo(() => buildWeekMoodStrip(checkIns), [checkIns]);
   const todayJourney = useMemo(() => getTodayCheckIns(checkIns), [checkIns]);
@@ -507,7 +554,7 @@ export function SanctuaryDashboard({
       })
       .catch(() => {});
     void loadSettings().then((s) => {
-      setNotificationsOn(s.notificationsEnabled !== false);
+      setNotificationsOn(s.notificationsEnabled === true);
       const tz = resolveTimezoneId(s.timezone);
       setTimezoneId(tz);
       try {
@@ -571,14 +618,15 @@ export function SanctuaryDashboard({
             theme={theme}
             greeting={greeting}
             displayName={displayName}
-            memoryMood={memoryMood}
+            greetingLine={greetingLine}
+            memoryMood={memoryMood ? moodDisplay(memoryMood) : null}
             onMemoryPress={() => onNav('memoryledger')}
           />
 
           <SanctuaryGlassCard theme={theme} variant="lavender" style={styles.moodCard}>
             <View style={styles.moodHeader}>
               <Text style={[styles.cardTitleSerif, { color: theme.text }]}>
-                {todayCheckedIn ? "Today's Journey" : 'How are you feeling today?'}
+                {todayCheckedIn ? t('home.todaysJourney') : t('home.howFeeling')}
               </Text>
               <Pressable
                 onPress={() => {
@@ -588,7 +636,7 @@ export function SanctuaryDashboard({
                 hitSlop={8}
                 style={({ pressed }) => pressLinkStyle(theme, pressed)}
               >
-                <Text style={[styles.editLink, { color: theme.accent }]}>Check in</Text>
+                <Text style={[styles.editLink, { color: theme.accent }]}>{t('home.checkIn')}</Text>
               </Pressable>
             </View>
 
@@ -603,7 +651,7 @@ export function SanctuaryDashboard({
                     <View key={entry.id ?? entry.date} style={styles.journeyChip}>
                       {mood ? <MoodIconBadge mood={mood} variant="week" active /> : null}
                       <Text style={[styles.journeyMood, { color: theme.text }]}>
-                        {entry.mood?.label ?? 'Check-in'}
+                        {moodDisplay(entry.mood?.label)}
                       </Text>
                       <Text style={[styles.journeyTime, { color: theme.mutedText }]}>
                         {formatJourneyTime(entry.date)}
@@ -653,9 +701,9 @@ export function SanctuaryDashboard({
               theme={theme}
               icon={BarChart3}
               iconColor={iconAccent}
-              title="Emotional Insights"
-              body="Discover patterns and rhythms in your emotional journey."
-              linkLabel="View Insights"
+              title={t('home.emotionalInsights')}
+              body={t('home.emotionalInsightsBody')}
+              linkLabel={t('home.viewInsights')}
               linkColor={iconLink}
               badge={weekCount >= 3 ? 'New' : undefined}
               onPress={() => onNav('insights')}
@@ -664,9 +712,9 @@ export function SanctuaryDashboard({
               theme={theme}
               icon={Brain}
               iconColor="#C4A35A"
-              title="Memory Ledger"
-              body="What Emo holds on this device — personal context, milestones, and how memory is used."
-              linkLabel="Open Ledger"
+              title={t('home.memoryLedger')}
+              body={t('home.memoryLedgerBody')}
+              linkLabel={t('home.openLedger')}
               linkColor={iconLink}
               onPress={() => onNav('memoryledger')}
             />
@@ -675,9 +723,9 @@ export function SanctuaryDashboard({
                 theme={theme}
                 icon={Sun}
                 iconColor="#E89B5C"
-                title="Evening Reflection"
-                body="As the day comes to a close… What still needs a little kindness today?"
-                linkLabel="Reflect in Journal"
+                title={t('home.eveningReflection')}
+                body={t('home.eveningReflectionBody')}
+                linkLabel={t('home.reflectJournal')}
                 linkColor={iconLink}
                 onPress={() => onNav('journal')}
               />
@@ -728,9 +776,9 @@ const styles = StyleSheet.create({
   heroBrandTagline: {
     fontFamily: SERIF,
     fontStyle: 'italic',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 2,
+    fontSize: 20,
+    lineHeight: 28,
+    marginTop: 6,
     textAlign: 'center',
     alignSelf: 'center',
   },
@@ -786,6 +834,12 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     flexShrink: 1,
   },
+  greetingTitleMyanmar: {
+    letterSpacing: 0,
+    lineHeight: 34,
+    fontFamily: undefined,
+    fontSize: 20,
+  },
   greetingSub: {
     fontFamily: SERIF,
     fontStyle: 'italic',
@@ -794,6 +848,14 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     marginTop: 10,
     textAlign: 'left',
+  },
+  greetingSubMyanmar: {
+    fontFamily: undefined,
+    fontStyle: 'normal',
+    fontSize: 14,
+    lineHeight: 26,
+    paddingTop: 4,
+    paddingBottom: 2,
   },
   heroVignette: {
     ...StyleSheet.absoluteFillObject,

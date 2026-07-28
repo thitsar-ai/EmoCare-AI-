@@ -2,6 +2,7 @@ import React from 'react';
 import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { tokens } from '../../theme/tokens';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
@@ -26,21 +27,21 @@ export function HeartNoteField({
   variant = 'checkin',
   title,
   subtitle,
-  placeholder = 'You can begin softly...',
+  placeholder,
   maxLength = 500,
   cardStyle,
 }: HeartNoteFieldProps) {
+  const { t } = useUiCopy();
+  const resolvedPlaceholder = placeholder ?? t('common.beginSoftly');
   const resolvedTitle =
     title ??
-    (variant === 'reflection'
-      ? "What's on your heart today?"
-      : "What's on your heart?");
+    (variant === 'reflection' ? t('talk.whatsOnHeartToday') : t('checkin.whatsOnHeart'));
   const resolvedSubtitle =
     subtitle ??
     (variant === 'checkin'
-      ? 'You can skip this — a mood alone is enough.'
+      ? t('checkin.moodAloneEnough')
       : variant === 'reflection'
-        ? 'A thought you would like to carry today. Optional — saved to your journal.'
+        ? t('journal.carryThoughtOptional')
         : undefined);
 
   if (variant === 'onboarding') {
@@ -56,7 +57,7 @@ export function HeartNoteField({
         >
           <TextInput
             style={[styles.inputOnboarding, { color: theme.text }]}
-            placeholder={placeholder}
+            placeholder={resolvedPlaceholder}
             placeholderTextColor={theme.mutedText}
             value={value}
             onChangeText={onChangeText}
@@ -76,7 +77,7 @@ export function HeartNoteField({
       <View style={[styles.checkinCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
         <Text style={[styles.title, { color: theme.text }]}>
           {resolvedTitle}
-          <Text style={{ color: theme.mutedText, fontWeight: '400' }}> (Optional)</Text>
+          <Text style={{ color: theme.mutedText, fontWeight: '400' }}> {t('checkin.optionalParen')}</Text>
         </Text>
         {resolvedSubtitle ? (
           <Text style={[styles.subtitle, { color: theme.mutedText }]}>{resolvedSubtitle}</Text>
@@ -86,7 +87,7 @@ export function HeartNoteField({
             styles.inputCheckin,
             { color: theme.text, backgroundColor: tokens.bg.surfaceHigh },
           ]}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           placeholderTextColor={theme.mutedText}
           value={value}
           onChangeText={onChangeText}
@@ -115,7 +116,7 @@ export function HeartNoteField({
             backgroundColor: tokens.bg.surfaceHigh,
           },
         ]}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         placeholderTextColor={theme.mutedText}
         value={value}
         onChangeText={onChangeText}

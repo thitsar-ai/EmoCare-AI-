@@ -4,6 +4,7 @@ import { Sparkles } from 'lucide-react-native';
 import type { CircadianTheme } from '../../theme/circadianTheme';
 import { hapticLight } from '../../utils/haptics';
 import { pressChipStyle } from '../../utils/pressFeedback';
+import { useUiCopy } from '../i18n/UiCopyProvider';
 
 type Props = {
   theme: CircadianTheme;
@@ -13,6 +14,12 @@ type Props = {
 
 /** Quiet memory line under the sanctuary greeting — e.g. "Emo remembers: Peaceful". */
 export function SanctuaryMemoryBadge({ theme, moodLabel, onPress }: Props) {
+  const { t, locale } = useUiCopy();
+  const myanmar = locale === 'my';
+  const line = myanmar
+    ? t('home.memoryBadge', { mood: moodLabel })
+    : `Emo remembers: ${moodLabel}`;
+
   return (
     <Pressable
       onPress={() => {
@@ -22,7 +29,7 @@ export function SanctuaryMemoryBadge({ theme, moodLabel, onPress }: Props) {
       }}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={`Emo remembers ${moodLabel}`}
+      accessibilityLabel={line}
       style={({ pressed }) => [
         styles.badge,
         {
@@ -33,9 +40,22 @@ export function SanctuaryMemoryBadge({ theme, moodLabel, onPress }: Props) {
       ]}
     >
       <Sparkles size={11} color={theme.accent} strokeWidth={2.2} />
-      <Text style={[styles.text, { color: theme.secondaryText }]} numberOfLines={2}>
-        Emo remembers:{' '}
-        <Text style={[styles.mood, { color: theme.text }]}>{moodLabel}</Text>
+      <Text
+        style={[
+          styles.text,
+          myanmar && styles.textMy,
+          { color: theme.secondaryText },
+        ]}
+        numberOfLines={2}
+      >
+        {myanmar ? (
+          line
+        ) : (
+          <>
+            Emo remembers:{' '}
+            <Text style={[styles.mood, { color: theme.text }]}>{moodLabel}</Text>
+          </>
+        )}
       </Text>
     </Pressable>
   );
@@ -59,6 +79,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     flexShrink: 1,
+  },
+  textMy: {
+    letterSpacing: 0,
+    lineHeight: 20,
+    fontWeight: '600',
+    color: undefined,
   },
   mood: {
     fontWeight: '700',

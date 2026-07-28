@@ -246,8 +246,8 @@ ${getEmoIdentityBlock('my')}
   }
 
   return {
-    text:
-      'အခု အဖြေကို မှန်မှန်ကန်ကန် မပေးနိုင်သေးပါဘူး။ ခဏနေပြီး ထပ်ကြိုးစားကြည့်ပါနော်။',
+    // Marker only — Talk UI maps `fallback` to the localized gentle error copy.
+    text: '',
     review: { ...review, rewriteOccurred: true, issues: [...(review.issues || []), 'fallback'] },
     displayedAfterRewrite: true,
   };

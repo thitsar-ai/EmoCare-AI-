@@ -11,8 +11,8 @@ type Props = {
 
 const SIZES = {
   compact: 96,
-  header: 104,
-  hero: 200,
+  header: 120,
+  hero: 280,
 };
 
 /** Mira companion face — distinct from Emo / အီမို. */

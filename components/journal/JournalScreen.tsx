@@ -10,7 +10,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
   Alert,
 } from 'react-native';
@@ -51,12 +50,14 @@ import {
 } from '../../utils/journalStorage';
 import { moodCheckInCardShadow, selectableCardStyle } from '../../theme/glassSurfaces';
 import { JournalSaveOverlay } from './JournalSaveOverlay';
+import { useUiCopy } from '../i18n/UiCopyProvider';
+import {
+  stickyComposerBottomPad,
+  useKeyboardBottomInset,
+} from '../../hooks/useKeyboardBottomInset';
 
 const H_PAD = 22;
 const PENDING_TALK_QUERY_KEY = 'pendingTalkQuery';
-
-const EDITOR_PLACEHOLDER =
-  'Begin wherever feels easiest.\n\nA thought.\nA feeling.\nA moment.\n\nThere is no right way to begin.';
 
 export type JournalEntry = {
   id: number;
@@ -71,9 +72,9 @@ function moodEmoji(entry: JournalEntry) {
 
 export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { t } = useUiCopy();
   const insets = useSafeAreaInsets();
   const { setImmersiveChromeHidden } = useAppNav();
-  const { height: windowHeight } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const savingRef = useRef(false);
@@ -84,54 +85,35 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
   const [viewingId, setViewingId] = useState<number | null>(null);
   const [todayMood, setTodayMood] = useState<{ emoji: string; label: string } | null>(null);
   const [showSaved, setShowSaved] = useState(false);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const onKeyboardOpenChange = useCallback(
+    (open: boolean) => {
+      setImmersiveChromeHidden(open);
+      if (open) {
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        });
+      }
+    },
+    [setImmersiveChromeHidden],
+  );
+  const { keyboardOpen, keyboardHeight } = useKeyboardBottomInset({
+    onOpenChange: onKeyboardOpenChange,
+  });
+  const footerBottomPad = stickyComposerBottomPad({
+    keyboardOpen,
+    keyboardHeight,
+    tabBarHeight: TAB_BAR_HEIGHT,
+    safeBottom: Math.max(insets.bottom, 8),
+  });
 
   const dailyPrompt = useMemo(() => pickDailyJournalPrompt(), []);
   const recentEntries = useMemo(() => entries.slice(0, 3), [entries]);
   const journeyLine = useMemo(() => buildJourneyLine(entries), [entries]);
   const canSave = text.trim().length > 0;
 
-  /**
-   * When the keyboard is open, size the editor to the remaining space above it.
-   * A fixed % of windowHeight was taller than the visible area on iPad, so typed
-   * lines disappeared under the keyboard.
-   */
-  const editorHeight = useMemo(() => {
-    if (!keyboardOpen) {
-      return Math.max(200, Math.round(windowHeight * 0.28));
-    }
-    const navChrome = insets.top + 56;
-    const promptBlock = 78;
-    const saveFooter = 68;
-    const gaps = 36;
-    const reserved = navChrome + promptBlock + saveFooter + gaps + keyboardHeight;
-    return Math.max(140, windowHeight - reserved);
-  }, [keyboardOpen, keyboardHeight, windowHeight, insets.top]);
-
-  const bottomPad = keyboardOpen
-    ? 16
-    : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 16;
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardOpen(true);
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-      setImmersiveChromeHidden(true);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardOpen(false);
-      setKeyboardHeight(0);
-      setImmersiveChromeHidden(false);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      setImmersiveChromeHidden(false);
-    };
-  }, [setImmersiveChromeHidden]);
+  /** Resting editor height only — while typing, the field grows with content inside the scroll view. */
+  const editorMinHeight = 200;
 
   const refreshEntries = useCallback(async () => {
     const loaded = await loadJournalEntries();
@@ -259,10 +241,10 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
             </View>
             <TouchableOpacity
               onPress={() => {
-                Alert.alert('Delete this reflection?', 'This cannot be undone.', [
-                  { text: 'Cancel', style: 'cancel' },
+                Alert.alert(t('journal.deleteTitle'), t('journal.deleteBody'), [
+                  { text: t('common.cancel'), style: 'cancel' },
                   {
-                    text: 'Delete',
+                    text: t('common.delete'),
                     style: 'destructive',
                     onPress: () => {
                       void deleteEntry(e.id);
@@ -274,7 +256,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               style={styles.deleteBtn}
             >
               <Text style={[styles.deleteText, { color: theme.isDark ? '#F472B6' : '#D46BA8' }]}>
-                Delete
+                {t('common.delete')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -303,7 +285,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                 style={[primaryButtonInner, styles.askEmoGradient]}
               >
                 <MessageCircle size={16} color="#FFFFFF" strokeWidth={2.2} />
-                <Text style={primaryButtonLabel}>Reflect with Emo</Text>
+                <Text style={primaryButtonLabel}>{t('journal.reflectWithEmo')}</Text>
               </LinearGradient>
             </Pressable>
           </ScrollView>
@@ -317,7 +299,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
       activeOpacity={0.88}
       onPress={onSavePress}
       accessibilityRole="button"
-      accessibilityLabel={canSave ? 'Save reflection' : 'Write first, then save'}
+      accessibilityLabel={canSave ? t('journal.saveReflection') : t('journal.writeFirst')}
       style={[styles.saveTouch, primaryRestingShadow(theme)]}
     >
       <LinearGradient
@@ -328,7 +310,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
         end={{ x: 1, y: 0.5 }}
         style={styles.saveInner}
       >
-        <Text style={styles.saveLabel}>Save Reflection →</Text>
+        <Text style={styles.saveLabel}>{t('journal.saveReflection')}</Text>
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -339,7 +321,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
       <ScreenSafeArea extraTop={4} edges={['top', 'left', 'right']}>
         <View style={styles.flex}>
           <View style={styles.chromeWrap}>
-            <ScreenNavChrome theme={theme} title="Your Journal" />
+            <ScreenNavChrome theme={theme} title={t('journal.title')} />
           </View>
 
           {!keyboardOpen ? (
@@ -355,12 +337,13 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
             style={styles.flex}
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: bottomPad },
+              { paddingBottom: keyboardOpen ? 16 : TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 88 },
               keyboardOpen && styles.scrollContentTyping,
             ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="always"
             keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets={false}
           >
             <CircadianGlassCard
               theme={theme}
@@ -381,38 +364,49 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
               </Text>
             </CircadianGlassCard>
 
-            <View
-              style={[
-                styles.editorShell,
-                {
-                  borderColor: tokens.border.standard,
-                  backgroundColor: JOURNAL_EDITOR_SURFACE,
-                  height: keyboardOpen ? editorHeight : undefined,
-                  minHeight: editorHeight,
-                  maxHeight: keyboardOpen ? editorHeight : undefined,
-                },
-              ]}
-            >
-              <TextInput
-                ref={inputRef}
+            <View style={styles.editorBlock}>
+              <Text
                 style={[
-                  styles.journalInput,
+                  styles.editorHelper,
+                  { color: theme.mutedText },
+                ]}
+              >
+                {t('journal.helperCopy')}
+              </Text>
+              <View
+                style={[
+                  styles.editorShell,
                   {
-                    color: theme.text,
-                    height: keyboardOpen ? editorHeight - 28 : undefined,
-                    minHeight: editorHeight - 28,
-                    maxHeight: keyboardOpen ? editorHeight - 28 : undefined,
+                    borderColor: tokens.border.standard,
+                    backgroundColor: JOURNAL_EDITOR_SURFACE,
+                    minHeight: editorMinHeight,
                   },
                 ]}
-                multiline
-                placeholder={EDITOR_PLACEHOLDER}
-                placeholderTextColor={theme.mutedText}
-                value={text}
-                onChangeText={setText}
-                textAlignVertical="top"
-                blurOnSubmit={false}
-                scrollEnabled
-              />
+              >
+                <TextInput
+                  ref={inputRef}
+                  style={[
+                    styles.journalInput,
+                    {
+                      color: theme.text,
+                      minHeight: editorMinHeight - 28,
+                    },
+                  ]}
+                  multiline
+                  placeholder={t('journal.placeholder')}
+                  placeholderTextColor={theme.mutedText}
+                  value={text}
+                  onChangeText={setText}
+                  onFocus={() => {
+                    requestAnimationFrame(() => {
+                      scrollRef.current?.scrollTo({ y: 0, animated: true });
+                    });
+                  }}
+                  textAlignVertical="top"
+                  blurOnSubmit={false}
+                  scrollEnabled={false}
+                />
+              </View>
             </View>
 
             {!keyboardOpen ? (
@@ -437,17 +431,17 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                     ]}
                   >
                     <MessageCircle size={16} color={theme.accent} strokeWidth={2.2} />
-                    <Text style={[styles.reflectBtnText, { color: theme.text }]}>Reflect with Emo</Text>
+                    <Text style={[styles.reflectBtnText, { color: theme.text }]}>{t('journal.reflectWithEmo')}</Text>
                   </Pressable>
                 </CircadianGlassCard>
 
                 <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>
-                  Recent Reflections
+                  {t('journal.recent')}
                 </Text>
                 {recentEntries.length === 0 ? (
                   <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.emptyCard}>
                     <Text style={[styles.emptyCopy, { color: theme.mutedText }]}>
-                      Your recent reflections will appear here — one honest moment at a time.
+                      {t('journal.empty')}
                     </Text>
                   </CircadianGlassCard>
                 ) : (
@@ -494,7 +488,7 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
                 )}
 
                 <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.journeyCard}>
-                  <Text style={[styles.journeyTitle, { color: theme.text }]}>Your Journey</Text>
+                  <Text style={[styles.journeyTitle, { color: theme.text }]}>{t('journal.yourJourney')}</Text>
                   <Text style={[styles.journeyLine, { color: theme.secondaryText }]}>
                     {journeyLine}
                   </Text>
@@ -510,14 +504,13 @@ export function JournalScreen({ onNav }: { onNav: (key: MainScreenKey) => void }
             ) : null}
           </ScrollView>
 
-          {/* Pin save above the keyboard — marginBottom tracks keyboard height (reliable on iPad). */}
+          {/* Sticky save footer — bottom pad is keyboard height (no KeyboardAvoidingView). */}
           {keyboardOpen ? (
             <View
               style={[
                 styles.saveFooter,
                 {
-                  paddingBottom: Math.max(insets.bottom, 8),
-                  marginBottom: keyboardHeight,
+                  paddingBottom: Math.max(8, footerBottomPad),
                   backgroundColor: JOURNAL_BG,
                 },
               ]}
@@ -593,6 +586,15 @@ const styles = StyleSheet.create({
     fontFamily: SERIF,
     fontSize: 16,
     lineHeight: 22,
+  },
+  editorBlock: {
+    gap: 10,
+  },
+  editorHelper: {
+    fontSize: 14,
+    lineHeight: 22,
+    paddingHorizontal: 4,
+    fontWeight: '400',
   },
   editorShell: {
     borderWidth: 1,

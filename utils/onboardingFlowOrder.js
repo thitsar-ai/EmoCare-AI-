@@ -2,17 +2,19 @@
  * Canonical first-run onboarding order (visible slides).
  * Age verification (slide 3) is an interstitial after Privacy, not a menu step.
  *
- * New user: Splash (launch) → Welcome → Privacy → Age (if needed) → Tell Me About You → Home
+ * New user: Splash → Welcome → Privacy → Age (if needed) → About You → Feeling → Ready → Home
  * Returning user (onboardingCompleted): Home
  */
 
-export const OB_CONTENT_SLIDES = [2, 4, 5];
+export const OB_CONTENT_SLIDES = [2, 4, 5, 6, 7];
 
 export const OB_SLIDE = {
   welcome: 2,
   ageGate: 3,
   privacy: 4,
   aboutYou: 5,
+  feeling: 6,
+  ready: 7,
 };
 
 /**

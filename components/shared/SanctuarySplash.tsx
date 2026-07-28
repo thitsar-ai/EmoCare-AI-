@@ -137,8 +137,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tagline: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '500',
     letterSpacing: 1.8,
     textAlign: 'center',

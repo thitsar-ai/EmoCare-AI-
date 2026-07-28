@@ -1,7 +1,7 @@
 import * as NativeSplash from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -10,6 +10,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   PanResponder,
   Platform,
   Pressable,
@@ -23,7 +24,19 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenSafeArea } from '../shared/ScreenSafeArea';
-import { Eye, LockKeyhole, Shield, ShieldCheck, Trash2, User, Sparkles, Check, type LucideIcon } from 'lucide-react-native';
+import { useUiCopy } from '../i18n/UiCopyProvider';
+import {
+  ChevronDown,
+  Eye,
+  LockKeyhole,
+  Shield,
+  ShieldCheck,
+  Trash2,
+  User,
+  Sparkles,
+  Check,
+  type LucideIcon,
+} from 'lucide-react-native';
 import { OB_MOODS, type Mood } from '../../constants/obMoods';
 import { openPrivacyPolicy, openTermsOfService } from '../../constants/legalLinks';
 import { SanctuarySplashContent, SplashStarField } from '../shared/SanctuarySplash';
@@ -50,8 +63,11 @@ import {
   useAppNav,
   WELCOME_ONBOARDING_SLIDE,
   OB_AGE_GATE_SLIDE,
-  OB_LAST_CONTENT_SLIDE,
   OB_PRIVACY_SLIDE,
+  OB_ABOUT_YOU_SLIDE,
+  OB_FEELING_SLIDE,
+  OB_READY_SLIDE,
+  OB_LAST_CONTENT_SLIDE,
 } from '../navigation/AppNavigation';
 import {
   isAtLeast18,
@@ -78,7 +94,7 @@ import {
   prevContentSlide,
 } from '../../utils/onboardingFlowOrder';
 import { loadSettings, saveSettings } from '../../utils/settingsStorage';
-import { CHAT_LANGUAGE_OPTIONS, normalizeChatLanguage } from '../../utils/chatLanguage';
+import { getChatLanguageOptionsForUi, normalizeChatLanguage } from '../../utils/chatLanguage';
 import { MIRA_LANGUAGE_OPTIONS, normalizeMiraLanguage } from '../../utils/miraLanguage';
 
 const { width, height } = Dimensions.get('window');
@@ -86,47 +102,65 @@ const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
 /** Visible first-run path: Welcome → Privacy → Tell Me About You (age is interstitial). */
 const OB_PROGRESS_SLIDES = OB_CONTENT_SLIDES;
-const OB_LAST_SLIDE = 5;
+const OB_LAST_SLIDE = OB_READY_SLIDE;
 
-const OB_SLIDE_TITLES: Record<number, string> = {
-  2: 'Welcome',
-  3: 'Age verification',
-  4: 'Privacy',
-  5: 'Tell Me About You',
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function obSlideTitle(slide: number, t: Translate): string {
+  if (slide === 2) return t('onboarding.slideWelcome');
+  if (slide === 3) return t('onboarding.slideAge');
+  if (slide === 4) return t('onboarding.slidePrivacy');
+  if (slide === 5) return t('onboarding.slideAboutYou');
+  if (slide === 6) return t('onboarding.slideFeeling');
+  if (slide === 7) return t('onboarding.slideReady');
+  return '';
+}
+
+function privacyCards(t: Translate): { icon: LucideIcon; title: string; desc: string; color: string }[] {
+  return [
+    {
+      icon: LockKeyhole,
+      title: t('onboarding.encryptedDevice'),
+      desc: t('onboarding.privacyCardBody1'),
+      color: '#9B7BFF',
+    },
+    {
+      icon: Shield,
+      title: t('onboarding.neverSold'),
+      desc: t('onboarding.privacyCardBody2'),
+      color: '#4ADE80',
+    },
+    {
+      icon: Trash2,
+      title: t('onboarding.memoryLedgerControl'),
+      desc: t('onboarding.memoryLedgerControlBody'),
+      color: '#B79DFF',
+    },
+    {
+      icon: Eye,
+      title: t('onboarding.fullTransparency'),
+      desc: t('onboarding.fullTransparencyBody'),
+      color: '#60A5FA',
+    },
+    {
+      icon: Sparkles,
+      title: t('onboarding.aiMayProcess'),
+      desc: t('onboarding.privacyCardBody3'),
+      color: '#A78BFA',
+    },
+  ];
+}
+
+const MOOD_ACK_KEYS: Record<string, string> = {
+  Heavy: 'onboarding.moodAckHeavy',
+  Overwhelmed: 'onboarding.moodAckOverwhelmed',
+  Neutral: 'onboarding.moodAckNeutral',
+  Hopeful: 'onboarding.moodAckHopeful',
+  Light: 'onboarding.moodAckLight',
+  Peaceful: 'onboarding.moodAckPeaceful',
+  Grateful: 'onboarding.moodAckGrateful',
+  Joyful: 'onboarding.moodAckJoyful',
 };
-
-const PRIVACY_CARDS: { icon: LucideIcon; title: string; desc: string; color: string }[] = [
-  {
-    icon: LockKeyhole,
-    title: 'Encrypted on your device',
-    desc: 'Journal entries and Memory Ledger data stay on your device — encrypted and only accessible by you.',
-    color: '#9B7BFF',
-  },
-  {
-    icon: Shield,
-    title: 'Never sold',
-    desc: 'We never sell your information.',
-    color: '#4ADE80',
-  },
-  {
-    icon: Trash2,
-    title: 'Memory Ledger control',
-    desc: 'See, manage, and delete your context data and historical ledger logs anytime.',
-    color: '#B79DFF',
-  },
-  {
-    icon: Eye,
-    title: 'Full transparency',
-    desc: 'We believe in clarity, honesty, and your full control.',
-    color: '#60A5FA',
-  },
-  {
-    icon: Sparkles,
-    title: 'AI conversations',
-    desc: "Your chat messages are processed by Anthropic's AI to generate Emo's replies. Only chat messages are transmitted. Nothing is stored long-term on our servers.",
-    color: '#A78BFA',
-  },
-];
 
 function useReduceMotion() {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -194,6 +228,7 @@ function AgeGateSlide({
   onBack: () => void;
   hideBack?: boolean;
 }) {
+  const { t } = useUiCopy();
   const [month, setMonth] = useState('');
   const [day, setDay] = useState('');
   const [year, setYear] = useState('');
@@ -209,10 +244,10 @@ function AgeGateSlide({
 
   const continueHint =
     fieldsComplete && !validDate
-      ? 'Please enter a valid date of birth.'
+      ? t('onboarding.validDob')
       : fieldsComplete && validDate && !eligible && !ageConfirmed
-        ? 'You must be 18 or older to use EmoCare.'
-        : 'Confirm you are 18+ or enter your full date of birth to continue.';
+        ? t('onboarding.ageMustBe18')
+        : t('onboarding.ageContinueHint');
 
   const handleContinue = async () => {
     setAttempted(true);
@@ -244,14 +279,10 @@ function AgeGateSlide({
         contentContainerStyle={[styles.scrollPad, scrollPad, styles.ageBlockedPad]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.headline, { color: theme.text }]}>EmoCare is for adults 18+</Text>
-        <Text style={[styles.body, { color: theme.mutedText }]}>
-          Thank you for being honest. EmoCare is designed for people 18 and older, so we cannot open
-          the full experience right now.
-        </Text>
+        <Text style={[styles.headline, { color: theme.text }]}>{t('onboarding.ageBlockedTitle')}</Text>
+        <Text style={[styles.body, { color: theme.mutedText }]}>{t('onboarding.ageBlockedBody')}</Text>
         <Text style={[styles.body, { color: theme.mutedText, marginTop: 8 }]}>
-          You deserve support that fits your age. These lines are free, private, and staffed by people
-          who listen:
+          {t('onboarding.ageBlockedSupport')}
         </Text>
         <View style={styles.youthResourceList}>
           {YOUTH_SUPPORT_RESOURCES.US.map((item) => {
@@ -268,13 +299,15 @@ function AgeGateSlide({
               >
                 <Text style={[styles.youthResourceLabel, { color: theme.text }]}>{item.label}</Text>
                 {tappable ? (
-                  <Text style={[styles.youthResourceAction, { color: theme.accent }]}>Tap to connect</Text>
+                  <Text style={[styles.youthResourceAction, { color: theme.accent }]}>
+                    {t('onboarding.tapToConnect')}
+                  </Text>
                 ) : null}
               </Pressable>
             );
           })}
         </View>
-        {!hideBack ? <LavenderButton label="← Go back" onPress={onBack} theme={theme} /> : null}
+        {!hideBack ? <LavenderButton label={t('onboarding.goBack')} onPress={onBack} theme={theme} /> : null}
       </ScrollView>
     );
   }
@@ -287,14 +320,11 @@ function AgeGateSlide({
       keyboardShouldPersistTaps="handled"
     >
       <Text style={[styles.eyebrow, { color: getSanctuaryLavenderLabel(theme.phase) }]}>
-        BEFORE WE CONTINUE
+        {t('onboarding.ageEyebrow')}
       </Text>
-      <Text style={[styles.headline, { color: theme.text }]}>
-        EmoCare is for adults{'\n'}18 and older.
-      </Text>
+      <Text style={[styles.headline, { color: theme.text }]}>{t('onboarding.ageTitle')}</Text>
       <Text style={[styles.body, { color: getSanctuaryLavenderLabel(theme.phase), opacity: 0.85 }]}>
-        To protect younger users, please confirm your age before we continue. Your answer stays on
-        this device — it is not shared or sold.
+        {t('onboarding.ageBody')}
       </Text>
 
       <Pressable
@@ -324,17 +354,15 @@ function AgeGateSlide({
             <Check size={15} color={getSanctuaryIconAccent(theme)} strokeWidth={3} />
           ) : null}
         </View>
-        <Text style={[styles.ageConfirmText, { color: theme.text }]}>
-          I confirm I am 18 years of age or older.
-        </Text>
+        <Text style={[styles.ageConfirmText, { color: theme.text }]}>{t('onboarding.ageConfirm')}</Text>
       </Pressable>
 
       <Text style={[styles.ageOrDivider, { color: getSanctuaryLavenderAccent(theme.phase) }]}>
-        or enter your date of birth
+        {t('onboarding.orEnterDob')}
       </Text>
 
       <Text style={[styles.fieldLabel, { color: getSanctuaryLabelAccent(theme) }]}>
-        Date of birth
+        {t('onboarding.dateOfBirth')}
       </Text>
       <View style={styles.dobRow}>
         <View
@@ -348,13 +376,13 @@ function AgeGateSlide({
         >
           <TextInput
             style={[styles.dobInput, { color: theme.text }]}
-            placeholder="MM"
+            placeholder={t('onboarding.dobMonth')}
             placeholderTextColor={theme.mutedText}
             value={month}
-            onChangeText={(t) => setMonth(t.replace(/\D/g, '').slice(0, 2))}
+            onChangeText={(v) => setMonth(v.replace(/\D/g, '').slice(0, 2))}
             keyboardType="number-pad"
             maxLength={2}
-            accessibilityLabel="Birth month"
+            accessibilityLabel={t('onboarding.birthMonthA11y')}
           />
         </View>
         <View
@@ -368,13 +396,13 @@ function AgeGateSlide({
         >
           <TextInput
             style={[styles.dobInput, { color: theme.text }]}
-            placeholder="DD"
+            placeholder={t('onboarding.dobDay')}
             placeholderTextColor={theme.mutedText}
             value={day}
-            onChangeText={(t) => setDay(t.replace(/\D/g, '').slice(0, 2))}
+            onChangeText={(v) => setDay(v.replace(/\D/g, '').slice(0, 2))}
             keyboardType="number-pad"
             maxLength={2}
-            accessibilityLabel="Birth day"
+            accessibilityLabel={t('onboarding.birthDayA11y')}
           />
         </View>
         <View
@@ -388,34 +416,32 @@ function AgeGateSlide({
         >
           <TextInput
             style={[styles.dobInput, { color: theme.text }]}
-            placeholder="YYYY"
+            placeholder={t('onboarding.dobYear')}
             placeholderTextColor={theme.mutedText}
             value={year}
-            onChangeText={(t) => setYear(t.replace(/\D/g, '').slice(0, 4))}
+            onChangeText={(v) => setYear(v.replace(/\D/g, '').slice(0, 4))}
             keyboardType="number-pad"
             maxLength={4}
-            accessibilityLabel="Birth year"
+            accessibilityLabel={t('onboarding.birthYearA11y')}
           />
         </View>
       </View>
 
       {attempted && !validDate && fieldsComplete ? (
         <Text style={[styles.ageHint, { color: theme.isDark ? '#F472B6' : '#D46BA8' }]}>
-          Please enter a valid date of birth.
+          {t('onboarding.validDob')}
         </Text>
       ) : null}
 
       <LavenderButton
-        label="Continue →"
+        label={t('onboarding.continueArrow')}
         onPress={() => void handleContinue()}
         disabled={!canContinue}
         theme={theme}
         disabledHint={!canContinue ? continueHint : undefined}
       />
       {attempted && fieldsComplete && validDate && !eligible && !ageConfirmed ? (
-        <Text style={[styles.ageHint, { color: theme.mutedText }]}>
-          You must be 18 or older to use EmoCare.
-        </Text>
+        <Text style={[styles.ageHint, { color: theme.mutedText }]}>{t('onboarding.ageMustBe18')}</Text>
       ) : null}
     </ScrollView>
   );
@@ -487,6 +513,8 @@ export function OnboardingFlow({
   onAgeVerified?: () => void;
 }) {
   const theme = useCircadianTheme();
+  const { t, locale, setUiLocaleFromChatLanguage } = useUiCopy();
+  const myanmarUi = locale === 'my';
   const insets = useSafeAreaInsets();
   const { onboardingReviewSlide, openOnboardingSlide, closeOnboardingReview, setOnboardingSplashActive, userName, setUserName, goBack, goForward, canGoBack: navCanGoBack, canGoForward: navCanGoForward } =
     useAppNav();
@@ -495,6 +523,8 @@ export function OnboardingFlow({
   const [ageGateReady, setAgeGateReady] = useState(false);
   const [name, setName] = useState('');
   const [pronouns, setPronouns] = useState('');
+  const [pronounCustomMode, setPronounCustomMode] = useState(false);
+  const [pronounPickerOpen, setPronounPickerOpen] = useState(false);
   const [emoLanguage, setEmoLanguage] = useState('auto');
   const [miraLanguage, setMiraLanguage] = useState('auto');
   const [privacyAcked, setPrivacyAcked] = useState(false);
@@ -506,6 +536,55 @@ export function OnboardingFlow({
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   /** After age gate, resume here (Privacy → About You path). */
   const pendingAfterAgeRef = useRef<number | null>(null);
+
+  const emoLanguageOptions = useMemo(
+    () => getChatLanguageOptionsForUi(locale),
+    [locale],
+  );
+
+  const pronounOptions = useMemo(
+    () => [
+      { id: 'she', label: t('onboarding.pronounShe') },
+      { id: 'he', label: t('onboarding.pronounHe') },
+      { id: 'they', label: t('onboarding.pronounThey') },
+      { id: 'useName', label: t('onboarding.pronounUseName') },
+      { id: 'preferNot', label: t('onboarding.pronounPreferNot') },
+      { id: 'custom', label: t('onboarding.pronounCustom') },
+    ],
+    [t],
+  );
+
+  const miraLanguageOptions = useMemo(() => {
+    if (locale !== 'my') return MIRA_LANGUAGE_OPTIONS;
+    return MIRA_LANGUAGE_OPTIONS.map((opt) =>
+      opt.id === 'auto'
+        ? { ...opt, label: 'အလိုအလျောက်', shortLabel: 'အလိုအလျောက်' }
+        : opt.id === 'id'
+          ? { ...opt, shortLabel: 'Bahasa Indonesia' }
+          : opt,
+    );
+  }, [locale]);
+
+  const pronounFieldLabel = pronounCustomMode
+    ? t('onboarding.pronounCustom')
+    : pronouns.trim() || t('onboarding.pronounsSelect');
+
+  /** Apply Emo language immediately — UI chrome follows chatLanguage (same as Settings). */
+  const applyEmoLanguage = useCallback(
+    (id: string) => {
+      const next = normalizeChatLanguage(id);
+      setEmoLanguage(next);
+      setUiLocaleFromChatLanguage(next);
+      void saveSettings({ chatLanguage: next });
+    },
+    [setUiLocaleFromChatLanguage],
+  );
+
+  const applyMiraLanguage = useCallback((id: string) => {
+    const next = normalizeMiraLanguage(id);
+    setMiraLanguage(next);
+    void saveSettings({ miraLanguage: next });
+  }, []);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -528,11 +607,13 @@ export function OnboardingFlow({
       setAgeGateReady(true);
     });
     void loadSettings().then((s) => {
-      setEmoLanguage(normalizeChatLanguage(s.chatLanguage));
+      const chatLang = normalizeChatLanguage(s.chatLanguage);
+      setEmoLanguage(chatLang);
+      setUiLocaleFromChatLanguage(chatLang);
       setMiraLanguage(normalizeMiraLanguage(s.miraLanguage));
     });
     void loadUserPronouns().then(setPronouns);
-  }, [ageVerificationOnly, reviewMode]);
+  }, [ageVerificationOnly, reviewMode, setUiLocaleFromChatLanguage]);
 
   useEffect(() => {
     if (onboardingReviewSlide == null) return;
@@ -546,17 +627,6 @@ export function OnboardingFlow({
     return () => setOnboardingSplashActive(false);
   }, [reviewMode, slide, setOnboardingSplashActive]);
 
-  const MOOD_ACKS: Record<string, string> = {
-    Heavy: 'Thank you for trusting me with something heavy. We can hold it gently together.',
-    Overwhelmed: 'When everything feels like too much, one breath at a time is enough.',
-    Neutral: 'Neutral is honest — there is wisdom in simply showing up.',
-    Hopeful: 'Hope is a soft light. I see it in you already.',
-    Light: 'Lightness is worth celebrating. I am here with you in it.',
-    Peaceful: 'Peace is a quiet kind of strength. I am glad you named it.',
-    Grateful: 'Gratitude opens the heart. That is beautiful.',
-    Joyful: 'Joy is alive in you — I am glad you let yourself feel it.',
-  };
-
   useEffect(
     () => () => {
       if (typewriterRef.current) clearInterval(typewriterRef.current);
@@ -564,21 +634,59 @@ export function OnboardingFlow({
     [],
   );
 
-  const handleMoodSelect = (m: Mood) => {
-    setSelectedMood(m);
-    const full = MOOD_ACKS[m.label] ?? `I hear you — ${m.label.toLowerCase()} is valid, and you are not alone.`;
-    setMoodAckVisible('');
-    if (typewriterRef.current) clearInterval(typewriterRef.current);
-    let idx = 0;
-    typewriterRef.current = setInterval(() => {
-      idx += 1;
-      setMoodAckVisible(full.slice(0, idx));
-      if (idx >= full.length && typewriterRef.current) {
+  const resolveMoodAck = useCallback(
+    (m: Mood) => {
+      const ackKey = MOOD_ACK_KEYS[m.label];
+      const moodLabelKey = `mood.${m.label.toLowerCase()}`;
+      const localizedMood = t(moodLabelKey);
+      const moodWord =
+        localizedMood === moodLabelKey ? m.label.toLowerCase() : localizedMood.toLowerCase();
+      return ackKey ? t(ackKey) : t('onboarding.moodAckFallback', { mood: moodWord });
+    },
+    [t],
+  );
+
+  const handleMoodSelect = useCallback(
+    (m: Mood) => {
+      setSelectedMood(m);
+      const full = resolveMoodAck(m);
+      if (typewriterRef.current) {
         clearInterval(typewriterRef.current);
         typewriterRef.current = null;
       }
-    }, 28);
-  };
+      // Myanmar: show full message immediately (avoid grapheme-unsafe typewriter slicing).
+      if (locale === 'my') {
+        setMoodAckVisible(full);
+        return;
+      }
+      setMoodAckVisible('');
+      let idx = 0;
+      typewriterRef.current = setInterval(() => {
+        idx += 1;
+        setMoodAckVisible(full.slice(0, idx));
+        if (idx >= full.length && typewriterRef.current) {
+          clearInterval(typewriterRef.current);
+          typewriterRef.current = null;
+        }
+      }, 28);
+    },
+    [locale, resolveMoodAck],
+  );
+
+  // Refresh supportive copy when UI language changes while a mood is selected.
+  useEffect(() => {
+    if (!selectedMood) {
+      setMoodAckVisible('');
+      return;
+    }
+    if (locale === 'my') {
+      if (typewriterRef.current) {
+        clearInterval(typewriterRef.current);
+        typewriterRef.current = null;
+      }
+      setMoodAckVisible(resolveMoodAck(selectedMood));
+    }
+  }, [locale, selectedMood, resolveMoodAck]);
 
   const slideRef = useRef(slide);
   slideRef.current = slide;
@@ -664,7 +772,7 @@ export function OnboardingFlow({
       !reviewMode &&
       !ageVerificationOnly &&
       slide === OB_PRIVACY_SLIDE &&
-      target === OB_LAST_CONTENT_SLIDE &&
+      target === OB_ABOUT_YOU_SLIDE &&
       !privacyAcked
     ) {
       return;
@@ -675,10 +783,10 @@ export function OnboardingFlow({
       !reviewMode &&
       !ageVerificationOnly &&
       !ageGatePassed &&
-      target === OB_LAST_CONTENT_SLIDE &&
+      target === OB_ABOUT_YOU_SLIDE &&
       slide === OB_PRIVACY_SLIDE
     ) {
-      pendingAfterAgeRef.current = OB_LAST_CONTENT_SLIDE;
+      pendingAfterAgeRef.current = OB_ABOUT_YOU_SLIDE;
       setSlide(OB_AGE_GATE_SLIDE);
       return;
     }
@@ -692,8 +800,8 @@ export function OnboardingFlow({
       setSlide(OB_AGE_GATE_SLIDE);
       return;
     }
-    if (reviewMode && ([2, 4, 5] as readonly number[]).includes(target)) {
-      openOnboardingSlide(target as 2 | 4 | 5);
+    if (reviewMode && ([2, 4, 5, 6, 7] as readonly number[]).includes(target)) {
+      openOnboardingSlide(target as 2 | 4 | 5 | 6 | 7);
     }
   };
 
@@ -749,7 +857,11 @@ export function OnboardingFlow({
     try {
       await markOnboardingComplete();
       await AsyncStorage.setItem('userName', name.trim());
-      await saveUserPronouns(pronouns);
+      await saveUserPronouns(
+        pronouns === t('onboarding.pronounPreferNot') || pronouns === t('onboarding.pronounCustom')
+          ? ''
+          : pronouns.trim(),
+      );
       await saveSettings({
         chatLanguage: normalizeChatLanguage(emoLanguage),
         miraLanguage: normalizeMiraLanguage(miraLanguage),
@@ -783,8 +895,7 @@ export function OnboardingFlow({
     });
   };
 
-  const enterSanctuary = () => void finishOnboarding({ skipped: false });
-  const skipAboutYou = () => void finishOnboarding({ skipped: true });
+  const enterSanctuary = () => void finishOnboarding({ skipped: !selectedMood });
 
   const scrollPad = { paddingBottom: Math.max(insets.bottom, 20) + 16 };
   const tellMeKeyboardOffset = insets.top + 72;
@@ -793,25 +904,35 @@ export function OnboardingFlow({
 
   const handleFirstRunBack = () => {
     if (slide === OB_PRIVACY_SLIDE) goTo(WELCOME_ONBOARDING_SLIDE);
-    else if (slide === OB_LAST_CONTENT_SLIDE) goTo(OB_PRIVACY_SLIDE);
+    else if (slide === OB_ABOUT_YOU_SLIDE) goTo(OB_PRIVACY_SLIDE);
+    else if (slide === OB_FEELING_SLIDE) goTo(OB_ABOUT_YOU_SLIDE);
+    else if (slide === OB_READY_SLIDE) goTo(OB_FEELING_SLIDE);
     else if (slide === OB_AGE_GATE_SLIDE) goTo(OB_PRIVACY_SLIDE);
   };
 
   const firstRunCanGoBack =
     !reviewMode &&
     !ageVerificationOnly &&
-    (slide === OB_PRIVACY_SLIDE || slide === OB_LAST_CONTENT_SLIDE || slide === OB_AGE_GATE_SLIDE);
+    (slide === OB_PRIVACY_SLIDE ||
+      slide === OB_ABOUT_YOU_SLIDE ||
+      slide === OB_FEELING_SLIDE ||
+      slide === OB_READY_SLIDE ||
+      slide === OB_AGE_GATE_SLIDE);
 
   const handleFirstRunForward = () => {
     if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_PRIVACY_SLIDE);
     else if (slide === OB_PRIVACY_SLIDE) {
       if (!privacyAcked) return;
-      goTo(OB_LAST_CONTENT_SLIDE);
+      goTo(OB_ABOUT_YOU_SLIDE);
+    } else if (slide === OB_ABOUT_YOU_SLIDE) {
+      goTo(OB_FEELING_SLIDE);
+    } else if (slide === OB_FEELING_SLIDE) {
+      goTo(OB_READY_SLIDE);
     } else if (slide === OB_AGE_GATE_SLIDE && ageGatePassed) {
       goTo(
         pendingAfterAgeRef.current === -1
-          ? OB_LAST_CONTENT_SLIDE
-          : pendingAfterAgeRef.current || OB_LAST_CONTENT_SLIDE,
+          ? OB_ABOUT_YOU_SLIDE
+          : pendingAfterAgeRef.current || OB_ABOUT_YOU_SLIDE,
       );
     }
   };
@@ -821,7 +942,9 @@ export function OnboardingFlow({
     !ageVerificationOnly &&
     ((slide === OB_AGE_GATE_SLIDE && ageGatePassed) ||
       slide === WELCOME_ONBOARDING_SLIDE ||
-      (slide === OB_PRIVACY_SLIDE && privacyAcked));
+      (slide === OB_PRIVACY_SLIDE && privacyAcked) ||
+      slide === OB_ABOUT_YOU_SLIDE ||
+      slide === OB_FEELING_SLIDE);
 
   if (!ageGateReady) {
     return (
@@ -852,29 +975,59 @@ export function OnboardingFlow({
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={[styles.eyebrow, { color: theme.secondaryText }]}>WELCOME TO EMOCARE</Text>
-            <Text style={[styles.headline, { color: theme.text }]}>
-              Meet Emo & Mira{'\n'}in your sanctuary.
+            <Text
+              style={[
+                styles.eyebrow,
+                myanmarUi && styles.eyebrowMy,
+                { color: theme.secondaryText },
+              ]}
+            >
+              {t('onboarding.welcomeEyebrow')}
             </Text>
-            <Text style={[styles.body, { color: theme.mutedText }]}>
-              EmoCare is a private space for emotional awareness, reflection, and gentle guidance.
+            <Text
+              style={[styles.headline, myanmarUi && styles.headlineMy, { color: theme.text }]}
+            >
+              {t('onboarding.welcomeTitle')}
+            </Text>
+            <Text style={[styles.body, myanmarUi && styles.bodyMy, { color: theme.mutedText }]}>
+              {t('onboarding.welcomeBody')}
             </Text>
             <ObCard theme={theme} style={styles.noticeCard}>
-              <Text style={[styles.noticeTitle, { color: theme.text, marginBottom: 8 }]}>Your companions</Text>
-              <Text style={[styles.noticeBody, { color: theme.mutedText }]}>
-                <Text style={{ fontWeight: '700', color: theme.text }}>Emo</Text>
-                {' — '}a warm companion for feelings, check-ins, and Talk.{'\n\n'}
-                <Text style={{ fontWeight: '700', color: theme.text }}>Mira</Text>
-                {' — '}thoughtful guidance for clarity, strategy, and perspective.{'\n\n'}
-                Both are AI companions — not human professionals. Your conversations are designed
-                to feel emotionally safe, private, and in your control.
+              <Text
+                style={[
+                  styles.noticeTitle,
+                  myanmarUi && styles.noticeTitleMy,
+                  { color: theme.text, marginBottom: 10 },
+                ]}
+              >
+                {t('onboarding.companionsTitle')}
+              </Text>
+              <Text
+                style={[
+                  styles.noticeBody,
+                  myanmarUi && styles.noticeBodyMy,
+                  { color: theme.mutedText, marginBottom: 10 },
+                ]}
+              >
+                {t('onboarding.emoCompanion')}
+              </Text>
+              <Text
+                style={[
+                  styles.noticeBody,
+                  myanmarUi && styles.noticeBodyMy,
+                  { color: theme.mutedText },
+                ]}
+              >
+                {t('onboarding.miraCompanion')}
               </Text>
             </ObCard>
-            <Text style={[styles.quote, { color: theme.secondaryText }]}>
-              You don't need to have the right words. Just begin.
+            <Text
+              style={[styles.quote, myanmarUi && styles.quoteMy, { color: theme.secondaryText }]}
+            >
+              {t('onboarding.welcomeSafety')}
             </Text>
             <LavenderButton
-              label="Continue"
+              label={t('common.continue')}
               onPress={() => (reviewMode ? goForward() : goTo(OB_PRIVACY_SLIDE))}
               theme={theme}
             />
@@ -900,7 +1053,7 @@ export function OnboardingFlow({
                 void finishOnboarding({ skipped: !selectedMood });
                 return;
               }
-              goTo(pending || OB_LAST_CONTENT_SLIDE);
+              goTo(pending || OB_ABOUT_YOU_SLIDE);
             }}
             onBack={() => goTo(OB_PRIVACY_SLIDE)}
           />
@@ -923,15 +1076,23 @@ export function OnboardingFlow({
               </View>
             </View>
 
-            <Text style={[styles.headline, { color: theme.text }]}>
-              Your thoughts{'\n'}stay with you.
+            <Text
+              style={[
+                styles.headline,
+                myanmarUi && styles.headlineMy,
+                { color: theme.text },
+              ]}
+            >
+              {t('onboarding.privacyTitle')}
             </Text>
-            <Text style={[styles.body, { color: theme.mutedText }]}>
-              Encrypted on your device.{'\n'}Never sold.
+            <Text
+              style={[styles.body, myanmarUi && styles.bodyMy, { color: theme.mutedText }]}
+            >
+              {t('onboarding.privacyLead')}
             </Text>
 
             <View style={styles.privacyList}>
-              {PRIVACY_CARDS.map((card) => {
+              {privacyCards(t).map((card) => {
                 const Icon = card.icon;
                 return (
                   <ObCard key={card.title} theme={theme} style={styles.privacyCard}>
@@ -948,9 +1109,7 @@ export function OnboardingFlow({
             </View>
 
             <Text style={[styles.privacyClarify, { color: theme.mutedText }]}>
-              Conversations are private to you. Memories you save can be reviewed or removed anytime
-              in Memory Ledger. Emo and Mira are AI companions — not licensed therapists or crisis
-              services. If you are in immediate danger, contact local emergency services.
+              {t('onboarding.privacyClarify')}
             </Text>
 
             <Pressable
@@ -961,7 +1120,7 @@ export function OnboardingFlow({
               style={styles.privacyAckRow}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: privacyAcked }}
-              accessibilityLabel="I acknowledge the privacy information"
+              accessibilityLabel={t('onboarding.privacyAckA11y')}
             >
               <View
                 style={[
@@ -975,21 +1134,20 @@ export function OnboardingFlow({
                 {privacyAcked ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
               </View>
               <Text style={[styles.privacyAckText, { color: theme.text }]}>
-                I have read this and understand how my information is used.
+                {t('onboarding.privacyAck')}
               </Text>
             </Pressable>
 
             <LavenderButton
-              label="I Understand and Continue"
+              label={t('onboarding.privacyUnderstand')}
               disabled={!reviewMode && !privacyAcked}
-              onPress={() => (reviewMode ? goForward() : goTo(OB_LAST_CONTENT_SLIDE))}
+              onPress={() => (reviewMode ? goForward() : goTo(OB_ABOUT_YOU_SLIDE))}
               theme={theme}
             />
           </ScrollView>
         );
 
       case 5:
-      default:
         return (
           <KeyboardAvoidingView
             style={styles.flex}
@@ -1003,20 +1161,39 @@ export function OnboardingFlow({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
             >
-              <Text style={[styles.headline, { color: theme.text, marginBottom: 10 }]}>
-                Tell me{'\n'}about you.
+              <Text
+                style={[
+                  styles.headline,
+                  myanmarUi && styles.headlineMy,
+                  { color: theme.text, marginBottom: 10 },
+                ]}
+              >
+                {t('onboarding.aboutYouTitle')}
               </Text>
-              <Text style={[styles.checkinSub, { color: theme.mutedText }]}>
-                Only what helps Emo and Mira support you. You can change this anytime in Your Name &
-                Profile.
+              <Text
+                style={[
+                  styles.checkinSub,
+                  myanmarUi && styles.bodyMy,
+                  { color: theme.mutedText },
+                ]}
+              >
+                {t('onboarding.aboutYouSub')}
               </Text>
 
-              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Preferred name</Text>
+              <Text
+                style={[
+                  styles.fieldLabel,
+                  myanmarUi && styles.fieldLabelMy,
+                  { color: theme.secondaryText },
+                ]}
+              >
+                {t('onboarding.preferredName')}
+              </Text>
               <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
                 <User size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2} />
                 <TextInput
                   style={[styles.nameInput, { color: theme.text }]}
-                  placeholder="Optional"
+                  placeholder={t('onboarding.preferredNamePlaceholder')}
                   placeholderTextColor={theme.mutedText}
                   value={name}
                   onChangeText={setName}
@@ -1026,30 +1203,96 @@ export function OnboardingFlow({
                 />
               </View>
 
-              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Pronouns (optional)</Text>
-              <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-                <TextInput
-                  style={[styles.nameInput, { color: theme.text, paddingLeft: 4 }]}
-                  placeholder="e.g. she/her, he/him, they/them"
-                  placeholderTextColor={theme.mutedText}
-                  value={pronouns}
-                  onChangeText={setPronouns}
-                  maxLength={40}
-                  autoCorrect={false}
-                />
-              </View>
+              <Text
+                style={[
+                  styles.fieldLabel,
+                  myanmarUi && styles.fieldLabelMy,
+                  { color: theme.secondaryText },
+                ]}
+              >
+                {t('onboarding.pronouns')}
+              </Text>
+              {t('onboarding.pronounsHelper') ? (
+                <Text
+                  style={[
+                    styles.pronounHelper,
+                    myanmarUi && styles.bodyMy,
+                    { color: theme.mutedText },
+                  ]}
+                >
+                  {t('onboarding.pronounsHelper')}
+                </Text>
+              ) : null}
+              <Pressable
+                onPress={() => {
+                  void hapticLight();
+                  setPronounPickerOpen(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t('onboarding.pronouns')}
+                style={[
+                  styles.nameRow,
+                  styles.pronounDropdown,
+                  { backgroundColor: theme.card, borderColor: theme.cardBorder },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.nameInput,
+                    {
+                      color:
+                        pronounCustomMode || pronouns.trim() ? theme.text : theme.mutedText,
+                      paddingLeft: 4,
+                    },
+                    myanmarUi && styles.pronounDropdownTextMy,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {pronounFieldLabel}
+                </Text>
+                <ChevronDown size={18} color={theme.mutedText} strokeWidth={2.2} />
+              </Pressable>
+              {pronounCustomMode ? (
+                <View
+                  style={[
+                    styles.nameRow,
+                    styles.pronounCustomRow,
+                    { backgroundColor: theme.card, borderColor: theme.cardBorder },
+                  ]}
+                >
+                  <TextInput
+                    style={[
+                      styles.nameInput,
+                      { color: theme.text, paddingLeft: 4 },
+                      myanmarUi && styles.pronounDropdownTextMy,
+                    ]}
+                    placeholder={t('onboarding.pronounsPlaceholder')}
+                    placeholderTextColor={theme.mutedText}
+                    value={pronouns}
+                    onChangeText={setPronouns}
+                    maxLength={40}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                </View>
+              ) : null}
 
-              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Emo language</Text>
+              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>
+                {t('onboarding.emoLanguage')}
+              </Text>
               <View style={styles.langChipRow}>
-                {CHAT_LANGUAGE_OPTIONS.slice(0, 5).map((opt) => {
+                {emoLanguageOptions.map((opt) => {
                   const selected = emoLanguage === opt.id;
                   return (
                     <Pressable
                       key={opt.id}
                       onPress={() => {
                         void hapticLight();
-                        setEmoLanguage(opt.id);
+                        applyEmoLanguage(opt.id);
                       }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={opt.label}
                       style={[
                         styles.langChip,
                         {
@@ -1058,7 +1301,13 @@ export function OnboardingFlow({
                         },
                       ]}
                     >
-                      <Text style={{ color: selected ? theme.accent : theme.text, fontWeight: '600', fontSize: 12 }}>
+                      <Text
+                        style={[
+                          styles.langChipText,
+                          myanmarUi && styles.langChipTextMy,
+                          { color: selected ? theme.accent : theme.text },
+                        ]}
+                      >
                         {opt.shortLabel}
                       </Text>
                     </Pressable>
@@ -1066,17 +1315,28 @@ export function OnboardingFlow({
                 })}
               </View>
 
-              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Mira language</Text>
+              <Text
+                style={[
+                  styles.fieldLabel,
+                  myanmarUi && styles.fieldLabelMy,
+                  { color: theme.secondaryText },
+                ]}
+              >
+                {t('onboarding.miraLanguage')}
+              </Text>
               <View style={styles.langChipRow}>
-                {MIRA_LANGUAGE_OPTIONS.map((opt) => {
+                {miraLanguageOptions.map((opt) => {
                   const selected = miraLanguage === opt.id;
                   return (
                     <Pressable
                       key={opt.id}
                       onPress={() => {
                         void hapticLight();
-                        setMiraLanguage(opt.id);
+                        applyMiraLanguage(opt.id);
                       }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={opt.label}
                       style={[
                         styles.langChip,
                         {
@@ -1086,11 +1346,11 @@ export function OnboardingFlow({
                       ]}
                     >
                       <Text
-                        style={{
-                          color: selected ? tokens.oracle.accent : theme.text,
-                          fontWeight: '600',
-                          fontSize: 12,
-                        }}
+                        style={[
+                          styles.langChipText,
+                          myanmarUi && styles.langChipTextMy,
+                          { color: selected ? tokens.oracle.accent : theme.text },
+                        ]}
                       >
                         {opt.shortLabel}
                       </Text>
@@ -1099,45 +1359,172 @@ export function OnboardingFlow({
                 })}
               </View>
 
-              <Text style={[styles.checkinSection, { color: theme.text, marginTop: 18 }]}>
-                How are you feeling today? (optional)
-              </Text>
-              <MoodPicker
-                theme={theme}
-                selected={selectedMood}
-                onSelect={handleMoodSelect}
-                variant="onboarding"
-                horizontalPadding={28}
-              />
-              {moodAckVisible ? (
-                <ObCard theme={theme} style={styles.moodAckCard}>
-                  <Text style={[styles.moodAckLabel, { color: theme.secondaryText }]}>Emo</Text>
-                  <Text style={[styles.moodAckText, { color: theme.text }]}>{moodAckVisible}</Text>
-                </ObCard>
-              ) : null}
-
               <LavenderButton
-                label="Continue to Home"
-                onPress={enterSanctuary}
+                label={t('common.continue')}
+                onPress={() => (reviewMode ? goForward() : goTo(OB_FEELING_SLIDE))}
                 theme={theme}
               />
-              <Pressable onPress={skipAboutYou} hitSlop={8} style={styles.skipLinkWrap}>
-                <Text style={[styles.skipLink, { color: theme.mutedText }]}>Skip for now</Text>
-              </Pressable>
 
               <Text style={[styles.legalFooter, { color: theme.mutedText }]}>
-                By continuing, you agree to the{' '}
-                <Text style={[styles.legalLink, { color: theme.accent }]} onPress={openTermsOfService}>
-                  Terms of Service
-                </Text>{' '}
-                and{' '}
-                <Text style={[styles.legalLink, { color: theme.accent }]} onPress={openPrivacyPolicy}>
-                  Privacy Policy
-                </Text>
-                .
+                {(() => {
+                  const termsLabel = t('common.terms');
+                  const privacyLabel = t('common.privacyPolicy');
+                  const raw = t('onboarding.legalAgree', { terms: '<<T>>', privacy: '<<P>>' });
+                  const nodes: React.ReactNode[] = [];
+                  const re = /<<T>>|<<P>>/g;
+                  let last = 0;
+                  let match: RegExpExecArray | null;
+                  let i = 0;
+                  while ((match = re.exec(raw))) {
+                    if (match.index > last) nodes.push(raw.slice(last, match.index));
+                    if (match[0] === '<<T>>') {
+                      nodes.push(
+                        <Text
+                          key={`terms-${i++}`}
+                          style={[styles.legalLink, { color: theme.accent }]}
+                          onPress={openTermsOfService}
+                        >
+                          {termsLabel}
+                        </Text>,
+                      );
+                    } else {
+                      nodes.push(
+                        <Text
+                          key={`privacy-${i++}`}
+                          style={[styles.legalLink, { color: theme.accent }]}
+                          onPress={openPrivacyPolicy}
+                        >
+                          {privacyLabel}
+                        </Text>,
+                      );
+                    }
+                    last = match.index + match[0].length;
+                  }
+                  if (last < raw.length) nodes.push(raw.slice(last));
+                  return nodes;
+                })()}
               </Text>
             </ScrollView>
           </KeyboardAvoidingView>
+        );
+
+      case 6:
+        return (
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={[styles.scrollPad, scrollPad, { paddingBottom: 28 }]}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text
+              style={[
+                styles.headline,
+                myanmarUi && styles.headlineMy,
+                { color: theme.text, marginBottom: 10 },
+              ]}
+            >
+              {t('onboarding.feelingTitle')}
+            </Text>
+            <Text style={[styles.checkinSub, myanmarUi && styles.bodyMy, { color: theme.mutedText }]}>
+              {t('onboarding.feelingSub')}
+            </Text>
+            <Text
+              style={[
+                styles.feelingOptional,
+                myanmarUi && styles.bodyMy,
+                { color: theme.mutedText },
+              ]}
+            >
+              {t('onboarding.feelingOptional')}
+            </Text>
+            <MoodPicker
+              theme={theme}
+              selected={selectedMood}
+              onSelect={handleMoodSelect}
+              variant="onboarding"
+              horizontalPadding={28}
+            />
+            {selectedMood && moodAckVisible ? (
+              <ObCard theme={theme} style={styles.moodAckCard}>
+                <Text
+                  style={[
+                    styles.moodAckLabel,
+                    myanmarUi && styles.moodAckLabelMy,
+                    { color: theme.secondaryText },
+                  ]}
+                >
+                  {t('onboarding.emoLabel')}
+                </Text>
+                <Text
+                  style={[
+                    styles.moodAckText,
+                    myanmarUi && styles.moodAckTextMy,
+                    { color: theme.text },
+                  ]}
+                >
+                  {moodAckVisible}
+                </Text>
+              </ObCard>
+            ) : null}
+            <LavenderButton
+              label={t('common.continue')}
+              onPress={() => (reviewMode ? goForward() : goTo(OB_READY_SLIDE))}
+              theme={theme}
+            />
+            <Pressable
+              onPress={() => {
+                if (reviewMode) {
+                  goForward();
+                  return;
+                }
+                setSelectedMood(null);
+                setMoodAckVisible('');
+                goTo(OB_READY_SLIDE);
+              }}
+              hitSlop={8}
+              style={styles.skipLinkWrap}
+            >
+              <Text style={[styles.skipLink, myanmarUi && styles.skipLinkMy, { color: theme.mutedText }]}>
+                {t('onboarding.skipForNow')}
+              </Text>
+            </Pressable>
+          </ScrollView>
+        );
+
+      case 7:
+      default:
+        return (
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={[styles.scrollPad, scrollPad]}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text
+              style={[
+                styles.headline,
+                myanmarUi && styles.headlineMy,
+                { color: theme.text, marginBottom: 10 },
+              ]}
+            >
+              {t('onboarding.readyTitle')}
+            </Text>
+            <Text style={[styles.body, myanmarUi && styles.bodyMy, { color: theme.mutedText }]}>
+              {t('onboarding.readyBody')}
+            </Text>
+            <Text
+              style={[
+                styles.quote,
+                myanmarUi && styles.quoteMy,
+                { color: theme.secondaryText, marginTop: 8 },
+              ]}
+            >
+              {t('onboarding.readyReassurance')}
+            </Text>
+            <LavenderButton
+              label={t('onboarding.start')}
+              onPress={() => (reviewMode ? goForward() : enterSanctuary())}
+              theme={theme}
+            />
+          </ScrollView>
         );
     }
   };
@@ -1151,7 +1538,7 @@ export function OnboardingFlow({
           <View style={styles.reviewChrome}>
             <ScreenNavChrome
               theme={theme}
-              title={OB_SLIDE_TITLES[slide] ?? ''}
+              title={obSlideTitle(slide, t)}
               showMenu={reviewMode}
               onBack={
                 reviewMode
@@ -1196,13 +1583,16 @@ export function OnboardingFlow({
                 key={i}
                 onPress={() => {
                   // Age is required only before Tell Me About You.
-                  if (!ageGatePassed && i === OB_LAST_CONTENT_SLIDE) return;
-                  if (!privacyAcked && i === OB_LAST_CONTENT_SLIDE) return;
+                  if (!ageGatePassed && i >= OB_ABOUT_YOU_SLIDE) return;
+                  if (!privacyAcked && i >= OB_ABOUT_YOU_SLIDE) return;
                   goTo(i);
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel={`Go to step ${OB_PROGRESS_SLIDES.indexOf(i) + 1} of ${OB_PROGRESS_SLIDES.length}`}
+                  accessibilityLabel={t('onboarding.stepA11y', {
+                    current: OB_PROGRESS_SLIDES.indexOf(i) + 1,
+                    total: OB_PROGRESS_SLIDES.length,
+                  })}
               >
                 <View
                   style={[
@@ -1223,6 +1613,65 @@ export function OnboardingFlow({
 
         <Animated.View style={[styles.flex, { opacity: fadeAnim }]}>{renderSlide()}</Animated.View>
       </ScreenSafeArea>
+
+      <Modal
+        visible={pronounPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPronounPickerOpen(false)}
+      >
+        <Pressable style={styles.pronounOverlay} onPress={() => setPronounPickerOpen(false)}>
+          <View
+            style={[styles.pronounSheet, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
+          >
+            <Text style={[styles.pronounSheetTitle, myanmarUi && styles.pronounSheetTitleMy, { color: theme.text }]}>
+              {t('onboarding.pronouns')}
+            </Text>
+            {pronounOptions.map((opt) => {
+              const selected =
+                opt.id === 'custom'
+                  ? pronounCustomMode
+                  : !pronounCustomMode && pronouns === opt.label;
+              return (
+                <Pressable
+                  key={opt.id}
+                  onPress={() => {
+                    void hapticLight();
+                    if (opt.id === 'custom') {
+                      setPronounCustomMode(true);
+                      setPronouns('');
+                    } else {
+                      setPronounCustomMode(false);
+                      setPronouns(opt.label);
+                    }
+                    setPronounPickerOpen(false);
+                  }}
+                  style={[
+                    styles.pronounOption,
+                    {
+                      borderColor: selected ? theme.accent : theme.border,
+                      backgroundColor: selected ? `${theme.accent}18` : 'transparent',
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Text
+                    style={[
+                      styles.pronounOptionText,
+                      myanmarUi && styles.pronounOptionTextMy,
+                      { color: selected ? theme.accent : theme.text },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                  {selected ? <Check size={16} color={theme.accent} strokeWidth={2.6} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1429,9 +1878,105 @@ const styles = StyleSheet.create({
   legalLink: { textDecorationLine: 'underline', fontWeight: '600' },
   skipLinkWrap: { alignItems: 'center', marginBottom: 16 },
   skipLink: { fontSize: 13, fontWeight: '500', textDecorationLine: 'underline' },
+  eyebrowMy: { letterSpacing: 0, lineHeight: 22, paddingTop: 2, fontFamily: undefined },
+  headlineMy: { letterSpacing: 0, lineHeight: 40, paddingTop: 4, fontFamily: undefined },
+  bodyMy: { letterSpacing: 0, lineHeight: 26, paddingTop: 2, fontFamily: undefined },
+  noticeTitleMy: { letterSpacing: 0, lineHeight: 28, paddingTop: 2, fontFamily: undefined },
+  noticeBodyMy: { letterSpacing: 0, lineHeight: 26, paddingTop: 2, fontFamily: undefined },
+  quoteMy: { letterSpacing: 0, lineHeight: 26, paddingTop: 2, fontFamily: undefined, fontStyle: 'normal' },
+  fieldLabelMy: { letterSpacing: 0, lineHeight: 24, paddingTop: 2, fontFamily: undefined },
+  pronounHelper: { fontSize: 13, lineHeight: 20, marginBottom: 8, marginTop: -4 },
+  feelingOptional: { fontSize: 13, lineHeight: 20, marginBottom: 14, fontStyle: 'italic' },
+  skipLinkMy: { letterSpacing: 0, lineHeight: 22, fontFamily: undefined },
   moodAckCard: { padding: 14, marginBottom: 16 },
-  moodAckLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
+  moodAckLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  moodAckLabelMy: {
+    textTransform: 'none',
+    letterSpacing: 0,
+    fontSize: 13,
+    lineHeight: 22,
+    paddingTop: 2,
+    fontFamily: undefined,
+  },
+  pronounCustomRow: {
+    marginTop: 8,
+  },
+  langChipText: {
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  langChipTextMy: {
+    letterSpacing: 0,
+    lineHeight: 20,
+    paddingTop: 1,
+    fontFamily: undefined,
+  },
   moodAckText: { fontSize: 14, lineHeight: 21, fontStyle: 'italic' },
+  moodAckTextMy: {
+    fontStyle: 'normal',
+    fontSize: 14,
+    lineHeight: 26,
+    paddingTop: 3,
+    paddingBottom: 2,
+    fontFamily: undefined,
+  },
+  pronounDropdown: {
+    justifyContent: 'space-between',
+  },
+  pronounDropdownTextMy: {
+    lineHeight: 24,
+    paddingTop: 2,
+    fontFamily: undefined,
+  },
+  pronounOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(20, 16, 28, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  pronounSheet: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+  },
+  pronounSheetTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  pronounSheetTitleMy: {
+    lineHeight: 28,
+    paddingTop: 3,
+    fontFamily: undefined,
+  },
+  pronounOption: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  pronounOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  pronounOptionTextMy: {
+    lineHeight: 26,
+    paddingTop: 2,
+    fontFamily: undefined,
+  },
   dobRow: { flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 8 },
   dobField: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 14 },
   dobFieldYear: { flex: 1.4, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 14 },
