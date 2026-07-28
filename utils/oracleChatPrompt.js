@@ -118,7 +118,7 @@ function getOracleModeInstructions(mode) {
  * @param {import('./miraLanguage').MiraLanguageId | string} [miraLanguage]
  * @param {{ userMessage?: string; recentUserTexts?: string[] }} [localeCtx]
  */
-export function buildOracleSystemPrompt(userName, mode = 'deep', miraLanguage = 'auto', localeCtx = {}) {
+export function buildOracleSystemPrompt(userName, mode = 'quick', miraLanguage = 'auto', localeCtx = {}) {
   const name = userName?.trim() || 'friend';
   const pref = normalizeMiraLanguage(miraLanguage);
   const locale = resolveMiraComposeLocale(

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,14 +11,17 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
-import { ArrowUp, Bookmark, Compass, Globe, Loader2, Sparkles, Trash2 } from 'lucide-react-native';
+import { ChevronDown, Globe, Lock } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ScreenSafeArea } from '../shared/ScreenSafeArea';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CircadianGlassCard, SERIF } from '../shared/CircadianHeroGlow';
-import { useCircadianTheme } from '../../theme/circadianTheme';
-import { ScreenNavChrome, type MainScreenKey, useAppNav } from '../navigation/AppNavigation';
+import { ScreenSafeArea } from '../shared/ScreenSafeArea';
+import { SERIF } from '../shared/CircadianHeroGlow';
+import { useCircadianTheme, getCircadianIconColor } from '../../theme/circadianTheme';
+import { NavChromeBtn, ScreenNavChrome, type MainScreenKey, useAppNav } from '../navigation/AppNavigation';
 import { fetchOracleResearchContext } from '../../utils/oracleSearch';
 import { logOracleInquiry } from '../../utils/oracleTopicLog';
 import { saveOracleInsight } from '../../utils/oracleSavedInsights';
@@ -39,36 +42,60 @@ import {
   isMiraStoryQuestion,
   shouldUseConciseMiraStory,
 } from '../../utils/miraIdentity';
-import { localeAwareTextStyle, localeTextMetrics, textNeedsMyanmarMetrics } from '../../utils/localeText';
-import { rgba, tokens } from '../../theme/tokens';
+import { localeAwareTextStyle, localeTextMetrics } from '../../utils/localeText';
+import { BRAND_CTA_GRADIENT, CHAT_USER_BUBBLE_GRADIENT, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
 import { TalkHeroMira } from '../talk/TalkHeroMira';
 import { MiraLanguageSheet } from '../talk/MiraLanguageSheet';
+import { MiraControlsSheet } from '../talk/MiraControlsSheet';
 import { TalkAiConsentSheet } from '../talk/TalkAiConsentSheet';
 import { useAnthropicAiConsent } from '../../hooks/useAnthropicAiConsent';
-import type { CircadianTheme } from '../../theme/circadianTheme';
 import {
-  MIRA_EMPTY_PROMPT,
-  MIRA_EMPTY_PROMPT_MY,
-  MIRA_EMPTY_ROLE,
-  MIRA_EMPTY_ROLE_MY,
-  ORACLE_CATEGORIES,
   ORACLE_HEADER_TAGLINE,
   ORACLE_HEADER_TITLE,
   ORACLE_MODES,
-  ORACLE_STATUS_MESSAGE,
   ORACLE_STATUS_SHORT,
-  type OracleModeId,
+  TALK_BG,
+  TALK_INPUT_SURFACE,
   oracleSourcesLabel,
+  type OracleModeId,
 } from '../../constants/brandCopy';
 import { hapticLight } from '../../utils/haptics';
-import { NavChromeBtn } from '../navigation/AppNavigation';
 
 const ORACLE_CHAT_KEY = 'oracleChatCurrent';
+const NAV_CONTENT_HEIGHT = 72;
+const NEAR_BOTTOM_PX = 80;
+const USER_GRADIENT = [...CHAT_USER_BUBBLE_GRADIENT] as [string, string, string, string];
+const SEND_GRADIENT = [...BRAND_CTA_GRADIENT] as [string, string];
 
-function isPersistedOracleMessage(m: OracleMessage): m is OracleMessage {
-  return m.role === 'user' || m.role === 'bot';
+function shouldFetchResearch(mode: OracleModeId, query: string): boolean {
+  if (mode === 'deep' || mode === 'wise') return true;
+  return /\b(research|study|studies|evidence|data|statistics|compare|history of|sources?|cite)\b/i.test(
+    query,
+  );
 }
+
+function maxTokensForMode(mode: OracleModeId): number {
+  if (mode === 'quick') return 550;
+  if (mode === 'wise') return 1000;
+  return 1200;
+}
+
+function statusForMode(mode: OracleModeId): string {
+  if (mode === 'quick') return 'Mira is thinking…';
+  if (mode === 'wise') return 'Gathering knowledge and perspective…';
+  return ORACLE_STATUS_SHORT;
+}
+
+type OracleMessage = {
+  id: string;
+  role: 'user' | 'bot';
+  text: string;
+  time?: string;
+  sourceCount?: number;
+  query?: string;
+  sources?: { title?: string; url?: string }[];
+};
 
 async function loadOracleChat(): Promise<OracleMessage[]> {
   try {
@@ -90,118 +117,82 @@ async function loadOracleChat(): Promise<OracleMessage[]> {
 }
 
 async function persistOracleChat(messages: OracleMessage[]): Promise<void> {
-  const saved = messages.filter(isPersistedOracleMessage);
   try {
-    if (saved.length === 0) {
+    if (messages.length === 0) {
       await AsyncStorage.removeItem(ORACLE_CHAT_KEY);
     } else {
-      await AsyncStorage.setItem(ORACLE_CHAT_KEY, JSON.stringify(saved));
+      await AsyncStorage.setItem(ORACLE_CHAT_KEY, JSON.stringify(messages));
     }
   } catch {}
 }
 
-function getOracleColors(theme: CircadianTheme) {
-  const teal = tokens.oracle.accent;
-  return {
-    navTitle: theme.text,
-    body: theme.mutedText,
-    headline: theme.text,
-    inputBg: tokens.surface.inset,
-    inputBorder: tokens.border.standard,
-    inputText: theme.text,
-    placeholder: theme.mutedText,
-    sendBg: teal,
-    sendDisabled: `${teal}66`,
-    accentSoft: teal,
-    accentMuted: `${teal}8C`,
-    userBubble: tokens.surface.bubble,
-    botBubbleBg: tokens.surface.frosted,
-    botBubbleBorder: tokens.border.standard,
-    wiseBg: tokens.surface.tint,
-    wiseBorder: tokens.border.medium,
-  } as const;
-}
-
-type OracleMessage = {
-  id: string;
-  role: 'user' | 'bot' | 'status';
-  text: string;
-  time?: string;
-  sourceCount?: number;
-  query?: string;
-  sources?: { title?: string; url?: string }[];
-};
-
-function splitWisePerspective(text: string): { answer: string; perspective: string | null } {
-  const marker = 'A wise perspective';
-  const index = text.indexOf(marker);
-  if (index === -1) return { answer: text, perspective: null };
-  const answer = text.slice(0, index).trim();
-  const perspective = text.slice(index + marker.length).replace(/^[\s:\n—-]+/, '').trim();
-  if (!perspective) return { answer: text, perspective: null };
-  return { answer, perspective };
-}
-
-function statusMessageForMode(mode: OracleModeId): string {
-  if (mode === 'quick') return 'Thinking through your question…';
-  if (mode === 'wise') return 'Gathering knowledge and perspective…';
-  return ORACLE_STATUS_MESSAGE;
-}
-
-function maxTokensForMode(mode: OracleModeId): number {
-  if (mode === 'quick') return 550;
-  if (mode === 'wise') return 1000;
-  return 1200;
-}
-
-function shouldFetchResearch(mode: OracleModeId, query: string): boolean {
-  if (mode === 'deep' || mode === 'wise') return true;
-  return /\b(research|study|studies|evidence|data|statistics|compare|history of|explain)\b/i.test(query);
-}
-
 export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
-  const oracle = getOracleColors(theme);
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
   const { userName } = useAppNav();
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
+  const nearBottomRef = useRef(true);
+  const forceScrollRef = useRef(false);
+
   const [input, setInput] = useState('');
-  const [searching, setSearching] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const [mode, setMode] = useState<OracleModeId>('deep');
   const [messages, setMessages] = useState<OracleMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [miraLanguage, setMiraLanguage] = useState<'auto' | 'en' | 'my' | 'id'>('auto');
   const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const { showConsentSheet: showAiConsentSheet, grantConsent: handleAiConsent, ensureConsentBeforeSend } =
     useAnthropicAiConsent();
-  const isEmpty = messages.length === 0;
-  const miraUiBurmese = miraLanguage === 'my';
+
+  const narrow = windowWidth < 390;
   const miraPlaceholder = miraInputPlaceholder(miraLanguage);
+  const isEmpty = messages.length === 0;
+  const accent = tokens.oracle.accent;
+
+  const activeMode = useMemo(
+    () => ORACLE_MODES.find((m) => m.id === mode) ?? ORACLE_MODES[1],
+    [mode],
+  );
+  const modeChipLabel = narrow ? activeMode.shortLabel : activeMode.label;
+
+  const lastBot = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'bot') return messages[i];
+    }
+    return null;
+  }, [messages]);
+
+  const availability = useMemo(
+    () => ({
+      canResearchDeeper: Boolean(lastBot?.text?.trim()) && !waiting,
+      canSeeSources: Boolean(lastBot && (lastBot.sourceCount ?? 0) > 0 && lastBot.sources?.length),
+      canSave: Boolean(lastBot?.text?.trim()),
+      canClear: messages.length > 0,
+      sourcesDisabledHint: lastBot
+        ? 'Available after sourced research'
+        : 'Available after Mira replies',
+    }),
+    [lastBot, messages.length, waiting],
+  );
 
   useEffect(() => {
     void loadSettings().then((s) => {
       setMiraLanguage(normalizeMiraLanguage(s.miraLanguage));
-      const savedMode = s.miraMode;
-      if (savedMode === 'quick' || savedMode === 'deep' || savedMode === 'wise') {
-        setMode(savedMode);
+      if (s.miraMode === 'quick' || s.miraMode === 'deep' || s.miraMode === 'wise') {
+        setMode(s.miraMode);
       }
     });
   }, []);
-
-  const lastBotId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].role === 'bot') return messages[i].id;
-    }
-    return null;
-  }, [messages]);
 
   useEffect(() => {
     void loadOracleChat().then((loaded) => {
       if (loaded.length > 0) setMessages(loaded);
       setHistoryLoaded(true);
       if (loaded.length > 0) {
+        forceScrollRef.current = true;
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 120);
       }
     });
@@ -215,14 +206,28 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
   const nowTime = () =>
     new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+  const scrollToLatestIfNeeded = useCallback((force = false) => {
+    if (force || forceScrollRef.current || nearBottomRef.current) {
+      forceScrollRef.current = false;
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    }
+  }, []);
+
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distance = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    nearBottomRef.current = distance < NEAR_BOTTOM_PX;
+  }, []);
+
   const submitText = useCallback(
-    async (rawText: string, activeMode: OracleModeId = mode) => {
+    async (rawText: string, activeMode: OracleModeId = mode, opts?: { skipUserBubble?: boolean }) => {
       const trimmed = rawText.trim();
-      if (!trimmed || searching || showAiConsentSheet) return;
+      if (!trimmed || waiting || showAiConsentSheet) return;
       if (!(await ensureConsentBeforeSend())) return;
       const name = userName.trim() || 'friend';
       setInput('');
-      setSearching(true);
+      setWaiting(true);
+      forceScrollRef.current = true;
 
       const userMsg: OracleMessage = {
         id: `u-${Date.now()}`,
@@ -234,11 +239,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
       let priorForApi: OracleMessage[] = [];
       setMessages((prev) => {
         priorForApi = prev;
-        return [
-          ...prev,
-          userMsg,
-          { id: 'status', role: 'status', text: statusMessageForMode(activeMode) },
-        ];
+        if (opts?.skipUserBubble) return prev;
+        return [...prev, userMsg];
       });
 
       try {
@@ -251,40 +253,46 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           .slice(-6);
         const composeLocale = resolveMiraComposeLocale(lang, trimmed, recentUserTexts);
 
-        // Canonical Mira biography — skip research / model for identity questions.
         if (isMiraStoryQuestion(trimmed)) {
           const replyText = getMiraStoryAnswer({
             locale: composeLocale === 'my' ? 'my' : 'en',
             concise: shouldUseConciseMiraStory(trimmed, activeMode),
             userName: name !== 'friend' ? name : '',
           });
-          const botMsg: OracleMessage = {
-            id: `b-${Date.now()}`,
-            role: 'bot',
-            text: replyText,
-            sourceCount: 0,
-            query: trimmed,
-            sources: [],
-          };
-          setMessages((prev) => [...prev.filter((m) => m.role !== 'status'), botMsg]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `b-${Date.now()}`,
+              role: 'bot',
+              text: replyText,
+              time: nowTime(),
+              sourceCount: 0,
+              query: trimmed,
+              sources: [],
+            },
+          ]);
           return;
         }
 
         let research = { contextBlock: '', sources: [] as { title?: string; url?: string }[] };
         if (shouldFetchResearch(activeMode, trimmed)) {
-          research = await fetchOracleResearchContext(trimmed);
+          try {
+            research = await Promise.race([
+              fetchOracleResearchContext(trimmed),
+              new Promise<typeof research>((resolve) =>
+                setTimeout(() => resolve({ contextBlock: '', sources: [] }), 10000),
+              ),
+            ]);
+          } catch {
+            research = { contextBlock: '', sources: [] };
+          }
         }
 
         const userBlock = research.contextBlock
           ? `${trimmed}\n\n${research.contextBlock}`
           : trimmed;
 
-        const apiHistory = buildOracleApiMessages(
-          priorForApi.filter(
-            (m): m is OracleMessage & { role: 'user' | 'bot' } =>
-              m.role === 'user' || m.role === 'bot',
-          ),
-        );
+        const apiHistory = buildOracleApiMessages(priorForApi);
         const result = await callAnthropicMessages({
           system: buildOracleSystemPrompt(name, activeMode, lang, {
             userMessage: trimmed,
@@ -293,6 +301,8 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           messages: [...apiHistory, { role: 'user', content: userBlock }],
           maxTokens: maxTokensForMode(activeMode),
           route: 'oracle', // legacy route id — companion is Mira
+          languageMeta: undefined,
+          temperature: undefined,
         });
 
         const replyText =
@@ -305,14 +315,15 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             ? describeAnthropicError({ error: result.error })
             : `I couldn't reach an answer just now, ${name}. Try again in a moment.`;
           setMessages((prev) => [
-            ...prev.filter((m) => m.role !== 'status'),
+            ...prev,
             {
               id: `b-err-${Date.now()}`,
               role: 'bot',
               text: errMsg,
-              sourceCount: research.sources?.length || 0,
+              time: nowTime(),
+              sourceCount: 0,
               query: trimmed,
-              sources: research.sources || [],
+              sources: [],
             },
           ]);
           return;
@@ -324,40 +335,52 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           sources: research.sources || [],
         });
 
-        const botMsg: OracleMessage = {
-          id: `b-${Date.now()}`,
-          role: 'bot',
-          text: replyText,
-          sourceCount: research.sources?.length || 0,
-          query: trimmed,
-          sources: research.sources || [],
-        };
-        setMessages((prev) => [...prev.filter((m) => m.role !== 'status'), botMsg]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `b-${Date.now()}`,
+            role: 'bot',
+            text: replyText,
+            time: nowTime(),
+            sourceCount: research.sources?.length || 0,
+            query: trimmed,
+            sources: research.sources || [],
+          },
+        ]);
       } catch {
         setMessages((prev) => [
-          ...prev.filter((m) => m.role !== 'status'),
+          ...prev,
           {
             id: `b-err-${Date.now()}`,
             role: 'bot',
-            text: `I couldn't reach sources just now, ${name}. Try again — or switch to Quick Insight for a faster reply.`,
+            text: `I couldn't reply just now, ${name}. Please try again in a moment.`,
+            time: nowTime(),
             sourceCount: 0,
             query: trimmed,
           },
         ]);
       } finally {
-        setSearching(false);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+        setWaiting(false);
+        scrollToLatestIfNeeded(true);
       }
     },
-    [searching, showAiConsentSheet, ensureConsentBeforeSend, userName, mode],
+    [waiting, showAiConsentSheet, ensureConsentBeforeSend, userName, mode, scrollToLatestIfNeeded],
   );
 
-  const submit = useCallback(() => {
-    void submitText(input);
-  }, [input, submitText]);
+  const send = useCallback(() => {
+    void submitText(input, mode);
+  }, [input, submitText, mode]);
 
-  const clearHistory = () => {
-    Alert.alert('Clear history', 'Remove all Mira messages?', [
+  const selectMode = useCallback((next: OracleModeId) => {
+    setMode(next);
+    void saveSettings({ miraMode: next });
+    setControlsOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 180);
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setControlsOpen(false);
+    Alert.alert('Clear conversation', 'Remove all Mira messages?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
@@ -368,15 +391,15 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         },
       },
     ]);
-  };
+  }, []);
 
-  const saveLatestInsight = async () => {
-    const lastBot = [...messages].reverse().find((m) => m.role === 'bot');
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+  const saveLatestInsight = useCallback(async () => {
+    setControlsOpen(false);
     if (!lastBot?.text.trim()) {
       Alert.alert('Nothing to save', 'Ask Mira a question first.');
       return;
     }
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const ok = await saveOracleInsight({
       query: lastBot.query || lastUser?.text || '',
       insight: lastBot.text,
@@ -389,209 +412,53 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         { text: 'View Insights', onPress: () => onNav('insights') },
       ]);
     }
-  };
+  }, [lastBot, messages, onNav]);
 
-  const researchMore = (botMsg: OracleMessage) => {
-    const topic = botMsg.query || botMsg.text.slice(0, 100);
-    setMode('deep');
-    void saveSettings({ miraMode: 'deep' });
-    void submitText(`Research this more deeply: ${topic}`, 'deep');
-  };
-
-  const showSources = (botMsg: OracleMessage) => {
-    const titles = (botMsg.sources || []).map((s) => s.title).filter(Boolean);
+  const showSources = useCallback(() => {
+    setControlsOpen(false);
+    if (!lastBot) return;
+    const titles = (lastBot.sources || []).map((s) => s.title).filter(Boolean);
     if (!titles.length) {
       Alert.alert('Sources', 'No published sources were attached to this reply.');
       return;
     }
-    Alert.alert('Sources', titles.join('\n\n'));
-  };
+    Alert.alert('Published sources', titles.join('\n\n'));
+  }, [lastBot]);
 
-  const canSend = !searching && input.trim().length > 0;
+  const researchDeeper = useCallback(() => {
+    if (!lastBot) return;
+    setControlsOpen(false);
+    setMode('deep');
+    void saveSettings({ miraMode: 'deep' });
+    const topic = (lastBot.query || '').trim();
+    // Short action label — does not re-paste the prior user question.
+    const followUp = topic
+      ? `Research deeper on that last answer about “${topic.slice(0, 80)}${topic.length > 80 ? '…' : ''}”. Expand with thorough analysis and published sources.`
+      : 'Research deeper on your last answer. Expand with thorough analysis and published sources.';
+    void submitText(followUp, 'deep');
+  }, [lastBot, submitText]);
 
-  const renderBotMessage = (m: OracleMessage) => {
-    const { answer, perspective } = splitWisePerspective(m.text);
-    return (
-      <View key={m.id} style={styles.botBlock}>
-        <CircadianGlassCard
-          theme={theme}
-          variant="todayInsights"
-          style={[styles.botBubble, { borderColor: oracle.botBubbleBorder }]}
-        >
-          <Text
-            style={[
-              styles.botText,
-              { color: oracle.inputText },
-              localeAwareTextStyle(answer, { fontSize: 16, englishLineHeight: 26, baseFontFamily: SERIF }),
-            ]}
-          >
-            {answer}
-          </Text>
-          {perspective ? (
-            <View
-              style={[
-                styles.wiseBlock,
-                { backgroundColor: oracle.wiseBg, borderColor: oracle.wiseBorder },
-              ]}
-            >
-              <Text style={[styles.wiseEyebrow, { color: tokens.text.primary }]}>A wise perspective</Text>
-              <Text
-                style={[
-                  styles.wiseText,
-                  { color: oracle.inputText },
-                  localeAwareTextStyle(perspective, {
-                    fontSize: 15,
-                    englishLineHeight: 24,
-                    baseFontFamily: SERIF,
-                  }),
-                ]}
-              >
-                {perspective}
-              </Text>
-            </View>
-          ) : null}
-        </CircadianGlassCard>
-        {m.sourceCount ? (
-          <Text style={[styles.sourceLine, { color: oracle.body }]}>
-            {oracleSourcesLabel(m.sourceCount)}
-          </Text>
-        ) : null}
-        {m.id === lastBotId ? (
-          <View style={styles.actionRow}>
-            <Pressable
-              onPress={() => researchMore(m)}
-              style={[styles.pillBtn, { borderColor: `${oracle.accentSoft}44` }]}
-            >
-              <Compass size={13} color={oracle.accentSoft} strokeWidth={2.2} />
-              <Text style={[styles.pillText, { color: oracle.headline }]}>Research deeper</Text>
-            </Pressable>
-            {(m.sourceCount ?? 0) > 0 ? (
-              <Pressable
-                onPress={() => showSources(m)}
-                style={[styles.pillBtn, { borderColor: tokens.border.strong }]}
-              >
-                <Text style={[styles.pillText, { color: oracle.headline }]}>See sources</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-    );
-  };
+  const openControls = useCallback(() => {
+    void hapticLight();
+    Keyboard.dismiss();
+    setControlsOpen(true);
+  }, []);
 
-  const renderModeSelector = (compact = false) => (
-    <View style={[styles.modeRow, compact && styles.modeRowCompact]}>
-      {ORACLE_MODES.map((item) => {
-        const selected = mode === item.id;
-        return (
-          <Pressable
-            key={item.id}
-            onPress={() => {
-              void hapticLight();
-              setMode(item.id);
-              void saveSettings({ miraMode: item.id });
-            }}
-            style={[
-              styles.modeChip,
-              compact && styles.modeChipCompact,
-              {
-                borderColor: selected ? tokens.oracle.accent : tokens.border.standard,
-                borderWidth: selected ? 2 : 1,
-                backgroundColor: selected
-                  ? rgba(tokens.oracle.accent, theme.isDark ? 0.28 : 0.22)
-                  : tokens.surface.frosted,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
-            accessibilityLabel={`${item.label}. ${item.hint}`}
-          >
-            <Text
-              style={[
-                styles.modeLabel,
-                { color: selected ? tokens.oracle.accent : theme.text },
-              ]}
-            >
-              {item.label}
-            </Text>
-            {!compact ? (
-              <Text style={[styles.modeHint, { color: theme.mutedText }]} numberOfLines={2}>
-                {item.hint}
-              </Text>
-            ) : null}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-
-  const renderSearchInput = (large: boolean) => {
-    const inputMetrics = localeTextMetrics(input || miraPlaceholder, {
-      fontSize: large ? 18 : 16,
-      englishLineHeight: large ? 26 : 22,
-      englishPaddingV: large ? 14 : 10,
-    });
-    return (
-    <View style={[styles.inputRow, large && styles.inputRowLarge]}>
-      <TextInput
-        ref={inputRef}
-        style={[
-          large ? styles.inputLarge : styles.input,
-          {
-            borderColor: oracle.inputBorder,
-            backgroundColor: oracle.inputBg,
-            color: oracle.inputText,
-            lineHeight: inputMetrics.lineHeight,
-            paddingTop: inputMetrics.paddingTop,
-            paddingBottom: inputMetrics.paddingBottom,
-            ...(textNeedsMyanmarMetrics(input || miraPlaceholder) ? { fontFamily: undefined } : {}),
-          },
-        ]}
-        placeholder={miraPlaceholder}
-        placeholderTextColor={oracle.placeholder}
-        value={input}
-        onChangeText={setInput}
-        onSubmitEditing={() => void submit()}
-        returnKeyType="send"
-        selectionColor={oracle.sendBg}
-        multiline={large}
-        textAlign={large ? 'center' : 'left'}
-      />
-      <Pressable
-        onPress={() => void submit()}
-        disabled={!canSend}
-        style={[
-          large ? styles.sendBtnLarge : styles.sendBtn,
-          { backgroundColor: canSend ? oracle.sendBg : oracle.sendDisabled },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Send question to Mira"
-      >
-        {searching ? (
-          <ActivityIndicator color="#fff" size="small" />
-        ) : (
-          <ArrowUp size={large ? 22 : 20} color="#fff" strokeWidth={2.5} />
-        )}
-      </Pressable>
-    </View>
-    );
-  };
+  const statusLine = waiting ? statusForMode(mode) : null;
 
   return (
-    <View style={styles.flex}>
+    <View style={[styles.flex, { backgroundColor: TALK_BG }]}>
       <OracleAmbientCanvas />
 
-      <ScreenSafeArea extraTop={4}>
+      <ScreenSafeArea extraTop={4} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
-          <View style={styles.chromeWrap}>
+          <View style={styles.headerWrap}>
             <ScreenNavChrome
               theme={theme}
-              title={ORACLE_HEADER_TITLE}
-              titleColor={oracle.navTitle}
               actionsBeforeNav={
                 <NavChromeBtn
                   theme={theme}
@@ -605,221 +472,271 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 </NavChromeBtn>
               }
             />
-          </View>
-
-          <View style={styles.oracleHeaderMeta}>
-            <Text
-              style={[styles.oracleTagline, { color: oracle.body }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.82}
-            >
-              {ORACLE_HEADER_TAGLINE}
-            </Text>
-            {searching ? (
-              <View style={[styles.statusPill, { borderColor: `${oracle.accentSoft}55` }]}>
-                <Loader2 size={12} color={oracle.accentSoft} />
-                <Text style={[styles.statusPillText, { color: oracle.accentSoft }]}>
-                  {ORACLE_STATUS_SHORT}
+            <View style={styles.brandRow}>
+              <TalkHeroMira theme={theme} size="header" />
+              <View style={styles.brandTitles}>
+                <Text style={[styles.brandTitle, { color: theme.text }]}>{ORACLE_HEADER_TITLE}</Text>
+                <Text
+                  style={[styles.brandTagline, { color: theme.secondaryText }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {ORACLE_HEADER_TAGLINE}
+                </Text>
+              </View>
+            </View>
+            {statusLine ? (
+              <View style={styles.presenceRow}>
+                <Text style={[styles.presenceText, { color: theme.text }]} numberOfLines={1}>
+                  {statusLine}
                 </Text>
               </View>
             ) : null}
           </View>
 
-          <View style={[styles.oracleEmoRow, !isEmpty && styles.oracleEmoRowCompact]}>
-            <TalkHeroMira theme={theme} size={isEmpty ? 'hero' : 'compact'} />
-          </View>
-
-          {isEmpty ? (
-            <ScrollView
-              contentContainerStyle={[
-                styles.emptyScroll,
-                {
-                  paddingBottom: insets.bottom + 24,
-                  minHeight: Math.max(windowHeight - insets.top - insets.bottom - 220, 420),
-                },
-              ]}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.miraRoleBlock}>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.flex}
+            contentContainerStyle={[styles.scrollContent, isEmpty && styles.scrollContentEmpty]}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => scrollToLatestIfNeeded(false)}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            maintainVisibleContentPosition={
+              Platform.OS === 'ios' ? { minIndexForVisible: 0 } : undefined
+            }
+          >
+            {isEmpty ? (
+              <View style={styles.emptyBlock}>
+                <TalkHeroMira theme={theme} size="hero" />
                 <Text
                   style={[
-                    styles.miraRoleText,
+                    styles.emptyPrompt,
                     { color: theme.secondaryText },
-                    localeAwareTextStyle(miraUiBurmese ? MIRA_EMPTY_ROLE_MY : MIRA_EMPTY_ROLE, {
-                      fontSize: 15,
-                      englishLineHeight: 22,
+                    localeAwareTextStyle('What would you like Mira to explore?', {
+                      fontSize: 16,
+                      englishLineHeight: 24,
                       baseFontFamily: SERIF,
                     }),
                   ]}
                 >
-                  {miraUiBurmese ? MIRA_EMPTY_ROLE_MY : MIRA_EMPTY_ROLE}
-                </Text>
-                <Text
-                  style={[
-                    styles.miraPromptText,
-                    { color: theme.text },
-                    localeAwareTextStyle(miraUiBurmese ? MIRA_EMPTY_PROMPT_MY : MIRA_EMPTY_PROMPT, {
-                      fontSize: 17,
-                      englishLineHeight: 26,
-                      baseFontFamily: SERIF,
-                    }),
-                  ]}
-                >
-                  {miraUiBurmese ? MIRA_EMPTY_PROMPT_MY : MIRA_EMPTY_PROMPT}
+                  What would you like Mira to explore?
                 </Text>
               </View>
-
-              <CircadianGlassCard theme={theme} variant="todayInsights" style={styles.heroSearchCard}>
-                {renderSearchInput(true)}
-              </CircadianGlassCard>
-
-              <Pressable
-                onPress={() => {
-                  void hapticLight();
-                  setLanguageSheetOpen(true);
-                }}
-                style={styles.miraLangChip}
-                accessibilityRole="button"
-                accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
-              >
-                <Globe size={13} color={tokens.oracle.accent} strokeWidth={2.2} />
-                <Text style={[styles.miraLangChipText, { color: tokens.oracle.accent }]}>
-                  {getMiraLanguageLabel(miraLanguage)}
-                </Text>
-              </Pressable>
-
-              {renderModeSelector()}
-
-              <Text style={[styles.sectionEyebrow, { color: theme.mutedText }]}>Explore by topic</Text>
-              <View style={styles.categoryGrid}>
-                {ORACLE_CATEGORIES.map((cat) => (
-                  <Pressable
-                    key={cat.id}
-                    onPress={() => {
-                      void hapticLight();
-                      setInput(cat.starter);
-                      inputRef.current?.focus();
-                    }}
-                    style={({ pressed }) => [
-                      styles.categoryChip,
-                      {
-                        borderColor: tokens.border.standard,
-                        backgroundColor: tokens.surface.frosted,
-                      },
-                      pressed && { opacity: 0.88 },
-                    ]}
-                  >
-                    <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                    <Text style={[styles.categoryLabel, { color: theme.text }]}>{cat.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-          ) : (
-            <>
-              <View style={styles.modeBar}>{renderModeSelector(true)}</View>
-              <ScrollView
-                ref={scrollRef}
-                style={styles.flex}
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
-                {messages.map((m) => {
-                  if (m.role === 'status') {
-                    return (
-                      <View key={m.id} style={styles.statusRow}>
-                        <Sparkles size={14} color={oracle.accentSoft} strokeWidth={2.2} />
-                        <Text style={[styles.statusText, { color: oracle.accentMuted }]}>{m.text}</Text>
-                      </View>
-                    );
-                  }
-                  if (m.role === 'user') {
-                    const userPad = localeTextMetrics(m.text, { fontSize: 16, englishPaddingV: 16 });
-                    return (
-                      <View
-                        key={m.id}
+            ) : (
+              messages.map((m) =>
+                m.role === 'bot' ? (
+                  <View key={m.id} style={styles.msgBot}>
+                    <View
+                      style={[
+                        styles.botBubble,
+                        {
+                          borderColor: tokens.glass.cardBorder,
+                          backgroundColor: tokens.surface.frosted,
+                        },
+                      ]}
+                    >
+                      <Text
                         style={[
-                          styles.userBubble,
-                          {
-                            backgroundColor: oracle.userBubble,
-                            paddingTop: userPad.paddingTop,
-                            paddingBottom: userPad.paddingBottom,
-                          },
+                          styles.botText,
+                          { color: theme.text },
+                          localeAwareTextStyle(m.text, {
+                            fontSize: 15,
+                            englishLineHeight: 23,
+                            baseFontFamily: SERIF,
+                          }),
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.userText,
-                            { color: oracle.inputText },
-                            localeAwareTextStyle(m.text, { fontSize: 16, englishLineHeight: 24 }),
-                          ]}
-                        >
-                          {m.text}
-                        </Text>
-                        {m.time ? (
-                          <Text style={[styles.timeTag, { color: oracle.body }]}>{m.time}</Text>
-                        ) : null}
-                      </View>
-                    );
-                  }
-                  return renderBotMessage(m);
-                })}
-              </ScrollView>
-            </>
-          )}
-
-          {!isEmpty ? (
-            <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-              <Pressable
-                onPress={() => {
-                  void hapticLight();
-                  setLanguageSheetOpen(true);
-                }}
-                style={styles.miraLangChip}
-                accessibilityRole="button"
-                accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
-              >
-                <Globe size={13} color={tokens.oracle.accent} strokeWidth={2.2} />
-                <Text style={[styles.miraLangChipText, { color: tokens.oracle.accent }]}>
-                  {getMiraLanguageLabel(miraLanguage)}
-                </Text>
-              </Pressable>
-              {renderSearchInput(false)}
-              <View style={styles.composerActions}>
-                <Pressable
-                  onPress={() => void saveLatestInsight()}
-                  style={({ pressed }) => [
-                    styles.composerBtn,
-                    { borderColor: oracle.inputBorder, backgroundColor: oracle.inputBg },
-                    pressed && styles.composerBtnPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Save answer"
-                >
-                  <Bookmark size={14} color={oracle.accentSoft} strokeWidth={2.3} />
-                  <Text style={[styles.composerBtnText, { color: oracle.headline }]}>Save</Text>
-                </Pressable>
-                <Pressable
-                  onPress={clearHistory}
-                  style={({ pressed }) => [
-                    styles.composerBtn,
-                    { borderColor: 'rgba(240,138,138,0.35)', backgroundColor: 'rgba(240,138,138,0.08)' },
-                    pressed && styles.composerBtnPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear history"
-                >
-                  <Trash2 size={14} color="#F08A8A" strokeWidth={2.3} />
-                  <Text style={styles.composerBtnDestructive}>Clear</Text>
-                </Pressable>
+                        {m.text}
+                      </Text>
+                    </View>
+                    {(m.sourceCount ?? 0) > 0 ? (
+                      <Text style={[styles.sourceLine, { color: theme.secondaryText }]}>
+                        {oracleSourcesLabel(m.sourceCount || 0)}
+                      </Text>
+                    ) : null}
+                    {m.time ? (
+                      <Text style={[styles.msgTime, { color: theme.secondaryText }]}>{m.time}</Text>
+                    ) : null}
+                  </View>
+                ) : (
+                  <View key={m.id} style={styles.msgUser}>
+                    <LinearGradient
+                      colors={USER_GRADIENT}
+                      locations={[0, 0.33, 0.67, 1]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={[
+                        styles.userBubble,
+                        (() => {
+                          const pad = localeTextMetrics(m.text, {
+                            fontSize: 14,
+                            englishPaddingV: 12,
+                          });
+                          return {
+                            paddingTop: pad.paddingTop,
+                            paddingBottom: pad.paddingBottom,
+                          };
+                        })(),
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.userText,
+                          localeAwareTextStyle(m.text, { fontSize: 14, englishLineHeight: 21 }),
+                        ]}
+                      >
+                        {m.text}
+                      </Text>
+                    </LinearGradient>
+                    {m.time ? (
+                      <Text style={[styles.msgTime, styles.msgTimeUser, { color: theme.secondaryText }]}>
+                        {m.time} ✓✓
+                      </Text>
+                    ) : null}
+                  </View>
+                ),
+              )
+            )}
+            {waiting ? (
+              <View style={styles.msgBot}>
+                <Text style={[styles.typingGlyph, { color: theme.accent }]}>···</Text>
               </View>
+            ) : null}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.composerWrap,
+              {
+                paddingBottom: NAV_CONTENT_HEIGHT + Math.max(insets.bottom, 6),
+                borderTopColor: tokens.border.standard,
+                backgroundColor: TALK_INPUT_SURFACE,
+              },
+            ]}
+          >
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setLanguageSheetOpen(true);
+              }}
+              style={styles.langChip}
+              accessibilityRole="button"
+              accessibilityLabel={`Mira language, ${getMiraLanguageLabel(miraLanguage)}`}
+            >
+              <Globe size={13} color={theme.accent} strokeWidth={2.2} />
+              <Text style={[styles.langChipText, { color: theme.accent }]}>
+                {getMiraLanguageLabel(miraLanguage)}
+              </Text>
+            </Pressable>
+
+            <View style={styles.composerRow}>
+              <Pressable
+                onPress={openControls}
+                style={[
+                  styles.modeChip,
+                  {
+                    borderColor: `${accent}55`,
+                    backgroundColor: `${accent}14`,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Select Mira response style"
+                accessibilityHint={`Current mode ${activeMode.label}`}
+                accessibilityState={{ expanded: controlsOpen }}
+              >
+                <Text
+                  style={[styles.modeChipText, { color: accent }]}
+                  numberOfLines={1}
+                >
+                  {modeChipLabel}
+                </Text>
+                <ChevronDown size={14} color={accent} strokeWidth={2.4} />
+              </Pressable>
+
+              <View
+                style={[
+                  styles.inputPill,
+                  {
+                    backgroundColor: TALK_INPUT_SURFACE,
+                    borderColor: tokens.border.standard,
+                  },
+                ]}
+              >
+                <TextInput
+                  ref={inputRef}
+                  placeholder="What would you like Mira to explore?"
+                  placeholderTextColor={theme.secondaryText}
+                  value={input}
+                  onChangeText={setInput}
+                  onSubmitEditing={send}
+                  editable={!waiting}
+                  returnKeyType="send"
+                  submitBehavior="submit"
+                  blurOnSubmit={false}
+                  multiline={false}
+                  style={[
+                    styles.composerInput,
+                    { color: theme.text },
+                    (() => {
+                      const sample = input || miraPlaceholder;
+                      const m = localeTextMetrics(sample, {
+                        fontSize: 15,
+                        englishLineHeight: 21,
+                        englishPaddingV: 8,
+                      });
+                      return {
+                        lineHeight: m.lineHeight,
+                        paddingTop: Math.max(8, m.paddingTop - 4),
+                        paddingBottom: Math.max(8, m.paddingBottom - 4),
+                        ...(m.myanmar ? { fontFamily: undefined } : {}),
+                      };
+                    })(),
+                  ]}
+                />
+              </View>
+
+              <Pressable
+                style={[styles.sendWrap, (waiting || !input.trim()) && styles.sendDisabled]}
+                onPress={send}
+                disabled={waiting || !input.trim()}
+                accessibilityRole="button"
+                accessibilityLabel="Send to Mira"
+              >
+                <LinearGradient colors={SEND_GRADIENT} style={styles.sendBtn}>
+                  <Text style={styles.sendGlyph}>↑</Text>
+                </LinearGradient>
+              </Pressable>
             </View>
-          ) : null}
+
+            <View style={styles.privacyRow}>
+              <Lock size={12} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2.2} />
+              <Text style={[styles.privacyText, { color: theme.secondaryText }]}>
+                Private to you · Mira thinks carefully
+              </Text>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </ScreenSafeArea>
+
+      <MiraControlsSheet
+        visible={controlsOpen}
+        theme={theme}
+        mode={mode}
+        availability={availability}
+        onClose={() => {
+          setControlsOpen(false);
+          setTimeout(() => inputRef.current?.focus(), 180);
+        }}
+        onSelectMode={selectMode}
+        onResearchDeeper={researchDeeper}
+        onSeeSources={showSources}
+        onSave={() => void saveLatestInsight()}
+        onClear={clearHistory}
+      />
 
       <MiraLanguageSheet
         visible={languageSheetOpen}
@@ -845,288 +762,198 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  chromeWrap: { paddingHorizontal: 8, paddingBottom: 0 },
-  oracleHeaderMeta: {
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-  },
-  oracleTagline: {
-    fontSize: 11,
-    lineHeight: 14,
-    textAlign: 'center',
-    letterSpacing: 0.15,
-    fontWeight: '600',
-    alignSelf: 'stretch',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginTop: 2,
-  },
-  statusPillText: { fontSize: 11, fontWeight: '600', fontStyle: 'italic', fontFamily: SERIF },
-  oracleEmoRow: {
-    alignItems: 'center',
-    overflow: 'visible',
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  oracleEmoRowCompact: {
-    paddingTop: 0,
+  headerWrap: {
     paddingBottom: 2,
   },
-  emptyScroll: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  heroSearchCard: {
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    marginBottom: 28,
-  },
-  modeRow: {
+  brandRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 28,
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 2,
+    paddingBottom: 4,
   },
-  modeRowCompact: {
-    marginBottom: 0,
-  },
-  modeBar: {
-    paddingHorizontal: 18,
-    paddingBottom: 8,
-  },
-  modeChip: {
+  brandTitles: {
     flex: 1,
     minWidth: 0,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
+    justifyContent: 'center',
   },
-  modeChipCompact: {
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  modeLabel: {
-    fontSize: 11,
+  brandTitle: {
+    fontFamily: SERIF,
+    fontSize: 22,
     fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 26,
   },
-  modeHint: {
-    fontSize: 10,
-    marginTop: 4,
-    textAlign: 'center',
-    lineHeight: 13,
+  brandTagline: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 1,
   },
-  sectionEyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 14,
-    marginTop: 12,
+  presenceRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 2,
   },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
+  presenceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontStyle: 'italic',
   },
-  categoryChip: {
-    width: '48%',
-    minWidth: '46%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  categoryIcon: { fontSize: 16, flexShrink: 0 },
-  categoryLabel: { fontSize: 13, fontWeight: '600', flex: 1, flexShrink: 1 },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 18,
-    paddingBottom: 12,
-    paddingTop: 4,
-  },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 12, paddingHorizontal: 4 },
-  statusText: { flex: 1, fontSize: 15, lineHeight: 22, fontFamily: SERIF, fontStyle: 'italic' },
-  userBubble: {
-    alignSelf: 'flex-end',
-    maxWidth: '92%',
-    borderRadius: 18,
     paddingHorizontal: 16,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: tokens.border.standard,
-    overflow: 'visible',
+    paddingTop: 6,
+    paddingBottom: 12,
   },
-  userText: { fontSize: 16, lineHeight: 24 },
-  timeTag: {
-    alignSelf: 'flex-end',
-    fontSize: 12,
-    marginTop: 6,
+  scrollContentEmpty: {
+    justifyContent: 'center',
   },
-  botBlock: { marginBottom: 12 },
+  emptyBlock: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    gap: 14,
+    paddingVertical: 20,
+  },
+  emptyPrompt: {
+    textAlign: 'center',
+    fontFamily: SERIF,
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  msgBot: {
+    alignSelf: 'stretch',
+    marginBottom: 12,
+    maxWidth: '94%',
+  },
   botBubble: {
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    overflow: 'visible',
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  botText: { fontSize: 16, lineHeight: 26 },
-  miraRoleBlock: {
-    paddingHorizontal: 8,
-    marginBottom: 18,
-    gap: 10,
-  },
-  miraRoleText: {
+  botText: {
     fontSize: 15,
-    lineHeight: 22,
-    textAlign: 'center',
+    lineHeight: 23,
     fontFamily: SERIF,
   },
-  miraPromptText: {
-    fontSize: 17,
-    lineHeight: 26,
-    textAlign: 'center',
+  sourceLine: {
+    fontSize: 12,
+    fontStyle: 'italic',
     fontFamily: SERIF,
-    fontWeight: '600',
+    marginTop: 6,
+    marginLeft: 4,
   },
-  miraLangChip: {
+  msgUser: {
+    alignSelf: 'flex-end',
+    marginBottom: 12,
+    maxWidth: '88%',
+  },
+  userBubble: {
+    borderRadius: 18,
+    paddingHorizontal: 14,
+  },
+  userText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '500',
+  },
+  msgTime: {
+    fontSize: 11,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  msgTimeUser: {
+    alignSelf: 'flex-end',
+    marginRight: 2,
+  },
+  typingGlyph: {
+    fontSize: 28,
+    letterSpacing: 2,
+    fontWeight: '700',
+    marginLeft: 8,
+    marginTop: 4,
+  },
+  composerWrap: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+  },
+  langChip: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 6,
-    marginBottom: 10,
     paddingHorizontal: 4,
+    minHeight: 28,
   },
-  miraLangChipText: {
+  langChipText: {
     fontSize: 12,
     fontWeight: '700',
   },
-  wiseBlock: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-  },
-  wiseEyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  wiseText: {
-    fontFamily: SERIF,
-    fontSize: 15,
-    lineHeight: 24,
-    fontStyle: 'italic',
-  },
-  sourceLine: { fontSize: 13, marginTop: 10, marginLeft: 4, fontStyle: 'italic', fontFamily: SERIF },
-  actionRow: {
+  composerRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 10,
   },
-  pillBtn: {
+  modeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
+    minHeight: 44,
+    maxWidth: 148,
+    paddingHorizontal: 10,
+    borderRadius: 22,
     borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flexShrink: 0,
   },
-  pillText: { fontSize: 14, fontWeight: '600' },
-  inputBar: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    gap: 10,
+  modeChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  inputRowLarge: {
-    alignItems: 'center',
-  },
-  composerActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  composerBtn: {
+  inputPill: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+    minWidth: 0,
+    borderRadius: 24,
     borderWidth: 1,
-    borderRadius: 999,
-    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: 12,
   },
-  composerBtnPressed: { opacity: 0.82 },
-  composerBtnText: { fontSize: 15, fontWeight: '600' },
-  composerBtnDestructive: { fontSize: 15, fontWeight: '600', color: '#F08A8A' },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 22,
-    paddingHorizontal: 18,
-    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
-    fontSize: 16,
-    lineHeight: 22,
-    maxHeight: 120,
+  composerInput: {
+    fontSize: 15,
+    paddingVertical: 10,
+    maxHeight: 100,
   },
-  inputLarge: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: Platform.OS === 'ios' ? 18 : 16,
-    fontSize: 17,
-    lineHeight: 24,
-    minHeight: 56,
-    maxHeight: 140,
-    fontFamily: SERIF,
+  sendWrap: {
+    flexShrink: 0,
+  },
+  sendDisabled: {
+    opacity: 0.45,
   },
   sendBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#12D4CB',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-    elevation: 6,
   },
-  sendBtnLarge: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  sendGlyph: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: -1,
+  },
+  privacyRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#12D4CB',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
-    elevation: 6,
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  privacyText: {
+    fontSize: 11,
+    fontWeight: '500',
+    flex: 1,
   },
 });

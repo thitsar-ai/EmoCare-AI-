@@ -13,7 +13,7 @@ export function getSanctuaryEmoFace(_phase: CircadianPhase): ImageSourcePropType
 export const SANCTUARY_EMO_STANDARD_SCALE = 1.34;
 
 /** Home hero only — larger presence without affecting header/compact orbs. */
-export const SANCTUARY_EMO_HOME_SCALE = 1.45;
+export const SANCTUARY_EMO_HOME_SCALE = 2.9;
 
 /** Leaves extend further above the face than lace below — asymmetric stage padding. */
 export const SANCTUARY_EMO_TOP_BLEED = 0.42;

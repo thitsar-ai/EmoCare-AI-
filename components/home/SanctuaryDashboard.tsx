@@ -22,7 +22,13 @@ import {
 import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
 import { SanctuaryMiraPresence } from '../shared/SanctuaryMiraPresence';
-import { SANCTUARY_EMO_HOME_SCALE, SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize, getSanctuaryEmoTopClipGuard } from '../../theme/sanctuaryEmoFace';
+import {
+  SANCTUARY_EMO_HOME_SCALE,
+  SANCTUARY_EMO_STANDARD_SCALE,
+  getSanctuaryEmoStageDimensions,
+  getSanctuaryEmoStageSize,
+  getSanctuaryEmoTopClipGuard,
+} from '../../theme/sanctuaryEmoFace';
 import { SanctuaryMemoryBadge, memoryMoodFromChipLabel } from './SanctuaryMemoryBadge';
 import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
 import { MoodIconBadge } from '../shared/MoodIcon';
@@ -306,7 +312,10 @@ function SanctuaryMiraCard({
   onPress: () => void;
   narrow: boolean;
 }) {
-  const miraSize = narrow ? 96 : 118;
+  // Match Talk to Emo orb footprint (same scale → same stage image size).
+  const orbScale = narrow ? SANCTUARY_EMO_STANDARD_SCALE * 0.72 : SANCTUARY_EMO_STANDARD_SCALE;
+  const miraSize = getSanctuaryEmoStageDimensions(orbScale).imageSize;
+  const orbTopGuard = getSanctuaryEmoTopClipGuard(orbScale);
   return (
     <Pressable
       onPress={() => {
@@ -317,7 +326,10 @@ function SanctuaryMiraCard({
       accessibilityRole="button"
       accessibilityLabel="Mira. Clarity, perspective, and thoughtful guidance."
     >
-      <SanctuaryGlassSurface variant="lavender" style={styles.talkHeroGlass}>
+      <SanctuaryGlassSurface
+        variant="lavender"
+        style={[styles.talkHeroGlass, { paddingTop: 14 + orbTopGuard }]}
+      >
         <View style={[styles.talkHeroRow, narrow && styles.talkHeroRowNarrow]}>
           <View style={styles.talkHeroCopy}>
             <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Mira</Text>
@@ -437,7 +449,7 @@ function SanctuaryListRow({
   linkColor,
 }: {
   theme: CircadianTheme;
-  icon: typeof Sparkles;
+  icon: typeof Heart;
   iconColor: string;
   title: string;
   body: string;

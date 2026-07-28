@@ -2,7 +2,7 @@
   "expo": {
     "name": "EmoCare",
     "slug": "emocare-ai",
-    "version": "1.1.7",
+    "version": "1.1.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
       "backgroundColor": "#F4ECFB"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

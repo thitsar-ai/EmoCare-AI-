@@ -93,11 +93,27 @@ export type OracleModeId = 'quick' | 'deep' | 'wise';
 export const ORACLE_MODES: {
   id: OracleModeId;
   label: string;
+  shortLabel: string;
   hint: string;
 }[] = [
-  { id: 'quick', label: 'Quick Insight', hint: 'Clear and concise' },
-  { id: 'deep', label: 'Deep Research', hint: 'Thorough synthesis' },
-  { id: 'wise', label: 'Wise Perspective', hint: 'Facts plus insight' },
+  {
+    id: 'quick',
+    label: 'Quick Insight',
+    shortLabel: 'Insight',
+    hint: 'Clear and concise guidance',
+  },
+  {
+    id: 'deep',
+    label: 'Deep Research',
+    shortLabel: 'Research',
+    hint: 'Thorough analysis using reliable published sources',
+  },
+  {
+    id: 'wise',
+    label: 'Wise Perspective',
+    shortLabel: 'Perspective',
+    hint: 'Balanced insight, context, strategy, and thoughtful guidance',
+  },
 ];
 
 export function oracleSourcesLabel(count: number): string {
