@@ -67,12 +67,21 @@ import {
   INITIAL_EMO_INTENT_KEY,
   resolveOnboardingSession,
 } from '../../utils/onboardingLanding';
+import {
+  markOnboardingComplete,
+  loadUserPronouns,
+  saveUserPronouns,
+} from '../../utils/onboardingState';
+import { loadSettings, saveSettings } from '../../utils/settingsStorage';
+import { CHAT_LANGUAGE_OPTIONS, normalizeChatLanguage } from '../../utils/chatLanguage';
+import { MIRA_LANGUAGE_OPTIONS, normalizeMiraLanguage } from '../../utils/miraLanguage';
 
 const { width, height } = Dimensions.get('window');
 const SERIF = Platform.OS === 'ios' ? 'Georgia' : 'serif';
 
-const OB_CONTENT_SLIDES = [2, 3, 4, 5] as const;
-const OB_PROGRESS_SLIDES = [2, 3, 4, 5] as const;
+/** Visible first-run path: Welcome → Privacy → Tell Me About You (age is interstitial). */
+const OB_CONTENT_SLIDES = [2, 4, 5] as const;
+const OB_PROGRESS_SLIDES = [2, 4, 5] as const;
 const OB_LAST_SLIDE = 5;
 
 const OB_SLIDE_TITLES: Record<number, string> = {
@@ -481,12 +490,18 @@ export function OnboardingFlow({
   const [ageGatePassed, setAgeGatePassed] = useState(false);
   const [ageGateReady, setAgeGateReady] = useState(false);
   const [name, setName] = useState('');
+  const [pronouns, setPronouns] = useState('');
+  const [emoLanguage, setEmoLanguage] = useState('auto');
+  const [miraLanguage, setMiraLanguage] = useState('auto');
+  const [privacyAcked, setPrivacyAcked] = useState(false);
   const [selectedMood, setSelectedMood] = useState<Mood | null>(null);
   const [journalNote, setJournalNote] = useState('');
   const [moodAckVisible, setMoodAckVisible] = useState('');
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  /** After age gate, resume here (Privacy → About You path). */
+  const pendingAfterAgeRef = useRef<number | null>(null);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -505,24 +520,22 @@ export function OnboardingFlow({
       return;
     }
     void readAgeVerified().then((verified) => {
-      if (verified) {
-        setAgeGatePassed(true);
-        setSlide(WELCOME_ONBOARDING_SLIDE);
-      }
+      if (verified) setAgeGatePassed(true);
       setAgeGateReady(true);
     });
+    void loadSettings().then((s) => {
+      setEmoLanguage(normalizeChatLanguage(s.chatLanguage));
+      setMiraLanguage(normalizeMiraLanguage(s.miraLanguage));
+    });
+    void loadUserPronouns().then(setPronouns);
   }, [ageVerificationOnly, reviewMode]);
 
   useEffect(() => {
     if (onboardingReviewSlide == null) return;
-    let target = onboardingReviewSlide;
-    if (!reviewMode && !ageVerificationOnly && !ageGatePassed && target > OB_AGE_GATE_SLIDE) {
-      target = OB_AGE_GATE_SLIDE;
+    if (onboardingReviewSlide !== slide) {
+      setSlide(onboardingReviewSlide);
     }
-    if (target !== slide) {
-      setSlide(target);
-    }
-  }, [ageGatePassed, ageVerificationOnly, onboardingReviewSlide, reviewMode, slide]);
+  }, [onboardingReviewSlide, slide]);
 
   useEffect(() => {
     setOnboardingSplashActive(!reviewMode && slide === 1);
@@ -637,10 +650,20 @@ export function OnboardingFlow({
       return;
     }
 
+    // Age gate only when leaving Privacy toward Tell Me About You (not before Welcome).
+    if (
+      !reviewMode &&
+      !ageVerificationOnly &&
+      !ageGatePassed &&
+      target === OB_LAST_CONTENT_SLIDE &&
+      slide === OB_PRIVACY_SLIDE
+    ) {
+      pendingAfterAgeRef.current = OB_LAST_CONTENT_SLIDE;
+      setSlide(OB_AGE_GATE_SLIDE);
+      return;
+    }
+
     if (!reviewMode && !ageVerificationOnly) {
-      if (target > OB_AGE_GATE_SLIDE && !ageGatePassed) {
-        target = OB_AGE_GATE_SLIDE;
-      }
       setSlide(target);
       return;
     }
@@ -678,49 +701,59 @@ export function OnboardingFlow({
     }),
   ).current;
 
-  const enterSanctuary = async () => {
+  const finishOnboarding = async (opts?: { skipped?: boolean }) => {
     if (reviewMode) {
       goForward();
       return;
     }
-    if (!selectedMood) return;
-    if (!ageGatePassed) return;
     const ageOk = await readAgeVerified();
     if (!ageOk) {
+      pendingAfterAgeRef.current = -1; // signal: finish after age
       setSlide(OB_AGE_GATE_SLIDE);
       return;
     }
-    const session = resolveOnboardingSession(selectedMood, journalNote);
+    const mood = selectedMood || OB_MOODS.find((m) => m.label === 'Neutral') || OB_MOODS[0];
+    const session = resolveOnboardingSession(mood, journalNote);
     closeOnboardingReview();
     try {
-      await AsyncStorage.setItem('onboarded', 'true');
+      await markOnboardingComplete();
       await AsyncStorage.setItem('userName', name.trim());
-      await AsyncStorage.setItem(HOME_LANDING_MODE_KEY, session.landingMode);
+      await saveUserPronouns(pronouns);
+      await saveSettings({
+        chatLanguage: normalizeChatLanguage(emoLanguage),
+        miraLanguage: normalizeMiraLanguage(miraLanguage),
+      });
+      await AsyncStorage.setItem(HOME_LANDING_MODE_KEY, 'sanctuary');
       await AsyncStorage.setItem(INITIAL_EMO_INTENT_KEY, session.intentMode);
       await AsyncStorage.setItem(INITIAL_CHECKIN_PAYLOAD_KEY, session.payload);
-      const saved = await AsyncStorage.getItem('checkIns');
-      const all = saved ? JSON.parse(saved) : [];
-      await AsyncStorage.setItem(
-        'checkIns',
-        JSON.stringify([
-          {
-            id: Date.now(),
-            date: new Date().toISOString(),
-            mood: selectedMood,
-            note: journalNote.trim(),
-            landingMode: session.landingMode,
-            intentMode: session.intentMode,
-          },
-          ...all,
-        ]),
-      );
+      if (!opts?.skipped && selectedMood) {
+        const saved = await AsyncStorage.getItem('checkIns');
+        const all = saved ? JSON.parse(saved) : [];
+        await AsyncStorage.setItem(
+          'checkIns',
+          JSON.stringify([
+            {
+              id: Date.now(),
+              date: new Date().toISOString(),
+              mood: selectedMood,
+              note: journalNote.trim(),
+              landingMode: 'sanctuary',
+              intentMode: session.intentMode,
+            },
+            ...all,
+          ]),
+        );
+      }
     } catch {}
     onComplete({
       name: name.trim(),
-      landingMode: session.landingMode,
+      landingMode: 'sanctuary',
       intentMode: session.intentMode as 'sanctuary' | 'oracle',
     });
   };
+
+  const enterSanctuary = () => void finishOnboarding({ skipped: false });
+  const skipAboutYou = () => void finishOnboarding({ skipped: true });
 
   const scrollPad = { paddingBottom: Math.max(insets.bottom, 20) + 16 };
   const tellMeKeyboardOffset = insets.top + 72;
@@ -730,7 +763,7 @@ export function OnboardingFlow({
   const handleFirstRunBack = () => {
     if (slide === OB_PRIVACY_SLIDE) goTo(WELCOME_ONBOARDING_SLIDE);
     else if (slide === OB_LAST_CONTENT_SLIDE) goTo(OB_PRIVACY_SLIDE);
-    else if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_AGE_GATE_SLIDE);
+    else if (slide === OB_AGE_GATE_SLIDE) goTo(OB_PRIVACY_SLIDE);
     else if (slide > 1) goTo(slide - 1);
   };
 
@@ -740,10 +773,11 @@ export function OnboardingFlow({
     (slide === OB_PRIVACY_SLIDE || slide === OB_LAST_CONTENT_SLIDE || slide === WELCOME_ONBOARDING_SLIDE);
 
   const handleFirstRunForward = () => {
-    if (slide === OB_AGE_GATE_SLIDE && ageGatePassed) goTo(WELCOME_ONBOARDING_SLIDE);
-    else if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_PRIVACY_SLIDE);
+    if (slide === WELCOME_ONBOARDING_SLIDE) goTo(OB_PRIVACY_SLIDE);
     else if (slide === OB_PRIVACY_SLIDE) goTo(OB_LAST_CONTENT_SLIDE);
-    else if (slide < OB_LAST_CONTENT_SLIDE && slide !== OB_AGE_GATE_SLIDE) goTo(slide + 1);
+    else if (slide === OB_AGE_GATE_SLIDE && ageGatePassed) {
+      goTo(pendingAfterAgeRef.current === -1 ? OB_LAST_CONTENT_SLIDE : pendingAfterAgeRef.current || OB_LAST_CONTENT_SLIDE);
+    } else if (slide < OB_LAST_CONTENT_SLIDE && slide !== OB_AGE_GATE_SLIDE) goTo(slide + 1);
   };
 
   const firstRunCanGoForward =
@@ -784,55 +818,27 @@ export function OnboardingFlow({
           >
             <Text style={[styles.eyebrow, { color: theme.secondaryText }]}>WELCOME TO EMOCARE</Text>
             <Text style={[styles.headline, { color: theme.text }]}>
-              A quiet space to{'\n'}return to yourself.
+              Meet Emo & Mira{'\n'}in your sanctuary.
             </Text>
             <Text style={[styles.body, { color: theme.mutedText }]}>
-              A private, supportive space for reflection, emotional awareness, and personal growth.
+              EmoCare is a private space for emotional awareness, reflection, and gentle guidance.
             </Text>
+            <ObCard theme={theme} style={styles.noticeCard}>
+              <Text style={[styles.noticeTitle, { color: theme.text, marginBottom: 8 }]}>Your companions</Text>
+              <Text style={[styles.noticeBody, { color: theme.mutedText }]}>
+                <Text style={{ fontWeight: '700', color: theme.text }}>Emo</Text>
+                {' — '}a warm companion for feelings, check-ins, and Talk.{'\n\n'}
+                <Text style={{ fontWeight: '700', color: theme.text }}>Mira</Text>
+                {' — '}thoughtful guidance for clarity, strategy, and perspective.{'\n\n'}
+                Both are AI companions — not human professionals. Your conversations are designed
+                to feel emotionally safe, private, and in your control.
+              </Text>
+            </ObCard>
             <Text style={[styles.quote, { color: theme.secondaryText }]}>
               You don't need to have the right words. Just begin.
             </Text>
-
-            <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>
-              What should I call you? (Optional)
-            </Text>
-            <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-              <User size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2} />
-              <TextInput
-                style={[styles.nameInput, { color: theme.text }]}
-                placeholder="Your name..."
-                placeholderTextColor={theme.mutedText}
-                value={name}
-                onChangeText={setName}
-                maxLength={48}
-                autoCorrect={false}
-                autoCapitalize="words"
-                autoComplete="off"
-                textContentType="none"
-              />
-            </View>
-
-            <Pressable onPress={() => goTo(OB_PRIVACY_SLIDE)} hitSlop={8} style={styles.skipLinkWrap}>
-              <Text style={[styles.skipLink, { color: theme.mutedText }]}>Skip for now</Text>
-            </Pressable>
-
-            <ObCard theme={theme} style={styles.noticeCard}>
-              <View style={styles.noticeHeader}>
-                <Shield size={18} color={theme.accent} strokeWidth={2.5} />
-                <Text style={[styles.noticeTitle, { color: theme.text }]}>Important Notice</Text>
-              </View>
-              <Text style={[styles.noticeBody, { color: theme.mutedText }]}>
-                EmoCare is an emotional life companion — a private space for reflection, clarity,
-                and growth.{'\n\n'}
-                It is not a licensed therapist, medical provider, or crisis service. Emo holds clear
-                boundaries: no diagnosis, no prescription, no substitute for human relationships.{'\n\n'}
-                If you are in immediate danger or experiencing a mental health emergency, please
-                contact local emergency services or a qualified crisis professional now.
-              </Text>
-            </ObCard>
-
             <LavenderButton
-              label="Begin Gently →"
+              label="Continue"
               onPress={() => (reviewMode ? goForward() : goTo(OB_PRIVACY_SLIDE))}
               theme={theme}
             />
@@ -850,11 +856,17 @@ export function OnboardingFlow({
               setAgeGatePassed(true);
               if (ageVerificationOnly) {
                 onAgeVerified?.();
-              } else {
-                goTo(WELCOME_ONBOARDING_SLIDE);
+                return;
               }
+              const pending = pendingAfterAgeRef.current;
+              pendingAfterAgeRef.current = null;
+              if (pending === -1) {
+                void finishOnboarding({ skipped: !selectedMood });
+                return;
+              }
+              goTo(pending || OB_LAST_CONTENT_SLIDE);
             }}
-            onBack={() => goTo(WELCOME_ONBOARDING_SLIDE)}
+            onBack={() => goTo(OB_PRIVACY_SLIDE)}
           />
         );
 
@@ -900,15 +912,41 @@ export function OnboardingFlow({
             </View>
 
             <Text style={[styles.privacyClarify, { color: theme.mutedText }]}>
-              Journal entries and Memory Ledger data stay encrypted on your device. When you use Talk
-              or Mira, your messages are sent to Anthropic's AI to generate replies. Only those
-              messages are transmitted — nothing else — and they are not stored long-term on our
-              servers.
+              Conversations are private to you. Memories you save can be reviewed or removed anytime
+              in Memory Ledger. Emo and Mira are AI companions — not licensed therapists or crisis
+              services. If you are in immediate danger, contact local emergency services.
             </Text>
 
+            <Pressable
+              onPress={() => {
+                void hapticLight();
+                setPrivacyAcked((v) => !v);
+              }}
+              style={styles.privacyAckRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: privacyAcked }}
+              accessibilityLabel="I acknowledge the privacy information"
+            >
+              <View
+                style={[
+                  styles.privacyCheckbox,
+                  {
+                    borderColor: privacyAcked ? theme.accent : theme.border,
+                    backgroundColor: privacyAcked ? theme.accent : 'transparent',
+                  },
+                ]}
+              >
+                {privacyAcked ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
+              </View>
+              <Text style={[styles.privacyAckText, { color: theme.text }]}>
+                I have read this and understand how my information is used.
+              </Text>
+            </Pressable>
+
             <LavenderButton
-              label="I Understand →"
-              onPress={() => (reviewMode ? goForward() : goTo(5))}
+              label="I Understand and Continue"
+              disabled={!reviewMode && !privacyAcked}
+              onPress={() => (reviewMode ? goForward() : goTo(OB_LAST_CONTENT_SLIDE))}
               theme={theme}
             />
           </ScrollView>
@@ -924,11 +962,7 @@ export function OnboardingFlow({
           >
             <ScrollView
               style={styles.flex}
-              contentContainerStyle={[
-                styles.scrollPad,
-                styles.checkinScroll,
-                { paddingBottom: keyboardVisible ? 16 : 32 },
-              ]}
+              contentContainerStyle={[styles.scrollPad, scrollPad, { paddingBottom: 28 }]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
@@ -937,12 +971,101 @@ export function OnboardingFlow({
                 Tell me{'\n'}about you.
               </Text>
               <Text style={[styles.checkinSub, { color: theme.mutedText }]}>
-                So I can support you in a way that feels personal.
-              </Text>
-              <Text style={[styles.checkinSection, { color: theme.text }]}>
-                How are you feeling today?
+                Only what helps Emo and Mira support you. You can change this anytime in Your Name &
+                Profile.
               </Text>
 
+              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Preferred name</Text>
+              <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+                <User size={17} color={getCircadianIconColor(theme, 'secondary')} strokeWidth={2} />
+                <TextInput
+                  style={[styles.nameInput, { color: theme.text }]}
+                  placeholder="Optional"
+                  placeholderTextColor={theme.mutedText}
+                  value={name}
+                  onChangeText={setName}
+                  maxLength={48}
+                  autoCorrect={false}
+                  autoCapitalize="words"
+                />
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Pronouns (optional)</Text>
+              <View style={[styles.nameRow, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+                <TextInput
+                  style={[styles.nameInput, { color: theme.text, paddingLeft: 4 }]}
+                  placeholder="e.g. she/her, he/him, they/them"
+                  placeholderTextColor={theme.mutedText}
+                  value={pronouns}
+                  onChangeText={setPronouns}
+                  maxLength={40}
+                  autoCorrect={false}
+                />
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Emo language</Text>
+              <View style={styles.langChipRow}>
+                {CHAT_LANGUAGE_OPTIONS.slice(0, 5).map((opt) => {
+                  const selected = emoLanguage === opt.id;
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => {
+                        void hapticLight();
+                        setEmoLanguage(opt.id);
+                      }}
+                      style={[
+                        styles.langChip,
+                        {
+                          borderColor: selected ? theme.accent : theme.border,
+                          backgroundColor: selected ? `${theme.accent}22` : theme.card,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: selected ? theme.accent : theme.text, fontWeight: '600', fontSize: 12 }}>
+                        {opt.shortLabel}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.fieldLabel, { color: theme.secondaryText }]}>Mira language</Text>
+              <View style={styles.langChipRow}>
+                {MIRA_LANGUAGE_OPTIONS.map((opt) => {
+                  const selected = miraLanguage === opt.id;
+                  return (
+                    <Pressable
+                      key={opt.id}
+                      onPress={() => {
+                        void hapticLight();
+                        setMiraLanguage(opt.id);
+                      }}
+                      style={[
+                        styles.langChip,
+                        {
+                          borderColor: selected ? tokens.oracle.accent : theme.border,
+                          backgroundColor: selected ? `${tokens.oracle.accent}22` : theme.card,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          color: selected ? tokens.oracle.accent : theme.text,
+                          fontWeight: '600',
+                          fontSize: 12,
+                        }}
+                      >
+                        {opt.shortLabel}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.checkinSection, { color: theme.text, marginTop: 18 }]}>
+                How are you feeling today? (optional)
+              </Text>
               <MoodPicker
                 theme={theme}
                 selected={selectedMood}
@@ -950,68 +1073,34 @@ export function OnboardingFlow({
                 variant="onboarding"
                 horizontalPadding={28}
               />
-
               {moodAckVisible ? (
                 <ObCard theme={theme} style={styles.moodAckCard}>
                   <Text style={[styles.moodAckLabel, { color: theme.secondaryText }]}>Emo</Text>
                   <Text style={[styles.moodAckText, { color: theme.text }]}>{moodAckVisible}</Text>
                 </ObCard>
               ) : null}
-            </ScrollView>
-
-            <View
-              style={[
-                styles.tellMeComposer,
-                {
-                  backgroundColor: theme.isDark ? 'rgba(14,8,32,0.92)' : 'rgba(245,240,252,0.96)',
-                  borderTopColor: theme.border,
-                  paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12),
-                },
-              ]}
-            >
-              <Text style={[styles.journalTitle, { color: theme.text }]}>What's on your heart?</Text>
-              <ObCard theme={theme} style={styles.journalCard}>
-                <TextInput
-                  style={[styles.journalInput, { color: theme.text }]}
-                  placeholder="You can begin softly..."
-                  placeholderTextColor={theme.mutedText}
-                  value={journalNote}
-                  onChangeText={setJournalNote}
-                  multiline
-                  textAlignVertical="top"
-                  maxLength={500}
-                />
-              </ObCard>
 
               <LavenderButton
-                label="Enter the Sanctuary →"
+                label="Continue to Home"
                 onPress={enterSanctuary}
-                disabled={!reviewMode && !selectedMood}
                 theme={theme}
               />
+              <Pressable onPress={skipAboutYou} hitSlop={8} style={styles.skipLinkWrap}>
+                <Text style={[styles.skipLink, { color: theme.mutedText }]}>Skip for now</Text>
+              </Pressable>
 
-              {!keyboardVisible ? (
-                <Text style={[styles.legalFooter, { color: theme.mutedText }]}>
-                  By continuing, you agree to the{' '}
-                  <Text
-                    style={[styles.legalLink, { color: theme.accent }]}
-                    onPress={openTermsOfService}
-                    accessibilityRole="link"
-                  >
-                    Terms of Service
-                  </Text>{' '}
-                  and{' '}
-                  <Text
-                    style={[styles.legalLink, { color: theme.accent }]}
-                    onPress={openPrivacyPolicy}
-                    accessibilityRole="link"
-                  >
-                    Privacy Policy
-                  </Text>
-                  .
+              <Text style={[styles.legalFooter, { color: theme.mutedText }]}>
+                By continuing, you agree to the{' '}
+                <Text style={[styles.legalLink, { color: theme.accent }]} onPress={openTermsOfService}>
+                  Terms of Service
+                </Text>{' '}
+                and{' '}
+                <Text style={[styles.legalLink, { color: theme.accent }]} onPress={openPrivacyPolicy}>
+                  Privacy Policy
                 </Text>
-              ) : null}
-            </View>
+                .
+              </Text>
+            </ScrollView>
           </KeyboardAvoidingView>
         );
     }
@@ -1070,18 +1159,23 @@ export function OnboardingFlow({
               <Pressable
                 key={i}
                 onPress={() => {
-                  if (!ageGatePassed && i > OB_AGE_GATE_SLIDE) return;
+                  // Age is required only before Tell Me About You.
+                  if (!ageGatePassed && i === OB_LAST_CONTENT_SLIDE) return;
+                  if (!privacyAcked && i === OB_LAST_CONTENT_SLIDE) return;
                   goTo(i);
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel={`Go to step ${i - 1} of ${OB_PROGRESS_SLIDES.length}`}
+                accessibilityLabel={`Go to step ${OB_PROGRESS_SLIDES.indexOf(i) + 1} of ${OB_PROGRESS_SLIDES.length}`}
               >
                 <View
                   style={[
                     styles.dot,
                     slide === i && [styles.dotActive, { backgroundColor: theme.accent }],
-                    slide > i && { backgroundColor: theme.secondaryText },
+                    OB_PROGRESS_SLIDES.indexOf(slide as 2 | 4 | 5) >
+                      OB_PROGRESS_SLIDES.indexOf(i) && {
+                      backgroundColor: theme.secondaryText,
+                    },
                   ]}
                 />
               </Pressable>
@@ -1178,6 +1272,38 @@ const styles = StyleSheet.create({
   noticeHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   noticeTitle: { fontSize: 15, fontWeight: '700' },
   noticeBody: { fontSize: 12, lineHeight: 19 },
+  privacyAckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 18,
+    marginTop: 8,
+    minHeight: 44,
+  },
+  privacyCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  privacyAckText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '500' },
+  langChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  langChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
 
   card: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   privacyHeroWrap: {

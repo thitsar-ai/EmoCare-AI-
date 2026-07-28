@@ -49,7 +49,7 @@ export const TALK_INPUT_PLACEHOLDER = "What's on your heart?";
  * Internal route/storage keys may still say "oracle" (legacy).
  */
 export const ORACLE_HEADER_TITLE = 'Mira';
-export const ORACLE_HEADER_TAGLINE = 'Knowledge • Strategy • Wisdom';
+export const ORACLE_HEADER_TAGLINE = 'Research • Strategy • Wise Perspective';
 export const ORACLE_INPUT_PLACEHOLDER = 'Ask Mira…';
 export const ORACLE_STATUS_MESSAGE = 'Searching trusted sources and synthesizing…';
 export const ORACLE_STATUS_SHORT = 'Researching…';

@@ -148,7 +148,21 @@ import {
   responseViolatesLocale,
 } from './utils/chatLanguage';
 import { classifyBurmeseTalkIntent } from './utils/emoBurmeseIntent';
-import { EMO_STORY_ANSWER_MY, isEmoStoryQuestion } from './utils/emoIdentity';
+import {
+  EMO_STORY_ANSWER_MY,
+  getEmoAkoGyiAnswer,
+  getEmoAkoGyiPrivacyAnswer,
+  getEmoAkoGyiWhoAnswer,
+  getEmoBirthdayAnswer,
+  getEmoCreatorAnswer,
+  isEmoAkoGyiPrivacyProbe,
+  isEmoAkoGyiQuestion,
+  isEmoAkoGyiWhoQuestion,
+  isEmoBirthdayQuestion,
+  isEmoCreatorQuestion,
+  isEmoStoryQuestion,
+  shouldUseConciseAkoGyiAnswer,
+} from './utils/emoIdentity';
 import {
   ANTHROPIC_MODEL_BURMESE,
   ensureQualityBurmeseReply,
@@ -162,6 +176,7 @@ import { polishEmoReplyText, splitEmoReplyParagraphs } from './utils/emoReplyFor
 import { fetchOracleResearchContext, shouldRunOracleSearch } from './utils/oracleSearch';
 import { loadEmoPersonalContext } from './utils/emoPersonalContext';
 import { refreshEmocareConfig, logEmocareApiDebug } from './utils/emocareApi';
+import { loadOnboardingState, markOnboardingComplete } from './utils/onboardingState';
 import { logOracleInquiry } from './utils/oracleTopicLog';
 import { SanctuaryAmbientProvider } from './components/SanctuaryAmbientContext';
 import { TalkCompanionPanel } from './components/talk/TalkCompanionPanel';
@@ -1691,16 +1706,36 @@ function ChatScreen({ userName }: { userName: string }) {
         });
       }
 
-      // Canonical အီမို biography — return approved copy for story/about questions.
-      if (burmese && lastUserMsg && isEmoStoryQuestion(lastUserMsg.text) && !crisis.inCrisis) {
+      // Canonical identity answers — no streaming/rewrite (avoids “typed then changed”).
+      if (lastUserMsg && !crisis.inCrisis) {
         const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setMessages((prev) => [
-          ...prev,
-          { id: `b-${Date.now()}`, role: 'bot', text: EMO_STORY_ANSWER_MY, time: replyTime },
-        ]);
-        setIsWaiting(false);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
-        return;
+        const locale = burmese ? 'my' : 'en';
+        let identityText = '';
+        if (isEmoAkoGyiWhoQuestion(lastUserMsg.text)) {
+          identityText = getEmoAkoGyiWhoAnswer({ locale });
+        } else if (isEmoAkoGyiPrivacyProbe(lastUserMsg.text)) {
+          identityText = getEmoAkoGyiPrivacyAnswer({ locale });
+        } else if (isEmoAkoGyiQuestion(lastUserMsg.text)) {
+          identityText = getEmoAkoGyiAnswer({
+            locale,
+            concise: !burmese && shouldUseConciseAkoGyiAnswer(lastUserMsg.text),
+          });
+        } else if (isEmoBirthdayQuestion(lastUserMsg.text)) {
+          identityText = getEmoBirthdayAnswer({ locale });
+        } else if (isEmoCreatorQuestion(lastUserMsg.text)) {
+          identityText = getEmoCreatorAnswer({ locale });
+        } else if (burmese && isEmoStoryQuestion(lastUserMsg.text)) {
+          identityText = EMO_STORY_ANSWER_MY;
+        }
+        if (identityText) {
+          setMessages((prev) => [
+            ...prev,
+            { id: `b-${Date.now()}`, role: 'bot', text: identityText, time: replyTime },
+          ]);
+          setIsWaiting(false);
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+          return;
+        }
       }
 
       const personalContext = await loadEmoPersonalContext(userName, lastUserMsg?.text || '', {
@@ -2605,17 +2640,19 @@ function Root() {
       try {
         await refreshEmocareConfig();
         logEmocareApiDebug();
-        const v = await AsyncStorage.getItem('onboarded');
+        // Wait for persisted onboarding before choosing Welcome vs Home (no Home flash).
+        const onboarding = await loadOnboardingState();
         const ageOk = await readAgeVerified();
         const passcodeOn = await isPasscodeEnabled();
         setPasscodeEnabled(passcodeOn);
         setUnlocked(!passcodeOn);
-        if (v === 'true') {
+        if (onboarding.completed) {
           const n = await AsyncStorage.getItem('userName');
-          // Returning users always land on Home — ignore legacy Mira landing preference.
           setUserName(n || '');
           setHomeLandingMode('sanctuary');
           setOnboarded(true);
+        } else {
+          setOnboarded(false);
         }
         setAgeVerified(ageOk);
       } finally {
@@ -2673,8 +2710,9 @@ function Root() {
           onComplete={async ({ name }) => {
             const ageOk = await readAgeVerified();
             if (!ageOk) return;
+            await markOnboardingComplete();
             setUserName(name);
-            // Always open Home after login / onboarding (never auto-open Mira).
+            // Always open Home after onboarding (never auto-open Mira).
             setHomeLandingMode('sanctuary');
             setScreen('home');
             setAgeVerified(true);
@@ -2788,7 +2826,7 @@ function FirstOnboardingShell({
   return (
     <>
       <OnboardingFlow
-        initialSlide={OB_AGE_GATE_SLIDE}
+        initialSlide={WELCOME_ONBOARDING_SLIDE}
         onComplete={(args) => {
           closeOnboardingReview();
           onComplete(args);

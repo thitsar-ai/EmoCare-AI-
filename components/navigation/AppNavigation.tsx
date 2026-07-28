@@ -43,6 +43,7 @@ import {
   getTalkToEmoMenuCopy,
 } from '../../utils/appMenuCopy';
 import { textNeedsMyanmarMetrics } from '../../utils/localeText';
+import { loadUserPronouns, saveUserPronouns } from '../../utils/onboardingState';
 
 export type MainScreenKey =
   | 'home'
@@ -87,12 +88,12 @@ export const ONBOARDING_MENU_SLIDES = [2, 4, 5] as const;
  * Back uses visit history; the app menu is the primary way to reach secondary screens.
  */
 export const MAIN_SCREEN_MENU_ORDER: MainScreenKey[] = [
+  'home',
   'talk',
   'oracle', // legacy route key — user-facing companion is Mira
   'checkin',
   'journal',
   'insights',
-  'home',
   'today',
   'memoryledger',
   'settings',
@@ -501,11 +502,18 @@ type AppMenuItem = {
   target: NavTarget;
 };
 
-/** Build main-app menu — Talk to Emo / Ask Mira as the companion pair first. */
+/** Build main-app menu — Home first, then companions and care tools. */
 export function buildMainAppMenu(menuLanguage?: string): AppMenuItem[] {
   const emo = getTalkToEmoMenuCopy(menuLanguage);
   const mira = getAskMiraMenuCopy(menuLanguage);
   return [
+    {
+      id: 'home',
+      label: getMainMenuLabel(menuLanguage, 'home'),
+      Icon: Home,
+      accent: '#B79DFF',
+      target: { kind: 'screen', key: 'home' },
+    },
     {
       id: 'talk',
       label: emo.title,
@@ -544,13 +552,6 @@ export function buildMainAppMenu(menuLanguage?: string): AppMenuItem[] {
       target: { kind: 'screen', key: 'insights' },
     },
     {
-      id: 'home',
-      label: getMainMenuLabel(menuLanguage, 'home'),
-      Icon: Home,
-      accent: '#B79DFF',
-      target: { kind: 'screen', key: 'home' },
-    },
-    {
       id: 'today',
       label: getMainMenuLabel(menuLanguage, 'today'),
       Icon: CalendarDays,
@@ -563,27 +564,6 @@ export function buildMainAppMenu(menuLanguage?: string): AppMenuItem[] {
       Icon: Brain,
       accent: '#C4A35A',
       target: { kind: 'screen', key: 'memoryledger' },
-    },
-    {
-      id: 'welcome',
-      label: getMainMenuLabel(menuLanguage, 'welcome'),
-      Icon: Sparkles,
-      accent: '#E89B5C',
-      target: { kind: 'onboarding', slide: 2 },
-    },
-    {
-      id: 'privacy',
-      label: getMainMenuLabel(menuLanguage, 'privacy'),
-      Icon: Shield,
-      accent: '#7BC67E',
-      target: { kind: 'onboarding', slide: 4 },
-    },
-    {
-      id: 'aboutyou',
-      label: getMainMenuLabel(menuLanguage, 'aboutyou'),
-      Icon: Heart,
-      accent: '#B79DFF',
-      target: { kind: 'onboarding', slide: 5 },
     },
   ];
 }
@@ -779,9 +759,12 @@ export function ProfileNameSheet({
   onSave: (name: string) => void;
 }) {
   const [draft, setDraft] = useState(userName);
+  const [pronounDraft, setPronounDraft] = useState('');
 
   React.useEffect(() => {
-    if (visible) setDraft(userName);
+    if (!visible) return;
+    setDraft(userName);
+    void loadUserPronouns().then(setPronounDraft);
   }, [visible, userName]);
 
   return (
@@ -792,9 +775,10 @@ export function ProfileNameSheet({
             style={[styles.profileSheet, { backgroundColor: MENU_SOLID, borderColor: DARK_MENU_SURFACE.border }]}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text style={[styles.profileTitle, { color: DARK_MENU_SURFACE.text }]}>What should Emo call you?</Text>
+            <Text style={[styles.profileTitle, { color: DARK_MENU_SURFACE.text }]}>Your Name & Profile</Text>
             <Text style={[styles.profileHint, { color: DARK_MENU_SURFACE.mutedText }]}>
-              Saved on this device only. Emo remembers your name across Talk.
+              Same profile from Tell Me About You. Saved on this device — Emo and Mira may use your
+              name naturally.
             </Text>
             <TextInput
               style={[
@@ -805,12 +789,29 @@ export function ProfileNameSheet({
                   backgroundColor: DARK_MENU_SURFACE.card,
                 },
               ]}
-              placeholder="Your name (optional)"
+              placeholder="Preferred name (optional)"
               placeholderTextColor={DARK_MENU_SURFACE.mutedText}
               value={draft}
               onChangeText={setDraft}
               maxLength={48}
               autoCapitalize="words"
+            />
+            <TextInput
+              style={[
+                styles.profileInput,
+                {
+                  color: DARK_MENU_SURFACE.text,
+                  borderColor: DARK_MENU_SURFACE.border,
+                  backgroundColor: DARK_MENU_SURFACE.card,
+                  marginTop: 10,
+                },
+              ]}
+              placeholder="Pronouns (optional)"
+              placeholderTextColor={DARK_MENU_SURFACE.mutedText}
+              value={pronounDraft}
+              onChangeText={setPronounDraft}
+              maxLength={40}
+              autoCapitalize="none"
             />
             <View style={styles.profileActions}>
               <Pressable onPress={onClose} style={styles.profileBtnGhost}>
@@ -819,6 +820,7 @@ export function ProfileNameSheet({
               <Pressable
                 onPress={() => {
                   onSave(draft.trim());
+                  void saveUserPronouns(pronounDraft);
                   onClose();
                 }}
                 style={[styles.profileBtnSave, { backgroundColor: tokens.brand.ctaStart }]}

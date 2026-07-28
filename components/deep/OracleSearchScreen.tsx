@@ -38,7 +38,10 @@ import {
   resolveMiraComposeLocale,
 } from '../../utils/miraLanguage';
 import {
+  getMiraBirthdayAnswer,
   getMiraStoryAnswer,
+  isMiraBirthdayCompareQuestion,
+  isMiraBirthdayQuestion,
   isMiraStoryQuestion,
   shouldUseConciseMiraStory,
 } from '../../utils/miraIdentity';
@@ -253,9 +256,29 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           .slice(-6);
         const composeLocale = resolveMiraComposeLocale(lang, trimmed, recentUserTexts);
 
+        const miraLocale = composeLocale === 'my' ? 'my' : 'en';
+        if (isMiraBirthdayQuestion(trimmed)) {
+          const replyText = getMiraBirthdayAnswer({
+            locale: miraLocale,
+            compare: isMiraBirthdayCompareQuestion(trimmed),
+          });
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `b-${Date.now()}`,
+              role: 'bot',
+              text: replyText,
+              time: nowTime(),
+              sourceCount: 0,
+              query: trimmed,
+              sources: [],
+            },
+          ]);
+          return;
+        }
         if (isMiraStoryQuestion(trimmed)) {
           const replyText = getMiraStoryAnswer({
-            locale: composeLocale === 'my' ? 'my' : 'en',
+            locale: miraLocale,
             concise: shouldUseConciseMiraStory(trimmed, activeMode),
             userName: name !== 'friend' ? name : '',
           });
@@ -378,65 +401,76 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
     setTimeout(() => inputRef.current?.focus(), 180);
   }, []);
 
-  const clearHistory = useCallback(() => {
+  /** iOS often swallows Alert if shown in the same tick as Modal dismiss. */
+  const afterSheetClose = useCallback((fn: () => void) => {
     setControlsOpen(false);
-    Alert.alert('Clear conversation', 'Remove all Mira messages?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: () => {
-          setMessages([]);
-          void persistOracleChat([]);
-        },
-      },
-    ]);
+    setTimeout(fn, 380);
   }, []);
 
-  const saveLatestInsight = useCallback(async () => {
-    setControlsOpen(false);
-    if (!lastBot?.text.trim()) {
-      Alert.alert('Nothing to save', 'Ask Mira a question first.');
-      return;
-    }
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    const ok = await saveOracleInsight({
-      query: lastBot.query || lastUser?.text || '',
-      insight: lastBot.text,
-      sourceCount: lastBot.sourceCount || 0,
-      sourceTitles: (lastBot.sources || []).map((s) => s.title || '').filter(Boolean),
-    });
-    if (ok) {
-      Alert.alert('Saved', 'This Mira answer was saved to your library.', [
-        { text: 'Stay here', style: 'cancel' },
-        { text: 'View Insights', onPress: () => onNav('insights') },
+  const clearHistory = useCallback(() => {
+    afterSheetClose(() => {
+      Alert.alert('Clear conversation', 'Remove all Mira messages?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            setMessages([]);
+            void persistOracleChat([]);
+          },
+        },
       ]);
-    }
-  }, [lastBot, messages, onNav]);
+    });
+  }, [afterSheetClose]);
+
+  const saveLatestInsight = useCallback(() => {
+    afterSheetClose(() => {
+      void (async () => {
+        if (!lastBot?.text.trim()) {
+          Alert.alert('Nothing to save', 'Ask Mira a question first.');
+          return;
+        }
+        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+        const ok = await saveOracleInsight({
+          query: lastBot.query || lastUser?.text || '',
+          insight: lastBot.text,
+          sourceCount: lastBot.sourceCount || 0,
+          sourceTitles: (lastBot.sources || []).map((s) => s.title || '').filter(Boolean),
+        });
+        if (ok) {
+          Alert.alert('Saved', 'This Mira answer was saved to your library.', [
+            { text: 'Stay here', style: 'cancel' },
+            { text: 'View Insights', onPress: () => onNav('insights') },
+          ]);
+        }
+      })();
+    });
+  }, [afterSheetClose, lastBot, messages, onNav]);
 
   const showSources = useCallback(() => {
-    setControlsOpen(false);
-    if (!lastBot) return;
-    const titles = (lastBot.sources || []).map((s) => s.title).filter(Boolean);
-    if (!titles.length) {
-      Alert.alert('Sources', 'No published sources were attached to this reply.');
-      return;
-    }
-    Alert.alert('Published sources', titles.join('\n\n'));
-  }, [lastBot]);
+    afterSheetClose(() => {
+      if (!lastBot) return;
+      const titles = (lastBot.sources || []).map((s) => s.title).filter(Boolean);
+      if (!titles.length) {
+        Alert.alert('Sources', 'No published sources were attached to this reply.');
+        return;
+      }
+      Alert.alert('Published sources', titles.join('\n\n'));
+    });
+  }, [afterSheetClose, lastBot]);
 
   const researchDeeper = useCallback(() => {
     if (!lastBot) return;
-    setControlsOpen(false);
-    setMode('deep');
-    void saveSettings({ miraMode: 'deep' });
     const topic = (lastBot.query || '').trim();
-    // Short action label — does not re-paste the prior user question.
     const followUp = topic
       ? `Research deeper on that last answer about “${topic.slice(0, 80)}${topic.length > 80 ? '…' : ''}”. Expand with thorough analysis and published sources.`
       : 'Research deeper on your last answer. Expand with thorough analysis and published sources.';
-    void submitText(followUp, 'deep');
-  }, [lastBot, submitText]);
+    afterSheetClose(() => {
+      setMode('deep');
+      void saveSettings({ miraMode: 'deep' });
+      void submitText(followUp, 'deep');
+    });
+  }, [afterSheetClose, lastBot, submitText]);
 
   const openControls = useCallback(() => {
     void hapticLight();
@@ -459,6 +493,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
           <View style={styles.headerWrap}>
             <ScreenNavChrome
               theme={theme}
+              title={ORACLE_HEADER_TITLE}
               actionsBeforeNav={
                 <NavChromeBtn
                   theme={theme}
@@ -472,19 +507,14 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 </NavChromeBtn>
               }
             />
-            <View style={styles.brandRow}>
+            <View style={styles.brandFaceBlock}>
               <TalkHeroMira theme={theme} size="header" />
-              <View style={styles.brandTitles}>
-                <Text style={[styles.brandTitle, { color: theme.text }]}>{ORACLE_HEADER_TITLE}</Text>
-                <Text
-                  style={[styles.brandTagline, { color: theme.secondaryText }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.85}
-                >
-                  {ORACLE_HEADER_TAGLINE}
-                </Text>
-              </View>
+              <Text
+                style={[styles.brandTaglineUnderFace, { color: theme.secondaryText }]}
+                numberOfLines={2}
+              >
+                {ORACLE_HEADER_TAGLINE}
+              </Text>
             </View>
             {statusLine ? (
               <View style={styles.presenceRow}>
@@ -512,6 +542,9 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
             {isEmpty ? (
               <View style={styles.emptyBlock}>
                 <TalkHeroMira theme={theme} size="hero" />
+                <Text style={[styles.emptyTagline, { color: theme.secondaryText }]}>
+                  {ORACLE_HEADER_TAGLINE}
+                </Text>
                 <Text
                   style={[
                     styles.emptyPrompt,
@@ -616,7 +649,10 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
                 borderTopColor: tokens.border.standard,
                 backgroundColor: TALK_INPUT_SURFACE,
               },
+              // Hide while controls sheet is open so the input never ghosts through.
+              controlsOpen && styles.composerHidden,
             ]}
+            pointerEvents={controlsOpen ? 'none' : 'auto'}
           >
             <Pressable
               onPress={() => {
@@ -734,7 +770,7 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
         onSelectMode={selectMode}
         onResearchDeeper={researchDeeper}
         onSeeSources={showSources}
-        onSave={() => void saveLatestInsight()}
+        onSave={saveLatestInsight}
         onClear={clearHistory}
       />
 
@@ -765,29 +801,28 @@ const styles = StyleSheet.create({
   headerWrap: {
     paddingBottom: 2,
   },
-  brandRow: {
-    flexDirection: 'row',
+  brandFaceBlock: {
     alignItems: 'center',
-    gap: 10,
     paddingHorizontal: 16,
     paddingTop: 2,
-    paddingBottom: 4,
+    paddingBottom: 6,
   },
-  brandTitles: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-  },
-  brandTitle: {
-    fontFamily: SERIF,
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 26,
-  },
-  brandTagline: {
+  brandTaglineUnderFace: {
     fontSize: 12,
     fontWeight: '600',
-    marginTop: 1,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 16,
+    letterSpacing: 0.15,
+  },
+  emptyTagline: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
+  composerHidden: {
+    opacity: 0,
   },
   presenceRow: {
     paddingHorizontal: 16,

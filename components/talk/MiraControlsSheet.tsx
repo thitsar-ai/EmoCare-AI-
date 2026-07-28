@@ -35,6 +35,9 @@ type Props = {
   onClear: () => void;
 };
 
+/** Opaque sheet surface — frosted theme.card lets the composer show through. */
+const SHEET_BG = '#FBF8FD';
+
 export function MiraControlsSheet({
   visible,
   theme,
@@ -57,8 +60,10 @@ export function MiraControlsSheet({
       animationType="slide"
       onRequestClose={onClose}
       accessibilityViewIsModal
+      statusBarTranslucent
     >
       <View style={styles.root}>
+        {/* flex:1 backdrop — does NOT cover the sheet (avoids stolen taps) */}
         <Pressable
           style={styles.backdrop}
           onPress={onClose}
@@ -69,11 +74,12 @@ export function MiraControlsSheet({
           style={[
             styles.sheet,
             {
-              backgroundColor: theme.card,
+              backgroundColor: SHEET_BG,
               borderColor: tokens.border.standard,
               paddingBottom: Math.max(insets.bottom, 16) + 8,
             },
           ]}
+          accessibilityViewIsModal
         >
           <View style={[styles.handle, { backgroundColor: theme.secondaryText }]} />
           <Text style={[styles.sheetTitle, { color: theme.text }]}>Mira controls</Text>
@@ -82,6 +88,7 @@ export function MiraControlsSheet({
             bounces={false}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
           >
             <Text style={[styles.sectionLabel, { color: theme.secondaryText }]}>RESPONSE STYLE</Text>
             <View style={styles.sectionBlock}>
@@ -98,7 +105,7 @@ export function MiraControlsSheet({
                       styles.modeRow,
                       {
                         borderColor: selected ? accent : tokens.border.standard,
-                        backgroundColor: selected ? `${accent}18` : tokens.surface.frosted,
+                        backgroundColor: selected ? `${accent}18` : '#FFFFFF',
                       },
                     ]}
                     accessibilityRole="radio"
@@ -222,7 +229,11 @@ function ActionRow({
         onPress();
       }}
       disabled={!enabled}
-      style={[styles.actionRow, !enabled && styles.actionDisabled]}
+      style={({ pressed }) => [
+        styles.actionRow,
+        !enabled && styles.actionDisabled,
+        enabled && pressed && styles.actionPressed,
+      ]}
       accessibilityRole="button"
       accessibilityState={{ disabled: !enabled }}
       accessibilityLabel={accessibilityLabel}
@@ -266,8 +277,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(12, 8, 28, 0.45)',
+    flex: 1,
+    backgroundColor: 'rgba(12, 8, 28, 0.55)',
   },
   sheet: {
     borderTopLeftRadius: 22,
@@ -277,6 +288,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 10,
     maxHeight: '78%',
+    // Keep sheet above dimmed backdrop / composer ghost
+    zIndex: 2,
+    elevation: 24,
+    shadowColor: '#1A1035',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
   },
   handle: {
     alignSelf: 'center',
@@ -329,6 +347,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
   },
+  actionPressed: { opacity: 0.75 },
   actionDisabled: { opacity: 0.55 },
   actionIcon: {
     width: 34,

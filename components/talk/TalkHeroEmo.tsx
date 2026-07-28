@@ -6,8 +6,8 @@ import { SANCTUARY_EMO_SCALES, SanctuaryEmoPresence } from '../shared/SanctuaryE
 
 export type TalkEmoOrbSize = 'hero' | 'header' | 'compact';
 
-const HEADER_DIM = 56;
-const COMPACT_DIM = 72;
+const HEADER_DIM = 104;
+const COMPACT_DIM = 96;
 
 /**
  * Floating translucent Emo face (not a face trapped in a hard globe).

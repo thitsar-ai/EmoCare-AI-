@@ -11,12 +11,22 @@ import {
   INITIAL_CHECKIN_PAYLOAD_KEY,
   INITIAL_EMO_INTENT_KEY,
 } from './onboardingLanding';
+import {
+  ONBOARDING_COMPLETED_AT_KEY,
+  ONBOARDING_COMPLETED_KEY,
+  ONBOARDING_VERSION_KEY,
+  USER_PRONOUNS_KEY,
+} from './onboardingState';
 import { HELPED_STORAGE_KEY } from './thingsThatHelped';
 import { clearPasscode } from './passcodeLock';
 
 const EXPORT_KEYS = [
   'userName',
+  USER_PRONOUNS_KEY,
   'onboarded',
+  ONBOARDING_COMPLETED_KEY,
+  ONBOARDING_VERSION_KEY,
+  ONBOARDING_COMPLETED_AT_KEY,
   AGE_VERIFIED_KEY,
   'checkIns',
   JOURNAL_ENTRIES_KEY,
@@ -72,6 +82,7 @@ export async function exportUserData() {
 export async function deleteAllUserData() {
   await AsyncStorage.multiRemove(EXPORT_KEYS);
   await AsyncStorage.setItem('onboarded', 'false');
+  await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, 'false');
   await AsyncStorage.removeItem(AGE_VERIFIED_KEY);
   await clearPasscode();
 }

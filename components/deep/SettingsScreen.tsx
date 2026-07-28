@@ -20,6 +20,7 @@ import {
 import { textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { exportUserData, deleteAllUserData } from '../../utils/dataExport';
 import { triggerAppReset } from '../../utils/appReset';
+import { resetOnboardingState, loadUserPronouns } from '../../utils/onboardingState';
 import { isPasscodeEnabled } from '../../utils/passcodeLock';
 import {
   describeBiometricError,
@@ -28,7 +29,12 @@ import {
 } from '../../utils/biometricUnlock';
 import { PasscodeSetupSheet, type PasscodeSetupMode } from '../security/PasscodeSetupSheet';
 import Constants from 'expo-constants';
-import { ScreenNavChrome, type MainScreenKey, useAppNav } from '../navigation/AppNavigation';
+import {
+  ScreenNavChrome,
+  WELCOME_ONBOARDING_SLIDE,
+  type MainScreenKey,
+  useAppNav,
+} from '../navigation/AppNavigation';
 import { refreshEmocareConfig } from '../../utils/emocareApi';
 import { hapticLight } from '../../utils/haptics';
 import { isWebInstallSupported, useWebInstallPrompt } from '../../utils/webInstallPrompt';
@@ -48,8 +54,9 @@ type Settings = typeof DEFAULT_SETTINGS;
 
 export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void }) {
   const theme = useCircadianTheme();
+  const { openOnboardingSlide, userName } = useAppNav();
+  const [pronouns, setPronouns] = useState('');
   const insets = useSafeAreaInsets();
-  const { userName } = useAppNav();
   const webInstall = useWebInstallPrompt();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [passcodeEnabled, setPasscodeEnabled] = useState(false);
@@ -84,11 +91,38 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
 
   useEffect(() => {
     void refresh();
+    void loadUserPronouns().then(setPronouns);
   }, [refresh]);
 
   const patch = async (partial: Partial<Settings>) => {
     const next = await saveSettings(partial);
     setSettings(next);
+  };
+
+  const handleViewIntroduction = () => {
+    void hapticLight();
+    openOnboardingSlide(WELCOME_ONBOARDING_SLIDE);
+  };
+
+  const handleResetOnboarding = () => {
+    if (!__DEV__) return;
+    Alert.alert(
+      'Reset onboarding?',
+      'Welcome will show again on next launch. Chat and journal stay unless you delete all data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await resetOnboardingState();
+              triggerAppReset();
+            })();
+          },
+        },
+      ],
+    );
   };
 
   const handleInstallApp = useCallback(async () => {
@@ -171,6 +205,7 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
       >
         <SettingsSection theme={theme} label="ACCOUNT">
           <SettingRow theme={theme} label="Name" value={userName.trim() || 'Not set'} />
+          <SettingRow theme={theme} label="Pronouns" value={pronouns.trim() || 'Not set'} />
           <Pressable
             onPress={() => {
               void hapticLight();
@@ -456,6 +491,15 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
         </SettingsSection>
 
         <SettingsSection theme={theme} label="ABOUT">
+          <Pressable
+            onPress={handleViewIntroduction}
+            style={[styles.linkRow, { borderBottomColor: theme.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="View introduction again"
+          >
+            <Text style={[styles.rowLabel, { color: theme.text }]}>View Introduction Again</Text>
+            <ChevronRight size={14} color={getCircadianIconColor(theme, 'muted')} />
+          </Pressable>
           <SettingRow
             theme={theme}
             label="App version"
@@ -468,6 +512,15 @@ export function SettingsScreen({ onNav }: { onNav: (key: MainScreenKey) => void 
           EmoCare is for emotional reflection and personal growth. It is not medical care, therapy,
           diagnosis, treatment, or crisis support. Intended for users 18 and older.
         </Text>
+
+        {__DEV__ ? (
+          <Pressable
+            onPress={handleResetOnboarding}
+            style={[styles.deleteBtn, { backgroundColor: `${theme.accent}14`, borderColor: `${theme.accent}44` }]}
+          >
+            <Text style={[styles.deleteText, { color: theme.accent }]}>Reset Onboarding (Dev)</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           onPress={handleDeleteAll}
