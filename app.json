@@ -15,12 +15,15 @@
     "ios": {
       "supportsTablet": true,
       "buildNumber": "1",
+      "bundleIdentifier": "com.tristarinter.emocare",
+      "entitlements": {
+        "aps-environment": "production"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Allow EmoCare to unlock your sanctuary with Face ID.",
         "NSUserNotificationsUsageDescription": "EmoCare sends a gentle daily reminder to check in — only if you turn reminders on."
-      },
-      "bundleIdentifier": "com.tristarinter.emocare"
+      }
     },
     "android": {
       "adaptiveIcon": {
