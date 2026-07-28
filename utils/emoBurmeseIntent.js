@@ -59,7 +59,7 @@ export function burmeseIntentGuidance(intent) {
   switch (intent) {
     case 'story':
     case 'identity':
-      return 'Intent: identity/story. Use the canonical အီမို biography only. Do not invent a human childhood. Answer clearly in 2–4 short paragraphs.';
+      return 'Intent: identity/story. Reply with the approved အီမို biography (EMO_STORY_ANSWER_MY) closely — warm, clear, 3 short paragraphs. Do not invent a human childhood, family, or hometown.';
     case 'just_listen':
       return 'Intent: just listen. Acknowledge briefly. Do not problem-solve. Invite them to speak. One short paragraph is enough.';
     case 'correction':

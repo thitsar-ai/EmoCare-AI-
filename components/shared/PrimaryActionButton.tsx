@@ -52,13 +52,17 @@ export function PrimaryActionButton({
         style={({ pressed }) => [
           primaryButtonShell,
           styles.button,
-          styles.buttonVisible,
+          disabled ? styles.buttonDisabled : styles.buttonVisible,
           primaryRestingShadow(theme),
           !disabled && pressPrimaryStyle(theme, pressed),
         ]}
       >
         <LinearGradient
-          colors={gradient}
+          colors={
+            disabled
+              ? (['#C4B7E8', '#B5A6DE'] as [string, string])
+              : gradient
+          }
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={primaryButtonInner}
@@ -85,8 +89,8 @@ export function PrimaryActionButton({
 const styles = StyleSheet.create({
   wrap: { marginBottom: 4, alignSelf: 'stretch', width: '100%' },
   button: { width: '100%' },
-  /** Keep full brand purple visible — never fade when disabled or pressed. */
   buttonVisible: { opacity: 1 },
+  buttonDisabled: { opacity: 0.72 },
   hint: {
     marginTop: 8,
     fontSize: 13,

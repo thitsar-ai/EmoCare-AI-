@@ -11,7 +11,7 @@
  * 6) Model-generated wording
  */
 
-import { getEmoIdentityBlock } from './emoIdentity.js';
+import { getEmoIdentityBlock, EMO_STORY_ANSWER_MY } from './emoIdentity.js';
 import { burmeseMoodTerm, formatBurmeseMemoryPill } from './emoBurmeseTerms.js';
 import { classifyBurmeseTalkIntent, burmeseIntentGuidance } from './emoBurmeseIntent.js';
 import { formatBurmeseExamplesForPrompt } from './emoBurmeseExamples.js';
@@ -189,9 +189,17 @@ Prefer natural Burmese without a pronoun:
 Avoid stacking သင် / သင့် in every sentence. Use သင် only when clarity truly requires it.`;
 
   const examples = formatBurmeseExamplesForPrompt(intent);
+  const storyBlock =
+    intent === 'story' || intent === 'identity'
+      ? `
+
+## APPROVED EMO STORY ANSWER (prefer this wording when asked about အီမို)
+${EMO_STORY_ANSWER_MY}
+`
+      : '';
 
   return `${getEmoIdentityBlock('my')}
-
+${storyBlock}
 ${buildBurmeseLanguageRules()}
 
 ## TASK INTENT

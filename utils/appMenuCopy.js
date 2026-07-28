@@ -54,7 +54,7 @@ export function getTalkToEmoMenuCopy(preference) {
       subtitle: 'Feelings, support, and a caring presence',
     },
     my: {
-      title: 'အီမိုနဲ့ စကားပြောမယ်',
+      title: 'အီမိုနဲ့ ပြောမယ်',
       subtitle: 'ခံစားချက်နှင့် နားထောင်ပေးခြင်း',
     },
     es: {
@@ -86,7 +86,7 @@ export function getTalkToEmoMenuLabel(preference) {
 
 /**
  * @param {ChatLanguageId | string | undefined} preference
- * @param {'checkin' | 'journal' | 'insights' | 'settings' | 'home' | 'today' | 'memoryledger'} key
+ * @param {'checkin' | 'journal' | 'insights' | 'settings' | 'home' | 'today' | 'memoryledger' | 'welcome' | 'privacy' | 'aboutyou' | 'profile'} key
  */
 export function getMainMenuLabel(preference, key) {
   const id = normalizeChatLanguage(preference);
@@ -94,58 +94,82 @@ export function getMainMenuLabel(preference, key) {
   const map = {
     en: {
       checkin: 'Check-in',
-      journal: 'Journal',
+      journal: 'My Journal',
       insights: 'Insights',
       settings: 'Settings',
       home: 'Home',
       today: 'My Day',
       memoryledger: 'Memory Ledger',
+      welcome: 'Welcome',
+      privacy: 'Privacy',
+      aboutyou: 'Tell Me About You',
+      profile: 'Your Name & Profile',
     },
     my: {
-      checkin: 'Check-in',
+      checkin: 'စိတ်ခံစားချက် စစ်မယ်',
       journal: 'ဂျာနယ်',
-      insights: 'Insights',
-      settings: 'ဆက်တင်',
+      insights: 'သိမြင်ချက်များ',
+      settings: 'ဆက်တင်များ',
       home: 'ပင်မ',
-      today: 'ငါ့နေ့',
-      memoryledger: 'မှတ်ဉာဏ်စာရင်း',
+      today: 'ဒီနေ့အတွက်',
+      memoryledger: 'အမှတ်တရ မှတ်တမ်း',
+      welcome: 'ကြိုဆိုပါတယ်',
+      privacy: 'ကိုယ်ရေးကိုယ်တာ',
+      aboutyou: 'ကိုယ့်အကြောင်း ပြောပြမယ်',
+      profile: 'အမည်နှင့် ကိုယ်ရေးအချက်အလက်',
     },
     es: {
       checkin: 'Check-in',
-      journal: 'Diario',
+      journal: 'Mi diario',
       insights: 'Perspectivas',
       settings: 'Ajustes',
       home: 'Inicio',
       today: 'Mi día',
       memoryledger: 'Registro de memorias',
+      welcome: 'Bienvenida',
+      privacy: 'Privacidad',
+      aboutyou: 'Cuéntame sobre ti',
+      profile: 'Tu nombre y perfil',
     },
     id: {
       checkin: 'Check-in',
-      journal: 'Jurnal',
+      journal: 'Jurnal saya',
       insights: 'Wawasan',
       settings: 'Pengaturan',
       home: 'Beranda',
       today: 'Hariku',
       memoryledger: 'Catatan memori',
+      welcome: 'Selamat datang',
+      privacy: 'Privasi',
+      aboutyou: 'Ceritakan tentang diri Anda',
+      profile: 'Nama & profil Anda',
     },
     'pt-BR': {
       checkin: 'Check-in',
-      journal: 'Diário',
+      journal: 'Meu diário',
       insights: 'Insights',
       settings: 'Configurações',
       home: 'Início',
       today: 'Meu dia',
       memoryledger: 'Registro de memórias',
+      welcome: 'Boas-vindas',
+      privacy: 'Privacidade',
+      aboutyou: 'Fale sobre você',
+      profile: 'Seu nome e perfil',
     },
     fr: {
       checkin: 'Bilan',
-      journal: 'Journal',
+      journal: 'Mon journal',
       insights: 'Aperçus',
       settings: 'Réglages',
       home: 'Accueil',
       today: 'Ma journée',
       memoryledger: 'Registre des souvenirs',
+      welcome: 'Bienvenue',
+      privacy: 'Confidentialité',
+      aboutyou: 'Parlez-moi de vous',
+      profile: 'Votre nom et profil',
     },
   };
-  return (map[id] || map.en)[key] || (map.en)[key];
+  return (map[id] || map.en)[key] || map.en[key];
 }

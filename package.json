@@ -17,8 +17,8 @@
     "test:eos": "node scripts/test-emo-eos.mjs",
     "generate:breath-clips": "node scripts/generateBreathClips.mjs",
     "generate:nature-sounds": "python3 scripts/generateNatureSounds.py",
-    "build:ios": "eas build --platform ios --profile production",
-    "submit:ios": "eas submit --platform ios --profile production --latest"
+    "build:ios": "npx eas-cli build --platform ios --profile production",
+    "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

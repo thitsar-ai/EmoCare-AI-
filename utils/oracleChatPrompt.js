@@ -4,7 +4,8 @@
  */
 
 import { EOS_TAGLINE, getIntentModeAppendix } from './emoEos.js';
-import { getMiraLanguageAppendix, normalizeMiraLanguage } from './miraLanguage.js';
+import { getMiraLanguageAppendix, normalizeMiraLanguage, resolveMiraComposeLocale } from './miraLanguage.js';
+import { getMiraIdentityBlock, isMiraStoryQuestion, MIRA_STORY_ANSWER_MY, MIRA_STORY_ANSWER_MY_SHORT } from './miraIdentity.js';
 
 /** @typedef {'quick' | 'deep' | 'wise'} OracleModeId */
 
@@ -120,9 +121,35 @@ function getOracleModeInstructions(mode) {
 export function buildOracleSystemPrompt(userName, mode = 'deep', miraLanguage = 'auto', localeCtx = {}) {
   const name = userName?.trim() || 'friend';
   const pref = normalizeMiraLanguage(miraLanguage);
+  const locale = resolveMiraComposeLocale(
+    pref,
+    localeCtx.userMessage || '',
+    localeCtx.recentUserTexts || [],
+  );
   const language = getMiraLanguageAppendix(pref, userName, localeCtx);
+  const identity = getMiraIdentityBlock(locale === 'my' ? 'my' : 'en');
+  const storyHint = isMiraStoryQuestion(localeCtx.userMessage || '')
+    ? locale === 'my'
+      ? `
+
+## APPROVED MIRA STORY ANSWER (prefer this wording; may shorten but keep meaning)
+Full:
+${MIRA_STORY_ANSWER_MY}
+
+Concise (when Quick mode or a short “who are you”):
+${MIRA_STORY_ANSWER_MY_SHORT}
+`
+      : `
+
+## APPROVED MIRA STORY ANSWER
+Use the canonical Mira biography. Never invent a childhood or personal life. Never say Oracle.
+`
+    : '';
+
   return `${ORACLE_PERSONALITY}
 
+${identity}
+${storyHint}
 ${getIntentModeAppendix('oracle')}
 
 ${getOracleModeInstructions(mode)}
@@ -130,7 +157,7 @@ ${getOracleModeInstructions(mode)}
 ${language}
 
 ## SESSION
-- Address ${name} naturally, not in every sentence.
+- Address ${name} naturally when known — usually once, then omit. Do not repeatedly use သင်.
 - Vary openings. Never repeat the same opener twice in one session.
 - If they ask for more detail after Explore More, then go deeper.
 - You are Mira. Never say you are Oracle.`;

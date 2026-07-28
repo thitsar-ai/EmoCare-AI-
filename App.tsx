@@ -148,6 +148,7 @@ import {
   responseViolatesLocale,
 } from './utils/chatLanguage';
 import { classifyBurmeseTalkIntent } from './utils/emoBurmeseIntent';
+import { EMO_STORY_ANSWER_MY, isEmoStoryQuestion } from './utils/emoIdentity';
 import {
   ANTHROPIC_MODEL_BURMESE,
   ensureQualityBurmeseReply,
@@ -1690,6 +1691,18 @@ function ChatScreen({ userName }: { userName: string }) {
         });
       }
 
+      // Canonical အီမို biography — return approved copy for story/about questions.
+      if (burmese && lastUserMsg && isEmoStoryQuestion(lastUserMsg.text) && !crisis.inCrisis) {
+        const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setMessages((prev) => [
+          ...prev,
+          { id: `b-${Date.now()}`, role: 'bot', text: EMO_STORY_ANSWER_MY, time: replyTime },
+        ]);
+        setIsWaiting(false);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+        return;
+      }
+
       const personalContext = await loadEmoPersonalContext(userName, lastUserMsg?.text || '', {
         burmese,
         locale: composeLocale,
@@ -2657,11 +2670,13 @@ function Root() {
         <FirstOnboardingShell
           userName={userName}
           setUserName={setUserName}
-          onComplete={async ({ name, landingMode }) => {
+          onComplete={async ({ name }) => {
             const ageOk = await readAgeVerified();
             if (!ageOk) return;
             setUserName(name);
-            setHomeLandingMode(landingMode);
+            // Always open Home after login / onboarding (never auto-open Mira).
+            setHomeLandingMode('sanctuary');
+            setScreen('home');
             setAgeVerified(true);
             setOnboarded(true);
           }}

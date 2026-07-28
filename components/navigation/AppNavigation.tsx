@@ -564,11 +564,23 @@ export function buildMainAppMenu(menuLanguage?: string): AppMenuItem[] {
       accent: '#C4A35A',
       target: { kind: 'screen', key: 'memoryledger' },
     },
-    { id: 'welcome', label: 'Welcome', Icon: Sparkles, accent: '#E89B5C', target: { kind: 'onboarding', slide: 2 } },
-    { id: 'privacy', label: 'Privacy', Icon: Shield, accent: '#7BC67E', target: { kind: 'onboarding', slide: 4 } },
+    {
+      id: 'welcome',
+      label: getMainMenuLabel(menuLanguage, 'welcome'),
+      Icon: Sparkles,
+      accent: '#E89B5C',
+      target: { kind: 'onboarding', slide: 2 },
+    },
+    {
+      id: 'privacy',
+      label: getMainMenuLabel(menuLanguage, 'privacy'),
+      Icon: Shield,
+      accent: '#7BC67E',
+      target: { kind: 'onboarding', slide: 4 },
+    },
     {
       id: 'aboutyou',
-      label: 'Tell Me About You',
+      label: getMainMenuLabel(menuLanguage, 'aboutyou'),
       Icon: Heart,
       accent: '#B79DFF',
       target: { kind: 'onboarding', slide: 5 },
@@ -605,12 +617,14 @@ if (__DEV__) {
   }
 }
 
-const PROFILE_MENU_ITEM = {
-  label: 'Your name & profile',
-  Icon: User,
-  accent: '#B79DFF',
-  isProfile: true as const,
-};
+function buildProfileMenuItem(menuLanguage?: string) {
+  return {
+    label: getMainMenuLabel(menuLanguage, 'profile'),
+    Icon: User,
+    accent: '#B79DFF',
+    isProfile: true as const,
+  };
+}
 
 export function AppMenuSheet({
   visible,
@@ -635,6 +649,7 @@ export function AppMenuSheet({
   const menuWidth = Math.min(300, Math.max(272, windowWidth - 28));
   const menuItems = useMemo(() => buildMainAppMenu(menuLanguage), [menuLanguage]);
   const settingsItem = useMemo(() => buildSettingsMenuItem(menuLanguage), [menuLanguage]);
+  const profileItem = useMemo(() => buildProfileMenuItem(menuLanguage), [menuLanguage]);
 
   const renderMenuItem = (
     item: {
@@ -739,7 +754,7 @@ export function AppMenuSheet({
               <View style={styles.menuDivider} />
               {renderMenuItem(settingsItem, true)}
               {renderMenuItem(
-                { ...PROFILE_MENU_ITEM, id: 'profile', onPress: onOpenProfile },
+                { ...profileItem, id: 'profile', onPress: onOpenProfile },
                 false,
               )}
             </ScrollView>

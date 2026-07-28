@@ -32,7 +32,13 @@ import {
   getMiraLanguageLabel,
   miraInputPlaceholder,
   normalizeMiraLanguage,
+  resolveMiraComposeLocale,
 } from '../../utils/miraLanguage';
+import {
+  getMiraStoryAnswer,
+  isMiraStoryQuestion,
+  shouldUseConciseMiraStory,
+} from '../../utils/miraIdentity';
 import { localeAwareTextStyle, localeTextMetrics, textNeedsMyanmarMetrics } from '../../utils/localeText';
 import { rgba, tokens } from '../../theme/tokens';
 import { OracleAmbientCanvas } from './OracleAmbientCanvas';
@@ -236,6 +242,34 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
       });
 
       try {
+        const settings = await loadSettings();
+        const lang = normalizeMiraLanguage(settings.miraLanguage);
+        setMiraLanguage(lang);
+        const recentUserTexts = priorForApi
+          .filter((m) => m.role === 'user')
+          .map((m) => m.text)
+          .slice(-6);
+        const composeLocale = resolveMiraComposeLocale(lang, trimmed, recentUserTexts);
+
+        // Canonical Mira biography — skip research / model for identity questions.
+        if (isMiraStoryQuestion(trimmed)) {
+          const replyText = getMiraStoryAnswer({
+            locale: composeLocale === 'my' ? 'my' : 'en',
+            concise: shouldUseConciseMiraStory(trimmed, activeMode),
+            userName: name !== 'friend' ? name : '',
+          });
+          const botMsg: OracleMessage = {
+            id: `b-${Date.now()}`,
+            role: 'bot',
+            text: replyText,
+            sourceCount: 0,
+            query: trimmed,
+            sources: [],
+          };
+          setMessages((prev) => [...prev.filter((m) => m.role !== 'status'), botMsg]);
+          return;
+        }
+
         let research = { contextBlock: '', sources: [] as { title?: string; url?: string }[] };
         if (shouldFetchResearch(activeMode, trimmed)) {
           research = await fetchOracleResearchContext(trimmed);
@@ -251,13 +285,6 @@ export function OracleSearchScreen({ onNav }: { onNav: (key: MainScreenKey) => v
               m.role === 'user' || m.role === 'bot',
           ),
         );
-        const settings = await loadSettings();
-        const lang = normalizeMiraLanguage(settings.miraLanguage);
-        setMiraLanguage(lang);
-        const recentUserTexts = priorForApi
-          .filter((m) => m.role === 'user')
-          .map((m) => m.text)
-          .slice(-6);
         const result = await callAnthropicMessages({
           system: buildOracleSystemPrompt(name, activeMode, lang, {
             userMessage: trimmed,

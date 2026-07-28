@@ -17,11 +17,11 @@ import {
   Brain,
   ChevronRight,
   Heart,
-  Sparkles,
   Sun,
 } from 'lucide-react-native';
 import { BRAND_TAGLINE } from '../../constants/brandCopy';
 import { SanctuaryEmoPresence } from '../shared/SanctuaryEmoPresence';
+import { SanctuaryMiraPresence } from '../shared/SanctuaryMiraPresence';
 import { SANCTUARY_EMO_HOME_SCALE, SANCTUARY_EMO_STANDARD_SCALE, getSanctuaryEmoStageSize, getSanctuaryEmoTopClipGuard } from '../../theme/sanctuaryEmoFace';
 import { SanctuaryMemoryBadge, memoryMoodFromChipLabel } from './SanctuaryMemoryBadge';
 import { loadEmoPersonalContext } from '../../utils/emoPersonalContext';
@@ -58,7 +58,7 @@ import { loadSettings } from '../../utils/settingsStorage';
 import { SanctuaryScenicBackdrop } from './SanctuaryScenicBackdrop';
 import { SanctuaryGlassSurface } from '../shared/SanctuaryGlassSurface';
 import { CrisisFooter } from '../shared/CrisisFooter';
-import { BRAND_CTA_GRADIENT, tokens } from '../../theme/tokens';
+import { BRAND_CTA_GRADIENT } from '../../theme/tokens';
 import { primaryButtonInner, primaryButtonLabel } from '../../theme/primaryButton';
 import type { GlassSurfaceVariant } from '../../theme/glassSurfaces';
 import { isNarrowPhone } from '../../utils/layoutBreakpoints';
@@ -289,6 +289,66 @@ function SanctuaryTalkCard({
             minimumFontScale={0.88}
           >
             Start Conversation
+          </Text>
+          <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} style={styles.talkHeroBtnIcon} />
+        </LinearGradient>
+      </SanctuaryGlassSurface>
+    </Pressable>
+  );
+}
+
+function SanctuaryMiraCard({
+  theme,
+  onPress,
+  narrow,
+}: {
+  theme: CircadianTheme;
+  onPress: () => void;
+  narrow: boolean;
+}) {
+  const miraSize = narrow ? 96 : 118;
+  return (
+    <Pressable
+      onPress={() => {
+        void hapticLight();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.talkHeroWrap, pressHeroCardStyle(pressed)]}
+      accessibilityRole="button"
+      accessibilityLabel="Mira. Clarity, perspective, and thoughtful guidance."
+    >
+      <SanctuaryGlassSurface variant="lavender" style={styles.talkHeroGlass}>
+        <View style={[styles.talkHeroRow, narrow && styles.talkHeroRowNarrow]}>
+          <View style={styles.talkHeroCopy}>
+            <Text style={[styles.talkHeroTitle, { color: theme.text }]}>Mira</Text>
+            <Text style={[styles.talkHeroBody, { color: theme.secondaryText }]}>
+              Clarity, perspective, and thoughtful guidance for the questions on your mind.
+            </Text>
+          </View>
+          {!narrow ? (
+            <View style={styles.talkOrbWrap} pointerEvents="none">
+              <SanctuaryMiraPresence theme={theme} size={miraSize} />
+            </View>
+          ) : null}
+        </View>
+        {narrow ? (
+          <View style={styles.talkOrbWrapNarrow} pointerEvents="none">
+            <SanctuaryMiraPresence theme={theme} size={miraSize} />
+          </View>
+        ) : null}
+        <LinearGradient
+          colors={[...BRAND_CTA_GRADIENT]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[primaryButtonInner, styles.talkHeroBtn]}
+        >
+          <Text
+            style={[primaryButtonLabel, styles.talkHeroBtnText]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.88}
+          >
+            Start Exploring
           </Text>
           <ChevronRight size={16} color="#FFFFFF" strokeWidth={2.4} style={styles.talkHeroBtnIcon} />
         </LinearGradient>
@@ -603,6 +663,8 @@ export function SanctuaryDashboard({
 
           <SanctuaryTalkCard theme={theme} narrow={narrow} onPress={() => onNav('talk')} />
 
+          <SanctuaryMiraCard theme={theme} narrow={narrow} onPress={() => onNav('oracle')} />
+
           <DailyReflectionHero theme={theme} />
 
           <Text style={[styles.sectionEyebrow, { color: labelAccent }]}>QUICK ACTIONS</Text>
@@ -614,14 +676,6 @@ export function SanctuaryDashboard({
               title="Check In"
               subtitle="How are you feeling?"
               onPress={() => navigateToCheckIn(false)}
-            />
-            <QuickActionCard
-              theme={theme}
-              icon={Sparkles}
-              iconColor={tokens.oracle.accent}
-              title="Mira"
-              subtitle="Ask Mira…"
-              onPress={() => onNav('oracle')}
             />
           </View>
 
